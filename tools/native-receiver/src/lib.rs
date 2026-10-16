@@ -8,6 +8,15 @@ const HEADER: usize = 8192;
 const PAYLOAD: usize = 160 * (32 + 4096 * 4);
 const SLOT: usize = 12 + HEADER + PAYLOAD;
 const RING: usize = 16 + CAP * SLOT;
+// Control-thread diagnostic: high 32 bits = stage, low 32 = OS error.
+// 1 arguments, 2 mapping open, 3 event open, 4 view, 5 header,
+// 6 QPC frequency, 7 worker spawn, 8 panic. Zero means start succeeded.
+thread_local! { static START_ERROR: std::cell::Cell<u64> = const { std::cell::Cell::new(0) }; }
+fn start_error(stage: u32, code: u32) {
+    START_ERROR.set(((stage as u64) << 32) | code as u64);
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn nsp_receiver_start_error() -> u64 { START_ERROR.get() }
 type Submit = unsafe extern "C" fn(*mut c_void, u64, u32, *const u8, usize) -> i32;
 type SubmitTimed = unsafe extern "C" fn(*mut c_void, u64, u32, *const u8, usize, u64) -> i32;
 enum Submission { Plain(Submit), Timed(SubmitTimed) }
@@ -29,6 +38,7 @@ unsafe extern "system" {
     fn QueryPerformanceCounter(value: *mut i64) -> i32;
     fn QueryPerformanceFrequency(value: *mut i64) -> i32;
     fn GetCurrentThreadId() -> u32;
+    fn GetLastError() -> u32;
 }
 struct Mapping { handle: usize, event: usize, view: usize }
 impl Drop for Mapping {
@@ -42,12 +52,13 @@ impl Mapping {
     unsafe fn open(name: *const u16, event: *const u16) -> Option<Self> {
         let mut m = Self { handle: 0, event: 0, view: 0 };
         m.handle = unsafe { OpenFileMappingW(6, 0, name) } as usize;
+        if m.handle == 0 { start_error(2, unsafe { GetLastError() }); return None; }
         m.event = unsafe { OpenEventW(0x100002, 0, event) } as usize;
-        if m.handle == 0 || m.event == 0 { return None; }
+        if m.event == 0 { start_error(3, unsafe { GetLastError() }); return None; }
         m.view = unsafe { MapViewOfFile(m.handle as *mut _, 6, 0, 0, RING) } as usize;
-        if m.view == 0 { return None; }
+        if m.view == 0 { start_error(4, unsafe { GetLastError() }); return None; }
         let header = unsafe { std::slice::from_raw_parts(m.view as *const u32, 4) };
-        if header != [0x3150534e, 1, CAP as u32, SLOT as u32] { return None; }
+        if header != [0x3150534e, 1, CAP as u32, SLOT as u32] { start_error(5, 0); return None; }
         Some(m)
     }
 }
@@ -175,17 +186,18 @@ pub unsafe extern "C" fn nsp_receiver_start_full(name: *const u16, event: *const
     unsafe { start_impl(name, event, pipeline, submit.map(Submission::Timed), frames, timing | 1) }
 }
 unsafe fn start_impl(name: *const u16, event: *const u16, pipeline: *mut c_void, submit: Option<Submission>, frames: u32, timing: u32) -> *mut c_void {
-    if name.is_null() || event.is_null() || pipeline.is_null() || submit.is_none() || !(1..=4096).contains(&frames) { return std::ptr::null_mut(); }
+    START_ERROR.set(0);
+    if name.is_null() || event.is_null() || pipeline.is_null() || submit.is_none() || !(1..=4096).contains(&frames) { start_error(1, 0); return std::ptr::null_mut(); }
     std::panic::catch_unwind(|| {
         let map = Arc::new(unsafe { Mapping::open(name, event) }?);
         let stopping = Arc::new(AtomicBool::new(false)); let received = Arc::new(AtomicU64::new(0)); let failed = Arc::new(AtomicBool::new(false));
-        let mut hz = 0; if unsafe { QueryPerformanceFrequency(&mut hz) } == 0 || hz <= 0 { return None; }
+        let mut hz = 0; if unsafe { QueryPerformanceFrequency(&mut hz) } == 0 || hz <= 0 { start_error(6, unsafe { GetLastError() }); return None; }
         let stats = Statistics::new(); // Allocate/touch statistics on control thread.
         let (m,s,r,f) = (map.clone(),stopping.clone(),received.clone(),failed.clone());
         let pipeline = pipeline as usize;
-        let worker = thread::Builder::new().name("nsp-rust-receiver".into()).spawn(move || run(m,s,r,f,pipeline,submit.unwrap(),frames,hz as u64,timing & 1 != 0,timing & 2 != 0,stats)).ok()?;
+        let worker = thread::Builder::new().name("nsp-rust-receiver".into()).spawn(move || run(m,s,r,f,pipeline,submit.unwrap(),frames,hz as u64,timing & 1 != 0,timing & 2 != 0,stats)).map_err(|e| start_error(7, e.raw_os_error().unwrap_or(0) as u32)).ok()?;
         Some(Box::into_raw(Box::new(Control { map, stopping, received, failed, worker: Some(worker), report: None })) as *mut c_void)
-    }).ok().flatten().unwrap_or(std::ptr::null_mut())
+    }).map_err(|_| start_error(8, 0)).ok().flatten().unwrap_or(std::ptr::null_mut())
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nsp_receiver_received(p: *const c_void) -> u64 { if p.is_null() { return 0; } unsafe { &*(p as *const Control) }.received.load(Ordering::Acquire) }

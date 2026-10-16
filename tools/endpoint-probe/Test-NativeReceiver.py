@@ -3,6 +3,9 @@ import ctypes as C, importlib.util, pathlib, threading, time, json, types, unitt
 import sys
 MMCSS='--mmcss' in sys.argv
 if MMCSS:sys.argv.remove('--mmcss')
+DLL=None
+if '--receiver-dll' in sys.argv:
+    i=sys.argv.index('--receiver-dll');DLL=sys.argv.pop(i+1);sys.argv.pop(i)
 HERE=pathlib.Path(__file__).parent
 spec=importlib.util.spec_from_file_location('receiver',HERE/'Native-Receiver.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
 Submit=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_uint64,C.c_uint32,C.c_void_p,C.c_size_t)
@@ -15,7 +18,13 @@ class Tests(unittest.TestCase):
             self.actual.append((seq,count,C.string_at(data,size)));return 0
         self.spy=Submit(submit)
         pipeline=types.SimpleNamespace(handle=1,frames=480,lib=types.SimpleNamespace(dll=types.SimpleNamespace(nsp_pipeline_submit=self.spy)))
-        self.rx=module.Receiver(pipeline,mmcss=MMCSS);self.rx.start()
+        self.rx=module.Receiver(pipeline,mmcss=MMCSS,receiver_dll_path=DLL)
+        def cleanup_receiver():
+            self.release.set()
+            if self.rx.handle:self.rx.finish()
+            else:self.rx.transport.finish()
+        self.addCleanup(cleanup_receiver)
+        self.rx.start()
         self.lib=self.rx.transport.lib
         self.lib.nsp_link_send.argtypes=[C.c_void_p,C.c_char_p,C.c_uint32,C.c_char_p,C.c_uint32];self.lib.nsp_link_send.restype=C.c_int
         self.writer=self.lib.nsp_link_open(self.rx.config['name'],self.rx.config['event'],0)
@@ -51,7 +60,46 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.send(1,block='0x456'),0);self.until(lambda:bool(self.rx.errors))
         self.assertEqual(len(self.actual),1)
     def test_idle_stop_and_idempotent_finish(self):
-        result=self.rx.finish();self.assertTrue(result['threadStopped']);self.assertEqual(result['received'],0)
+        result=self.rx.finish();self.assertTrue(result['passed'],result['errors']);self.assertTrue(result['threadStopped']);self.assertEqual(result['received'],0)
         self.assertEqual(self.rx.finish(),result)
+
+class StartupTests(unittest.TestCase):
+    def setUp(self):
+        self.spy=Submit(lambda *args:0)
+        self.pipeline=types.SimpleNamespace(handle=1,frames=480,lib=types.SimpleNamespace(dll=types.SimpleNamespace(nsp_pipeline_submit=self.spy)))
+        self.rx=module.Receiver(self.pipeline,mmcss=MMCSS,receiver_dll_path=DLL)
+        self.addCleanup(self.cleanup)
+        if self.rx.start_error is None:self.skipTest('Legacy DLL has no startup diagnostic export')
+    def cleanup(self):
+        if self.rx.handle:self.rx.finish()
+        else:self.rx.transport.finish()
+    def test_invalid_arguments_and_success_reset(self):
+        self.pipeline.frames=0
+        with self.assertRaisesRegex(RuntimeError,'arguments .*stage=1, Win32=0'):self.rx.start()
+        self.pipeline.frames=480;self.rx.start()
+        self.assertEqual(self.rx.start_error(),0)
+        self.assertTrue(self.rx.finish()['passed'])
+    def test_missing_mapping(self):
+        self.rx.config['name']+='-missing'
+        with self.assertRaisesRegex(RuntimeError,'OpenFileMappingW .*stage=2, Win32=2'):self.rx.start()
+    def test_invalid_ring_header(self):
+        import mmap, uuid
+        name='Local\\NSP-test-'+uuid.uuid4().hex
+        with mmap.mmap(-1,42156240,tagname=name) as mapping:
+            mapping[:16]=bytes(16);self.rx.config['name']=name
+            with self.assertRaisesRegex(RuntimeError,'ring header .*stage=5, Win32=0'):self.rx.start()
+    def test_view_too_small(self):
+        import mmap, uuid
+        name='Local\\NSP-test-'+uuid.uuid4().hex
+        with mmap.mmap(-1,4096,tagname=name):
+            self.rx.config['name']=name
+            with self.assertRaisesRegex(RuntimeError,'MapViewOfFile .*stage=4, Win32=[1-9]'):self.rx.start()
+    def test_missing_event_and_thread_local_error(self):
+        self.rx.config['event']+='-missing'
+        with self.assertRaisesRegex(RuntimeError,'OpenEventW .*stage=3, Win32=2'):self.rx.start()
+        other=[]
+        def check():other.append(self.rx.start_error())
+        thread=threading.Thread(target=check);thread.start();thread.join()
+        self.assertEqual(other,[0]);self.assertEqual(self.rx.start_error(),(3<<32)|2)
 
 if __name__=='__main__':unittest.main(verbosity=2)

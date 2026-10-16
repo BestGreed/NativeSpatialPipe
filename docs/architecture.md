@@ -14,6 +14,6 @@ The current descriptor/payload contract includes object identifiers, static type
 - Core performance ends at rendering completion. File flush, device buffers and actual playback are separate boundaries.
 - Extended gain/distance/EOS semantics, continuous long-duration runs, abnormal recovery and cross-build support remain incomplete.
 - System-level injection does not establish anti-cheat compatibility. A previous game replay test was followed by a reported disconnection; causation and general compatibility have not been established. Start with owned fixtures rather than protected multiplayer sessions.
-- The original receiver integration suite had an unresolved initialization failure. It is included as a diagnostic test, not advertised as passing in this export.
+- Shared-memory integration tests require an execution environment allowed to reopen the named mapping/event. AppContainer access denial was reproduced and diagnosed; ordinary non-AppContainer runs pass. This does not establish capture, playback or long-duration acceptance. See [startup validation](receiver-startup.md).
 
 The public source repository is [BestGreed/NativeSpatialPipe](https://github.com/BestGreed/NativeSpatialPipe), with `main` as its default branch. It excludes the private experiment archive, raw captures, game assets, third-party SDKs and locally installed toolchains, and has independent root history. The research repository remains private. Future public updates should be reviewed source exports; do not merge private research history into this repository.

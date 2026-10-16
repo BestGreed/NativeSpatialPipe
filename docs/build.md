@@ -34,9 +34,10 @@ Subsequent builds use `--locked --offline`. `Build-Core.ps1` builds both capture
 python tools/endpoint-probe/Test-NativeSend.py
 python tools/endpoint-probe/Test-NativeHook.py
 ./tools/native-receiver/Build.ps1 -Test
+python tools/endpoint-probe/Test-NativeReceiver.py
 python tools/endpoint-probe/Test-NativeReceiver.py --mmcss
 ```
 
-The last suite has a known unresolved initialization failure in the research environment. Tests generate their own input and do not need game captures. Tests are not run automatically as part of packaging.
+Run shared-memory integration tests outside AppContainer. In the reproduced restricted environment, mapping creation succeeded but reopening the mapping/event returned Win32 5 (access denied). An ordinary non-AppContainer user process passed; UAC elevation was not required for these owned-process tests. Do not broaden the transport ACL to bypass this restriction. Tests generate their own input and do not need game captures. See [startup diagnostics and validation](receiver-startup.md).
 
 For `Run-Native.py --full-timing`, also build receiver and renderer into `build/native-receiver-full-timing` and `build/roar-full-timing` using their `-TargetDirectory` options. Source exports retain the timing-capable ABI. Performance claims must identify the actual built DLLs and measurement boundary.
