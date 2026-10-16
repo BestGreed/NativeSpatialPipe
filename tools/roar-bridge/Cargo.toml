@@ -3,7 +3,7 @@ name = "nsp-roar-bridge"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/BestGreed/Native_Spatial_pipe"
+repository = "https://github.com/BestGreed/NativeSpatialPipe"
 
 [lib]
 crate-type = ["cdylib"]
