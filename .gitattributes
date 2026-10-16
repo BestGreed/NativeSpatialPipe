@@ -1,0 +1,4 @@
+# Preserve upstream license text and unified-diff context verbatim.
+licenses/* -whitespace
+PATENTS -whitespace
+*.patch -whitespace

@@ -1,0 +1,16 @@
+work/
+build/
+captures/
+**/__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+*.f32
+*.wav
+*.nsp
+*.etl
+*.prof
+*.dll
+*.exe
+*.pdb
