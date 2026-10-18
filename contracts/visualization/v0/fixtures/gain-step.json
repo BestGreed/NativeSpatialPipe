@@ -1,0 +1,293 @@
+{
+  "schemaVersion": "0.1.0",
+  "messageType": "snapshot",
+  "dataOrigin": "simulated",
+  "routeId": "fixture-route",
+  "sessionId": "fixture-session",
+  "streamEpoch": 0,
+  "telemetrySeq": 0,
+  "sourceSequenceRange": {
+    "start": 0,
+    "endExclusive": 5
+  },
+  "audioSampleRange": {
+    "start": 0,
+    "endExclusive": 2400
+  },
+  "sampleIndexProvenance": "derived",
+  "framesPerBlock": 480,
+  "sampleRate": 48000,
+  "layoutRevision": "ideal714-v1",
+  "meterRevision": "linear-v1-gain-applied",
+  "sourceTimeUs": 50000,
+  "publishedTimeUs": 51000,
+  "coverage": {
+    "decoded-input": {
+      "expectedSamples": 2400,
+      "validSamples": 2400,
+      "ratio": 1.0
+    },
+    "render-ready": {
+      "expectedSamples": 2400,
+      "validSamples": 2400,
+      "ratio": 1.0
+    }
+  },
+  "droppedBlocks": {
+    "decoded-input": 0,
+    "render-ready": 0
+  },
+  "eventOverflow": 0,
+  "taps": {
+    "decoded-input": {
+      "quality": "live",
+      "coverage": {
+        "expectedSamples": 2400,
+        "validSamples": 2400,
+        "ratio": 1.0
+      },
+      "droppedBlocks": 0,
+      "snapshotComplete": true,
+      "gainMode": "applied",
+      "objects": [
+        {
+          "objectKey": {
+            "sessionId": "fixture-session",
+            "streamEpoch": 0,
+            "slot": 0,
+            "generation": 1
+          },
+          "sourceIdent": 42,
+          "kind": "dynamic",
+          "staticType": null,
+          "spatial": {
+            "position": [
+              0,
+              0,
+              -1
+            ],
+            "positionValid": true,
+            "coordinateSystem": "listener-relative-x-right-y-up-z-back",
+            "provenance": "raw",
+            "units": "source-unverified",
+            "rendererTransform": "normalize-x-negz-y",
+            "rendererPosition": [
+              0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 510.0,
+            "meanSquare": 0.2125,
+            "samplePeak": 0.5,
+            "rmsDbfs": -6.7264106561366965,
+            "peakDbfs": -6.020599913279624,
+            "silent": false,
+            "overFullScale": false
+          },
+          "activeDurationUs": 50000,
+          "applicationName": null,
+          "sourceCategory": null
+        }
+      ],
+      "channels": []
+    },
+    "render-ready": {
+      "quality": "live",
+      "coverage": {
+        "expectedSamples": 2400,
+        "validSamples": 2400,
+        "ratio": 1.0
+      },
+      "droppedBlocks": 0,
+      "snapshotComplete": true,
+      "gainMode": "not-applicable",
+      "objects": [],
+      "channels": [
+        {
+          "channelId": "FL",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 1200.0000000000002,
+            "meanSquare": 0.5000000000000001,
+            "samplePeak": 1.0,
+            "rmsDbfs": -3.0102999566398108,
+            "peakDbfs": 0.0,
+            "silent": false,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        },
+        {
+          "channelId": "FR",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 0.0,
+            "meanSquare": 0.0,
+            "samplePeak": 0.0,
+            "rmsDbfs": null,
+            "peakDbfs": null,
+            "silent": true,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        },
+        {
+          "channelId": "C",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 0.0,
+            "meanSquare": 0.0,
+            "samplePeak": 0.0,
+            "rmsDbfs": null,
+            "peakDbfs": null,
+            "silent": true,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        },
+        {
+          "channelId": "LFE",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 0.0,
+            "meanSquare": 0.0,
+            "samplePeak": 0.0,
+            "rmsDbfs": null,
+            "peakDbfs": null,
+            "silent": true,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        },
+        {
+          "channelId": "SL",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 0.0,
+            "meanSquare": 0.0,
+            "samplePeak": 0.0,
+            "rmsDbfs": null,
+            "peakDbfs": null,
+            "silent": true,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        },
+        {
+          "channelId": "SR",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 0.0,
+            "meanSquare": 0.0,
+            "samplePeak": 0.0,
+            "rmsDbfs": null,
+            "peakDbfs": null,
+            "silent": true,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        },
+        {
+          "channelId": "BL",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 0.0,
+            "meanSquare": 0.0,
+            "samplePeak": 0.0,
+            "rmsDbfs": null,
+            "peakDbfs": null,
+            "silent": true,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        },
+        {
+          "channelId": "BR",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 0.0,
+            "meanSquare": 0.0,
+            "samplePeak": 0.0,
+            "rmsDbfs": null,
+            "peakDbfs": null,
+            "silent": true,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        },
+        {
+          "channelId": "TFL",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 0.0,
+            "meanSquare": 0.0,
+            "samplePeak": 0.0,
+            "rmsDbfs": null,
+            "peakDbfs": null,
+            "silent": true,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        },
+        {
+          "channelId": "TFR",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 0.0,
+            "meanSquare": 0.0,
+            "samplePeak": 0.0,
+            "rmsDbfs": null,
+            "peakDbfs": null,
+            "silent": true,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        },
+        {
+          "channelId": "TBL",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 0.0,
+            "meanSquare": 0.0,
+            "samplePeak": 0.0,
+            "rmsDbfs": null,
+            "peakDbfs": null,
+            "silent": true,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        },
+        {
+          "channelId": "TBR",
+          "band": "all",
+          "meter": {
+            "sampleCount": 2400,
+            "sumSquares": 0.0,
+            "meanSquare": 0.0,
+            "samplePeak": 0.0,
+            "rmsDbfs": null,
+            "peakDbfs": null,
+            "silent": true,
+            "overFullScale": false
+          },
+          "validDurationUs": 50000
+        }
+      ]
+    }
+  },
+  "events": []
+}

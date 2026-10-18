@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "0.1.0",
+  "messageType": "subscribe",
+  "routeId": "fixture-route",
+  "mode": "both",
+  "publishRateHz": 20,
+  "bands": [
+    "all"
+  ]
+}

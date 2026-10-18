@@ -12,4 +12,6 @@ try {
  & ./tools/native-receiver/Build.ps1
  & ./tools/native-receiver/Build.ps1 -TargetDirectory build/native-receiver-scheduler
  & ./tools/roar-bridge/Build.ps1 -LlvmBin $env:NSP_LLVM_BIN
+ & ./tools/native-receiver/Build.ps1 -TargetDirectory build/native-receiver-routing
+ & ./tools/roar-bridge/Build.ps1 -LlvmBin $env:NSP_LLVM_BIN -TargetDirectory build/telemetry-objects
 } finally { Pop-Location }

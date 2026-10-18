@@ -1,0 +1,17 @@
+{
+  "name": "nsp-visualization-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test-data.js",
+    "test:navigation": "node test-navigation.js",
+    "test:registration": "node test-registration.js",
+    "test:navigation-core": "node test-navigation-core.js",
+    "test:navigation-forecast": "node test-navigation-forecast.js",
+    "test:spatial-pattern": "node test-spatial-pattern.js",
+    "test:visual-space": "node test-visual-space.js",
+    "test:weak-field": "node test-weak-field.js",
+    "test:cloud-field": "node test-cloud-field.js",
+    "test:voice-visual": "node test-voice-visual.js"
+  }
+}

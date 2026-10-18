@@ -14,3 +14,7 @@ ROAR's copyright license expressly excludes a patent grant; its separate PATENTS
 Cargo.lock files pin direct and transitive Rust dependencies. Their own licenses remain applicable. Before redistributing compiled binaries, collect and include the notices for the resolved Cargo dependency graph and the chosen LLVM/MinGW runtime, including libunwind.dll when bundled. This branch distributes source, lockfiles, patches and notices, without dependency sources or compiled binaries.
 
 Windows binaries, proprietary audio codecs, game audio, Wwise projects and ASIO SDK materials are not distributed here.
+
+## Frontend listener model
+
+The small listener model and derived wire geometry originate from Kenney Furniture Kit under CC0 1.0. See tools/visualization-frontend/assets/README.md for provenance and the original model hash. They retain their upstream dedication.

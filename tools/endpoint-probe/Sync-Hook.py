@@ -29,6 +29,11 @@ def main():
     capture_override=sys.argv[sys.argv.index('--capture-worker-dll')+1] if '--capture-worker-dll' in sys.argv else None
     if capture_override and not native_hook:raise ValueError('Capture DLL override requires native hook')
     rust_receiver='--rust-receiver' in sys.argv
+    multi_stream='--multi-stream' in sys.argv
+    if multi_stream and rust_receiver:raise ValueError('Select multi-stream dispatcher or single-stream Rust receiver')
+    dispatcher=None
+    prefer_dynamic='--prefer-dynamic-streams' in sys.argv
+    if prefer_dynamic and not rust_receiver:raise ValueError('Priority filtering requires Rust receiver')
     native_capture='--native-capture' in sys.argv or native_hook
     if native_capture and not native_send:raise ValueError('Native capture requires native send')
     ready = threading.Event()
@@ -105,6 +110,13 @@ def main():
     report['configuration']['captureImplementation']='minhook' if native_hook else ('pure-c' if native_capture else 'js-hook')
     report['configuration'].update(capturePack=('pure-c' if native_capture else pack_mode),eventDrain=event_drain,stageTiming=stage_timing,compactDescriptor=compact_descriptor,tailTrace=tail_trace,tailSourceTrace=tail_source,nativeWakeTrace=tail_source and native_wake_trace)
     priority=None
+    telemetry_service=None;telemetry_pipeline=None;telemetry_threads=[];telemetry_stop=threading.Event()
+    def drain_telemetry(pipeline):
+        # Keep final draining on the selected route too: never concatenate
+        # different renderer epochs into one telemetry session during shutdown.
+        return telemetry_service.pump(pipeline) if pipeline is telemetry_pipeline else 0
+    telemetry_enabled='--telemetry-service' in sys.argv
+    if telemetry_enabled and not (rust_receiver or multi_stream):raise ValueError('Telemetry service requires the prewarmed Rust receiver path')
     priority_name=sys.argv[sys.argv.index("--host-priority")+1] if "--host-priority" in sys.argv else "Normal"
     if priority_name not in ("Normal","AboveNormal","High"):raise ValueError("Unsupported host priority")
     consumer=None
@@ -150,11 +162,55 @@ def main():
                 spec=importlib.util.spec_from_file_location('stream_consumer',ROOT/'tools/endpoint-probe/Stream-Consumer.py')
                 module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
                 if not split_streams:consumer=module.StreamConsumer(out,capacity=consumer_capacity,render_mode=render_mode)
-        if prewarm_frames is not None:
+        if multi_stream:
+            if not (native_hook and native_send and native_enabled and split_streams):raise ValueError('Multi-stream requires native capture/send and split native renderer')
+            spec=importlib.util.spec_from_file_location('multi_stream',ROOT/'tools/endpoint-probe/Multi-Stream.py')
+            multi=importlib.util.module_from_spec(spec);spec.loader.exec_module(multi)
+            dispatcher=multi.Dispatcher(out,native_dll,capacity=consumer_capacity,mode=native_mode,gain=native_gain,telemetry=telemetry_enabled)
+            report['configuration']['receiver']='host-multi-stream-dispatch; independent Rust renderers'
+        if prewarm_frames is not None and not multi_stream:
             begin=time.perf_counter_ns()
             prepared_out=out/'stream-0';prepared_out.mkdir()
             prepared=native_module.NativePipeline(prepared_out,native_dll,capacity=consumer_capacity,mode=native_mode,gain=native_gain)
             prepared.prepare(prewarm_frames)
+            if telemetry_enabled:
+                sys.path.insert(0,str(ROOT/'tools/telemetry'))
+                from client import TelemetryService
+                telemetry_service=TelemetryService()
+                telemetry_service.attach(prepared);telemetry_pipeline=prepared
+                (out/'telemetry-service.json').write_text(json.dumps(telemetry_service.info,indent=2),encoding='utf-8')
+                report['telemetryService']=telemetry_service.info
+                def bridge():
+                    nonlocal telemetry_pipeline
+                    while not telemetry_stop.is_set():
+                        try:
+                            selected=native_receiver.telemetry_pipeline if native_receiver is not None else None
+                            if selected is not None and selected is not telemetry_pipeline:
+                                # Attach only on the control thread. The receiver
+                                # publishes its selected dynamic route atomically.
+                                telemetry_service.attach(selected)
+                                telemetry_pipeline.set_telemetry(False)
+                                telemetry_pipeline=selected
+                                report['telemetrySelectedDirectory']=str(selected.out)
+                            telemetry_service.pump(telemetry_pipeline)
+                        except Exception as exc:
+                            report['telemetryBridgeError']=repr(exc);break
+                        telemetry_stop.wait(.005)
+                def record_telemetry():
+                    last=None
+                    with (out/'telemetry-snapshots.jsonl').open('x',encoding='utf-8') as snapshots:
+                        while not telemetry_stop.is_set():
+                            try:
+                                frame=telemetry_service.query('snapshot')
+                                if frame is not None:
+                                    ident=(frame['streamEpoch'],frame['telemetrySeq'])
+                                    if ident!=last:snapshots.write(json.dumps(frame,separators=(',',':'))+'\n');snapshots.flush();last=ident
+                            except Exception as exc:
+                                report['telemetryRecordError']=repr(exc);break
+                            telemetry_stop.wait(.1)
+                for task in (bridge,record_telemetry):
+                    thread=threading.Thread(target=task,name='telemetry-control-'+task.__name__,daemon=True)
+                    thread.start();telemetry_threads.append(thread)
             report['nativePrewarm']={'frames':prewarm_frames,'durationMs':(time.perf_counter_ns()-begin)/1e6,'scope':'First stream only, before attaching; frame mismatch fails closed'}
         if not native_hook:session = frida.attach(pid)
         def message(msg, data):
@@ -191,7 +247,11 @@ def main():
                             if recorder:recorder.submit(r,data)
                             recorder_end=time.perf_counter_ns() if tail else 0
                             target=consumer
-                            if split_streams:
+                            if multi_stream:
+                                target=dispatcher.get(r)
+                                consumers[target.pipeline.out.name]=target
+                                report['streamDirectories']={name:s.pipeline.out.name for name,s in consumers.items()}
+                            elif split_streams:
                                 block=r['block']
                                 if block not in consumers:
                                     if len(consumers)>=16:raise RuntimeError('Too many distinct streams')
@@ -246,7 +306,14 @@ def main():
             spec=importlib.util.spec_from_file_location('native_send',ROOT/'tools/endpoint-probe'/('Native-Receiver.py' if rust_receiver else 'Native-Send.py'))
             transport=importlib.util.module_from_spec(spec);spec.loader.exec_module(transport)
             if rust_receiver:
-                native_receiver=transport.Receiver(prepared,target_pid=pid,timing=stage_timing,mmcss='--receiver-mmcss' in sys.argv,full_timing='--full-timing' in sys.argv)
+                priority_pool=None
+                if prefer_dynamic:
+                    priority_pool=[]
+                    for index in range(1,4):
+                        directory=out/('stream-'+str(index));directory.mkdir()
+                        target=native_module.NativePipeline(directory,native_dll,capacity=min(consumer_capacity,8),mode=native_mode,gain=native_gain);target.prepare(prewarm_frames)
+                        priority_pool.append(target);consumers['priority-'+str(index)]=target
+                native_receiver=transport.Receiver(prepared,priority_pipelines=priority_pool,target_pid=pid,timing=stage_timing,mmcss='--receiver-mmcss' in sys.argv,full_timing='--full-timing' in sys.argv)
                 consumers['native-receiver']=prepared;prepared=None
                 report['configuration']['receiver']='rust-shared-memory-borrow'
                 report['configuration']['nativeReceiverDllSha256']=hashlib.sha256(native_receiver.receiver_dll_path.read_bytes()).hexdigest()
@@ -315,9 +382,6 @@ def main():
         if session:
             try: session.detach(); report['sessionDetached'] = True
             except Exception as exc: report['detachError'] = repr(exc)
-        if prepared is not None:
-            try:report['unusedNativePrewarm']=prepared.finish()
-            except Exception as exc:report['prewarmFinishError']=repr(exc)
         if native_receiver is not None:
             try:report['nativeTransport']=native_receiver.finish()
             except Exception as exc:report['nativeTransportError']=repr(exc)
@@ -335,13 +399,23 @@ def main():
                 _retained_native_resources.append((native_receiver,list(consumers.values())))
                 consumers.clear()
         if recorder:report['archive']=recorder.finish()
+        if telemetry_service is not None:
+            telemetry_stop.set()
+            for thread in telemetry_threads:thread.join(3)
+            if any(thread.is_alive() for thread in telemetry_threads):
+                report['telemetryThreadStopError']='Control thread still running; retain pipeline resources'
+                _retained_native_resources.append((telemetry_service,list(consumers.values()),prepared))
+                consumers.clear();prepared=None
+        if prepared is not None:
+            try:report['unusedNativePrewarm']=prepared.finish(tap_drain=drain_telemetry if telemetry_service is not None else None)
+            except Exception as exc:report['prewarmFinishError']=repr(exc)
         if consumer:
             try:report['streamSummary']=consumer.finish()
             except Exception as exc:report['consumerFinishError']=repr(exc)
         if split_streams:
             summaries={}
             for block,target in consumers.items():
-                try:summaries[block]=target.finish()
+                try:summaries[block]=target.finish(tap_drain=drain_telemetry if telemetry_service is not None else None)
                 except Exception as exc:report.setdefault('consumerFinishErrors',[]).append(repr(exc))
             report['streamSummaries']=summaries
             report['streamSummary']={'passed':bool(summaries) and all(s['passed'] for s in summaries.values()) and not report.get('consumerFinishErrors')}
@@ -354,6 +428,16 @@ def main():
         if priority:
             try:report['hostPriorityRestore']=priority.restore()
             except Exception as exc:report['priorityRestoreError']=repr(exc)
+        if telemetry_service is not None and not report.get('telemetryThreadStopError'):
+            try:
+                time.sleep(.2)
+                summary={'status':telemetry_service.query('status'),'snapshot':telemetry_service.query('snapshot'),
+                    'history600':telemetry_service.query('history600'),'history3600':telemetry_service.query('history3600'),
+                    'bridgeForwardedOutputBlocks':telemetry_service.forwarded,'bridgeSendErrors':telemetry_service.dropped}
+                (out/'telemetry-summary.json').write_text(json.dumps(summary,indent=2),encoding='utf-8')
+                report['telemetryFinal']=summary['status']
+            except Exception as exc:report['telemetryFinishError']=repr(exc)
+            finally:telemetry_service.close()
         if timings and not rust_receiver:report['stageTiming']=timings.report()
         if tail:report['tailTrace']=tail.finish()
         with lock: (out/'observer.json').write_text(json.dumps(report, indent=2), encoding='utf-8')

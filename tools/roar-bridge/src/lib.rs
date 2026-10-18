@@ -5,6 +5,7 @@ use std::{
     slice,
 };
 mod packet;
+mod raw_tap;
 
 struct Bridge {
     rdr: RoarRenderer,

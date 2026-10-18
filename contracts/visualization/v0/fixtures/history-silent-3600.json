@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "0.1.0",
+  "messageType": "history",
+  "dataOrigin": "simulated",
+  "routeId": "fixture-route",
+  "sessionId": "fixture-session",
+  "streamEpoch": 0,
+  "layoutRevision": "ideal714-v1",
+  "meterRevision": "linear-v1-gain-ignored",
+  "tap": "render-ready",
+  "sampleRate": 48000,
+  "band": "all",
+  "requestedWindowSeconds": 3600,
+  "requestedRangeUs": {
+    "start": 0,
+    "endExclusive": 3600000000
+  },
+  "actualRangeUs": {
+    "start": 0,
+    "endExclusive": 3600000000
+  },
+  "bucketWidthUs": 1000000,
+  "boundaryErrorUs": 1000000,
+  "coverage": {
+    "expectedSamples": 172800000,
+    "validSamples": 172800000,
+    "ratio": 1.0
+  },
+  "channels": [
+    {
+      "channelId": "FL",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    },
+    {
+      "channelId": "FR",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    },
+    {
+      "channelId": "C",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    },
+    {
+      "channelId": "LFE",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    },
+    {
+      "channelId": "SL",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    },
+    {
+      "channelId": "SR",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    },
+    {
+      "channelId": "BL",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    },
+    {
+      "channelId": "BR",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    },
+    {
+      "channelId": "TFL",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    },
+    {
+      "channelId": "TFR",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    },
+    {
+      "channelId": "TBL",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    },
+    {
+      "channelId": "TBR",
+      "sumSquares": 0,
+      "validSamples": 172800000,
+      "samplePeak": 0,
+      "meanSquare": 0.0,
+      "energyIntegral": 0.0,
+      "contribution": 0
+    }
+  ]
+}

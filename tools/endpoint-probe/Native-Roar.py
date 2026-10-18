@@ -45,6 +45,26 @@ class NativePipeline:
         handle=self.lib.dll.nsp_pipeline_create(frames,self.capacity,self.mode=='grouped',self.gain=='apply',path)
         if not handle:raise RuntimeError('Native pipeline create failed')
         self.frames=frames;self.handle=handle
+    def set_telemetry(self,enabled):
+        """Control caller only, after prepare; requires a telemetry-capable DLL."""
+        if type(enabled) is not bool:raise TypeError('enabled must be bool')
+        if self.handle is None or self.summary is not None:raise RuntimeError('Pipeline not running')
+        fn=self.lib.dll.nsp_pipeline_telemetry_enable
+        fn.argtypes=[C.c_void_p,C.c_uint32];fn.restype=C.c_int
+        if fn(self.handle,int(enabled)):raise RuntimeError('Telemetry unsupported or failed')
+    def telemetry(self):
+        """Native diagnostic status; isolated-tap builds do not meter samples."""
+        if self.handle is None or self.summary is not None:raise RuntimeError('Pipeline not running')
+        fn=self.lib.dll.nsp_pipeline_telemetry_read
+        fn.argtypes=[C.c_void_p,C.c_void_p,C.c_size_t];fn.restype=C.c_size_t
+        needed=fn(self.handle,None,0)
+        for _ in range(8):
+            if not 0<needed<1024*1024:raise RuntimeError('Invalid telemetry payload size')
+            buf=C.create_string_buffer(needed)
+            size=fn(self.handle,buf,len(buf))
+            if 0<size<=len(buf):return json.loads(buf.value)
+            needed=size
+        raise RuntimeError('Telemetry payload changed during read; retry')
     def submit(self,record,data):
         if self.summary is not None or self.errors:raise RuntimeError('Native pipeline stopped or failed')
         try:self._submit(record,data)
@@ -58,7 +78,7 @@ class NativePipeline:
         if status:raise RuntimeError(f'Native submit failed: {status}')
         if self.first_seq is None:self.first_seq=record['sequence']
         self.last_seq=record['sequence']
-    def finish(self):
+    def finish(self,tap_drain=None):
         if self.summary is not None:return self.summary
         result={'passed':False,'enqueued':0,'consumed':0,'error':'No native packets','threadStopped':True}
         if self.handle:
@@ -66,7 +86,13 @@ class NativePipeline:
                 needed=self.lib.dll.nsp_pipeline_finish(self.handle,None,0)
                 if not 0<needed<1024*1024:raise RuntimeError('Invalid native report')
                 buf=C.create_string_buffer(needed);self.lib.dll.nsp_pipeline_finish(self.handle,buf,len(buf));result=json.loads(buf.value)
+                if tap_drain is not None:
+                    try:result['telemetryFinalDrain']=tap_drain(self)
+                    except Exception as exc:result['telemetryFinalDrainError']=repr(exc)
             finally:self.lib.dll.nsp_pipeline_destroy(self.handle);self.handle=None
         result.update(controlErrors=self.errors,nativeMode=self.mode,gainPolicy=self.gain,firstSequence=self.first_seq,lastSequence=self.last_seq)
+        if getattr(self,'allow_idle',False) and result.get('enqueued')==0:
+            result['idlePrepared']=True
+            result['passed']=result.get('error') is None and result.get('threadStopped') is True and not result.get('queueDropped',0)
         result['passed']=result['passed'] and not self.errors
         self.summary=result;(self.out/'native-summary.json').write_text(json.dumps(result,indent=2),encoding='utf8');return result

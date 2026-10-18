@@ -1,5 +1,6 @@
 //! Owned native packet consumption; the caller remains responsible for stream routing.
 use aom_roar::*;
+use crate::raw_tap as telemetry;
 use std::{
     ffi::{CStr, c_char, c_void},
     fs::File,
@@ -136,6 +137,9 @@ impl Engine {
         })
     }
     fn process(&mut self, seq: u64, count: usize, data: &[u8]) -> Result<&[f32], String> {
+        self.process_tapped(seq, count, data, None)
+    }
+    fn process_tapped(&mut self, seq: u64, count: usize, data: &[u8], object_tap: Option<&mut telemetry::Producer>) -> Result<&[f32], String> {
         let begin = Instant::now();
         if count == 0 || count > SLOTS || data.len() != count * (32 + self.n * 4) {
             return err("Invalid packet length/count");
@@ -390,6 +394,29 @@ impl Engine {
         if !self.output.iter().all(|v| v.is_finite()) {
             return err("Nonfinite rendered output");
         }
+        if let Some(tap) = object_tap.filter(|tap| tap.active()) {
+            tap.publish_custom(|epoch, wire| {
+                telemetry::header(wire, b"NSPO", count as u16, epoch, seq);
+                for slot in 0..count {
+                    let s = self.states[slot]; let at = 32 + slot * (48 + 480 * 4);
+                    let meta = &mut wire[at..at+48];
+                    for (index, value) in [slot as u32, s.ident, s.typ, props[slot].2].iter().enumerate() {
+                        meta[index*4..index*4+4].copy_from_slice(&value.to_le_bytes());
+                    }
+                    meta[16..24].copy_from_slice(&s.generation.to_le_bytes());
+                    for (i,value) in s.position.unwrap_or([0.;3]).iter().enumerate() {
+                        meta[24+i*4..28+i*4].copy_from_slice(&(*value as f32).to_le_bytes());
+                    }
+                    meta[36..40].copy_from_slice(&(s.position.is_some() as u32).to_le_bytes());
+                    meta[40..44].copy_from_slice(&(props[slot].4 as f32).to_le_bytes());
+                    meta[44..48].copy_from_slice(&(self.apply_gain as u32).to_le_bytes());
+                    let pcm = &self.pcm[slot*480..(slot+1)*480];
+                    let bytes = unsafe { slice::from_raw_parts(pcm.as_ptr() as *const u8, 480*4) };
+                    wire[at+48..at+48+480*4].copy_from_slice(bytes);
+                }
+                32 + count * (48 + 480 * 4)
+            });
+        }
         for (slot, s) in self.states.iter_mut().enumerate() {
             if s.present && (slot >= count || retire[slot]) {
                 s.present = false;
@@ -531,6 +558,8 @@ struct Stats {
     dsp: Timing,
     queue: Timing,
     capture_render: Timing,
+    telemetry_publish: Timing,
+    capture_publish: Timing,
     writer: WriterStats,
     mmcss_requested: bool,
     mmcss_registered: bool,
@@ -555,12 +584,16 @@ impl Stats {
             dsp: Timing::new(),
             queue: Timing::new(),
             capture_render: Timing::new(),
+            telemetry_publish: Timing::new(),
+            capture_publish: Timing::new(),
             writer: WriterStats::new(),
             mmcss_requested: false, mmcss_registered: false, mmcss_priority: false, mmcss_reverted: false, thread_id: 0,
         }
     }
 }
 struct Pipeline {
+    telemetry: Arc<telemetry::Control>,
+    object_telemetry: Arc<telemetry::Control>,
     tx: Option<SyncSender<Packet>>,
     free: Mutex<Receiver<Vec<u8>>>,
     free_tx: SyncSender<Vec<u8>>,
@@ -597,6 +630,11 @@ impl Pipeline {
         let failed = Arc::new(AtomicU64::new(0));
         let worker_failed = Arc::clone(&failed);
         let worker_free = free_tx.clone();
+        let telemetry = telemetry::Control::new(n == 480);
+        let mut tap = telemetry.producer();
+        let object_telemetry = telemetry::Control::objects(n == 480);
+        let mut object_tap = object_telemetry.producer();
+        if std::env::var("NSP_TELEMETRY").is_ok_and(|s| s == "1") { telemetry.enable(true); object_telemetry.enable(true); }
         let renderer_mmcss = std::env::var("NSP_RENDER_MMCSS").map(|s| s == "1").unwrap_or(false);
         let writer = thread::spawn(move || -> Result<WriterStats, String> {
             let mut output = BufWriter::with_capacity(1024 * 1024, output);
@@ -649,7 +687,7 @@ impl Pipeline {
                     let mut out = out_free_rx
                         .try_recv()
                         .map_err(|_| "Writer buffer pool exhausted".to_string())?;
-                    let pcm = engine.process(packet.seq, packet.count, &packet.data)?;
+                    let pcm = engine.process_tapped(packet.seq, packet.count, &packet.data, Some(&mut object_tap))?;
                     for i in 0..n as usize {
                         for c in 0..12 {
                             out[i * 12 + c] = pcm[c * n as usize + i];
@@ -657,6 +695,14 @@ impl Pipeline {
                     }
                     let render_ns = if packet.capture_ns != 0 { qpc_ns() } else { 0 };
                     if packet.capture_ns != 0 { stats.capture_render.add(render_ns.saturating_sub(packet.capture_ns)); }
+                    // PCM is still borrowed from Engine here. Copy into an independent
+                    // bounded pool; telemetry failure must never fail the audio submit.
+                    if tap.active() {
+                        let publish_begin = Instant::now();
+                        tap.publish(packet.seq, pcm);
+                        stats.telemetry_publish.add(publish_begin.elapsed().as_nanos() as u64);
+                        if packet.capture_ns != 0 { stats.capture_publish.add(qpc_ns().saturating_sub(packet.capture_ns)); }
+                    }
                     out_tx
                         .try_send(OutputPacket { data: out, sequence: packet.seq, capture_ns: packet.capture_ns, render_ns, queued: Instant::now() })
                         .map_err(|_| "Writer queue full or failed".to_string())?;
@@ -692,6 +738,8 @@ impl Pipeline {
             stats
         });
         Ok(Self {
+            telemetry,
+            object_telemetry,
             tx: Some(tx),
             free: Mutex::new(free_rx),
             free_tx,
@@ -755,7 +803,50 @@ impl Pipeline {
         self.report.pop();
         self.report.push_str(&format!(",\"rendererScheduling\":{{\"threadId\":{},\"requested\":{},\"registered\":{},\"prioritySet\":{},\"reverted\":{}}}", stats.thread_id, stats.mmcss_requested, stats.mmcss_registered, stats.mmcss_priority, stats.mmcss_reverted));
         self.report.push_str(&format!(",\"fullTiming\":{{\"captureToRenderMs\":{},\"writerQueueMs\":{},\"bufferedWriteMs\":{},\"captureToBufferedWriteMs\":{},\"finalFlushSyncMs\":{},\"tails\":[{}],\"tailOverflow\":{},\"scope\":\"QPC capture through render-ready and buffered file write return; not per-packet durable disk completion or device playback\"}}}}", stats.capture_render.json(), stats.writer.queue.json(), stats.writer.write.json(), stats.writer.capture_write.json(), stats.writer.flush_ns as f64 / 1e6, stats.writer.tails.join(","), stats.writer.overflow));
+        self.report.pop();
+        self.report.push_str(&format!(",\"telemetry\":{},\"objectTelemetry\":{},\"telemetryPublishMs\":{},\"captureThroughTelemetryMs\":{}}}", self.telemetry.json(), self.object_telemetry.json(), stats.telemetry_publish.json(), stats.capture_publish.json()));
     }
+}
+#[unsafe(no_mangle)]
+/// Control caller only; do not race finish/destroy. Returns -1 if unsupported/failed.
+pub unsafe extern "C" fn nsp_pipeline_telemetry_enable(p: *mut c_void, enabled: u32) -> i32 {
+    if p.is_null() || enabled > 1 { return -1; }
+    let p = unsafe { &*(p as *const Pipeline) };
+    if p.worker.is_none() || !(p.telemetry.enable(enabled != 0) && p.object_telemetry.enable(enabled != 0)) { -1 } else { 0 }
+}
+#[unsafe(no_mangle)]
+/// Control caller only. Returns required bytes including NUL; never truncates.
+pub unsafe extern "C" fn nsp_pipeline_telemetry_read(p: *mut c_void, out: *mut u8, len: usize) -> usize {
+    if p.is_null() { return 0; }
+    catch_unwind(AssertUnwindSafe(|| {
+        let p = unsafe { &*(p as *const Pipeline) };
+        let json = p.telemetry.json();
+        let needed = json.len() + 1;
+        if !out.is_null() && len >= needed {
+            let dest = unsafe { slice::from_raw_parts_mut(out, needed) };
+            dest[..needed - 1].copy_from_slice(json.as_bytes()); dest[needed - 1] = 0;
+        }
+        needed
+    })).unwrap_or(0)
+}
+#[unsafe(no_mangle)]
+/// Non-RT caller only, serialized with finish/destroy. No consume on size query.
+pub unsafe extern "C" fn nsp_pipeline_tap_read(p: *mut c_void, out: *mut u8, len: usize) -> usize {
+    if p.is_null() { return 0; }
+    catch_unwind(AssertUnwindSafe(|| {
+        let p = unsafe { &*(p as *const Pipeline) };
+        let dest = if out.is_null() { &mut [] } else { unsafe { slice::from_raw_parts_mut(out, len) } };
+        p.telemetry.read(dest)
+    })).unwrap_or(0)
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nsp_pipeline_object_tap_read(p: *mut c_void, out: *mut u8, len: usize) -> usize {
+    if p.is_null() { return 0; }
+    catch_unwind(AssertUnwindSafe(|| {
+        let p = unsafe { &*(p as *const Pipeline) };
+        let dest = if out.is_null() { &mut [] } else { unsafe { slice::from_raw_parts_mut(out, len) } };
+        p.object_telemetry.read(dest)
+    })).unwrap_or(0)
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nsp_pipeline_create(

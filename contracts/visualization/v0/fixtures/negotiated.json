@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "0.1.0",
+  "messageType": "negotiated",
+  "routeId": "fixture-route",
+  "mode": "both",
+  "publishRateHz": 10,
+  "bands": [
+    "all"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "0.1.0",
+  "messageType": "capabilities",
+  "dataOrigin": "simulated",
+  "routes": [
+    {
+      "routeId": "fixture-route",
+      "authority": "fixture",
+      "soundNavigation": true,
+      "soundSpectrum": true,
+      "decodedInput": true,
+      "renderReady": true,
+      "frequencyBands": false,
+      "history": true,
+      "lufs": false,
+      "truePeak": false,
+      "devicePlayback": false,
+      "control": false,
+      "maxObjects": 160,
+      "maxChannels": 12
+    }
+  ],
+  "publishRatesHz": [
+    1,
+    10,
+    20
+  ],
+  "historyWindowsSeconds": [
+    600,
+    3600
+  ]
+}

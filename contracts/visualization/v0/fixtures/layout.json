@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "0.1.0",
+  "messageType": "layout",
+  "dataOrigin": "simulated",
+  "routeId": "fixture-route",
+  "layoutRevision": "ideal714-v1",
+  "layoutId": "roar-layout714",
+  "coordinateSystem": "listener-relative-x-right-y-up-z-back",
+  "positionSource": "idealized",
+  "channels": [
+    {
+      "channelId": "FL",
+      "staticType": 2,
+      "direction": [
+        -0.49999999999999994,
+        0.0,
+        -0.8660254037844387
+      ]
+    },
+    {
+      "channelId": "FR",
+      "staticType": 4,
+      "direction": [
+        0.49999999999999994,
+        0.0,
+        -0.8660254037844387
+      ]
+    },
+    {
+      "channelId": "C",
+      "staticType": 8,
+      "direction": [
+        0.0,
+        0.0,
+        -1.0
+      ]
+    },
+    {
+      "channelId": "LFE",
+      "staticType": 16,
+      "direction": null
+    },
+    {
+      "channelId": "SL",
+      "staticType": 32,
+      "direction": [
+        -1.0,
+        0.0,
+        -6.123233995736766e-17
+      ]
+    },
+    {
+      "channelId": "SR",
+      "staticType": 64,
+      "direction": [
+        1.0,
+        0.0,
+        -6.123233995736766e-17
+      ]
+    },
+    {
+      "channelId": "BL",
+      "staticType": 128,
+      "direction": [
+        -0.49999999999999994,
+        0.0,
+        0.8660254037844387
+      ]
+    },
+    {
+      "channelId": "BR",
+      "staticType": 256,
+      "direction": [
+        0.49999999999999994,
+        0.0,
+        0.8660254037844387
+      ]
+    },
+    {
+      "channelId": "TFL",
+      "staticType": 512,
+      "direction": [
+        -0.35355339059327373,
+        0.7071067811865476,
+        -0.6123724356957946
+      ]
+    },
+    {
+      "channelId": "TFR",
+      "staticType": 1024,
+      "direction": [
+        0.35355339059327373,
+        0.7071067811865476,
+        -0.6123724356957946
+      ]
+    },
+    {
+      "channelId": "TBL",
+      "staticType": 2048,
+      "direction": [
+        -0.35355339059327373,
+        0.7071067811865476,
+        0.6123724356957946
+      ]
+    },
+    {
+      "channelId": "TBR",
+      "staticType": 4096,
+      "direction": [
+        0.35355339059327373,
+        0.7071067811865476,
+        0.6123724356957946
+      ]
+    }
+  ]
+}

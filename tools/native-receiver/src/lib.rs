@@ -19,7 +19,57 @@ fn start_error(stage: u32, code: u32) {
 pub extern "C" fn nsp_receiver_start_error() -> u64 { START_ERROR.get() }
 type Submit = unsafe extern "C" fn(*mut c_void, u64, u32, *const u8, usize) -> i32;
 type SubmitTimed = unsafe extern "C" fn(*mut c_void, u64, u32, *const u8, usize, u64) -> i32;
+#[derive(Clone, Copy)]
 enum Submission { Plain(Submit), Timed(SubmitTimed) }
+
+#[derive(Clone, Copy, Default)]
+struct Route {
+    block: Option<u64>, last: Option<u64>, first: Option<u64>, last_ns: u64,
+    ever_dynamic: bool, submitted: u64, filtered: u64, unsupported: u64,
+}
+struct PriorityRoutes {
+    pipelines: [usize; 16], count: usize, routes: [Route; 16], timeout_ns: u64,
+}
+impl PriorityRoutes {
+    fn new(pipelines: [usize; 16], count: usize, timeout_ns: u64) -> Self {
+        Self { pipelines, count, routes: [Route::default(); 16], timeout_ns }
+    }
+    // Slot zero is reserved for the first dynamic stream (the primary telemetry
+    // route). Static-only streams use the other prewarmed pipelines.
+    fn select(&mut self, d: &Descriptor, payload: &[u8], frames: u32) -> Result<(usize, bool), String> {
+        let block=validate(d,payload.len(),frames,None,None)?;
+        let mut dynamic=false;
+        let mut supported=true;
+        for property in payload[..d.count as usize*32].chunks_exact(32) {
+            if u32::from_le_bytes(property[4..8].try_into().unwrap())!=frames {
+                return Err("Property frame mismatch".into());
+            }
+            let typ=u32::from_le_bytes(property[8..12].try_into().unwrap());
+            dynamic |= typ==1;
+            supported &= typ==1 || (typ.is_power_of_two() && (2..=4096).contains(&typ));
+        }
+        let existing=self.routes[..self.count].iter().position(|r|r.block==Some(block));
+        let slot=if let Some(i)=existing { i } else {
+            (usize::from(!dynamic)..self.count).find(|&i|self.routes[i].block.is_none()).ok_or("Priority route capacity exhausted")?
+        };
+        let old=self.routes[slot];
+        if old.last.is_some_and(|last|last.checked_add(1)!=Some(d.sequence)) {
+            return Err(format!("Source sequence discontinuity in block 0x{block:x}"));
+        }
+        if old.block.is_some() && d.capture_qpc_ns<old.last_ns { return Err("Source clock moved backwards".into()); }
+        let other_dynamic=self.routes[..self.count].iter().enumerate().any(|(i,r)|
+            i!=slot && r.ever_dynamic && r.block.is_some() &&
+            d.capture_qpc_ns.saturating_sub(r.last_ns)<=self.timeout_ns);
+        let route=&mut self.routes[slot];
+        route.block=Some(block); route.first.get_or_insert(d.sequence); route.last=Some(d.sequence);
+        route.last_ns=d.capture_qpc_ns; route.ever_dynamic |= dynamic;
+        if !route.ever_dynamic && other_dynamic { route.filtered+=1; return Ok((slot,false)); }
+        // Do not feed unsupported static layouts into the fixed 7.1.4 renderer,
+        // even before a dynamic companion is discovered. Report separately.
+        if !supported { route.unsupported+=1; return Ok((slot,false)); }
+        Ok((slot,true))
+    }
+}
 #[link(name = "avrt")]
 unsafe extern "system" {
     fn AvSetMmThreadCharacteristicsW(name: *const u16, index: *mut u32) -> *mut c_void;
@@ -115,12 +165,12 @@ impl Histogram {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Trace { sequence: u64, capture_qpc_ns: u64, send_qpc_ns: u64, acquired_qpc_ns: u64, parsed_qpc_ns: u64, submitted_qpc_ns: u64 }
-struct Statistics { hist: [Histogram; 6], tails: Vec<Trace>, tails_overflow: u64, error: Option<String>, block: Option<u64>, first: Option<u64>, last: Option<u64>, thread_id: u32 }
+struct Statistics { hist: [Histogram; 6], tails: Vec<Trace>, tails_overflow: u64, error: Option<String>, block: Option<u64>, first: Option<u64>, last: Option<u64>, thread_id: u32, decision: Histogram, routes: Option<PriorityRoutes> }
 impl Statistics {
-    fn new() -> Self { Self { hist: std::array::from_fn(|_| Histogram::new()), tails: Vec::with_capacity(256), tails_overflow: 0, error: None, block: None, first: None, last: None, thread_id: 0 } }
+    fn new() -> Self { Self { hist: std::array::from_fn(|_| Histogram::new()), tails: Vec::with_capacity(256), tails_overflow: 0, error: None, block: None, first: None, last: None, thread_id: 0, decision: Histogram::new(), routes: None } }
 }
-struct Control { map: Arc<Mapping>, stopping: Arc<AtomicBool>, received: Arc<AtomicU64>, failed: Arc<AtomicBool>, worker: Option<thread::JoinHandle<Statistics>>, report: Option<Vec<u8>> }
-fn run(map: Arc<Mapping>, stopping: Arc<AtomicBool>, received: Arc<AtomicU64>, failed: Arc<AtomicBool>, pipeline: usize, submit: Submission, frames: u32, hz: u64, timing: bool, mmcss: bool, mut stats: Statistics) -> Statistics {
+struct Control { primary: Arc<AtomicI32>, map: Arc<Mapping>, stopping: Arc<AtomicBool>, received: Arc<AtomicU64>, failed: Arc<AtomicBool>, worker: Option<thread::JoinHandle<Statistics>>, report: Option<Vec<u8>> }
+fn run(primary: Arc<AtomicI32>, map: Arc<Mapping>, stopping: Arc<AtomicBool>, received: Arc<AtomicU64>, failed: Arc<AtomicBool>, pipeline: usize, submit: Submission, frames: u32, hz: u64, timing: bool, mmcss: bool, mut stats: Statistics) -> Statistics {
     stats.thread_id = unsafe { GetCurrentThreadId() };
     let mut task_index=0;
     let task_name: Vec<u16>="Pro Audio\0".encode_utf16().collect();
@@ -148,19 +198,32 @@ fn run(map: Arc<Mapping>, stopping: Arc<AtomicBool>, received: Arc<AtomicU64>, f
             if nh == 0 || nh > HEADER || nd == 0 || nd > PAYLOAD { return Err("Invalid slot bounds".into()); }
             let header = unsafe { std::slice::from_raw_parts(ptr.add(12), nh) };
             let d: Descriptor = serde_json::from_slice(header).map_err(|e| e.to_string())?;
-            let block = validate(&d, nd, frames, stats.block, stats.last)?;
+            let payload=unsafe { std::slice::from_raw_parts(ptr.add(12+HEADER),nd) };
+            let (block, target, submit_sequence, should_submit, route_slot)=if let Some(routes)=stats.routes.as_mut() {
+                let (slot,keep)=routes.select(&d,payload,frames)?;
+                (routes.routes[slot].block.unwrap(),routes.pipelines[slot],routes.routes[slot].submitted,keep,Some(slot))
+            } else { (validate(&d,nd,frames,stats.block,stats.last)?,pipeline,d.sequence,true,None) };
             let parsed = if timing { now(hz) } else { 0 };
             if timing && d.send_qpc_ns > acquired { return Err("QPC clocks not aligned".into()); }
             // Existing renderer copies synchronously to its preallocated pool.
             // Never release the slot while it can still read the borrowed pointer.
-            let rc = unsafe { match submit {
-                Submission::Plain(f) => f(pipeline as *mut _, d.sequence, d.count, ptr.add(12+HEADER), nd),
-                Submission::Timed(f) => f(pipeline as *mut _, d.sequence, d.count, ptr.add(12+HEADER), nd, d.capture_qpc_ns),
-            }};
+            let rc = if should_submit { unsafe { match submit {
+                Submission::Plain(f) => f(target as *mut _, submit_sequence, d.count, ptr.add(12+HEADER), nd),
+                Submission::Timed(f) => f(target as *mut _, submit_sequence, d.count, ptr.add(12+HEADER), nd, d.capture_qpc_ns),
+            }}} else {0};
             if rc != 0 { return Err(format!("Native submit failed: {rc}")); }
+            if should_submit && let Some(slot)=route_slot {
+                let routes=stats.routes.as_mut().unwrap();
+                routes.routes[slot].submitted+=1;
+                let old=primary.load(Ordering::Relaxed);
+                if old<0 && routes.routes[slot].ever_dynamic {
+                    primary.store(slot as i32,Ordering::Release);
+                }
+            }
             let end = if timing { now(hz) } else { 0 };
             stats.block = Some(block); stats.first.get_or_insert(d.sequence); stats.last = Some(d.sequence);
-            if timing {
+            if timing && route_slot.is_some() { stats.decision.add(parsed-acquired); }
+            if timing && should_submit {
                 for (h, ns) in stats.hist.iter_mut().zip([d.send_qpc_ns-d.copy_done_qpc_ns, acquired-d.send_qpc_ns, parsed-acquired, end-parsed, end-d.capture_qpc_ns, d.copy_done_qpc_ns-d.capture_qpc_ns]) { h.add(ns); }
                 if end-d.capture_qpc_ns >= 5_000_000 {
                     if stats.tails.len() < stats.tails.capacity() { stats.tails.push(Trace { sequence: d.sequence, capture_qpc_ns: d.capture_qpc_ns, send_qpc_ns: d.send_qpc_ns, acquired_qpc_ns: acquired, parsed_qpc_ns: parsed, submitted_qpc_ns: end }); }
@@ -179,26 +242,45 @@ fn run(map: Arc<Mapping>, stopping: Arc<AtomicBool>, received: Arc<AtomicU64>, f
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nsp_receiver_start(name: *const u16, event: *const u16, pipeline: *mut c_void, submit: Option<Submit>, frames: u32, timing: u32) -> *mut c_void {
-    unsafe { start_impl(name, event, pipeline, submit.map(Submission::Plain), frames, timing) }
+    unsafe { start_impl(name, event, pipeline, submit.map(Submission::Plain), frames, timing, None) }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nsp_receiver_start_full(name: *const u16, event: *const u16, pipeline: *mut c_void, submit: Option<SubmitTimed>, frames: u32, timing: u32) -> *mut c_void {
-    unsafe { start_impl(name, event, pipeline, submit.map(Submission::Timed), frames, timing | 1) }
+    unsafe { start_impl(name, event, pipeline, submit.map(Submission::Timed), frames, timing | 1, None) }
 }
-unsafe fn start_impl(name: *const u16, event: *const u16, pipeline: *mut c_void, submit: Option<Submission>, frames: u32, timing: u32) -> *mut c_void {
+unsafe fn start_impl(name: *const u16, event: *const u16, pipeline: *mut c_void, submit: Option<Submission>, frames: u32, timing: u32, routes: Option<PriorityRoutes>) -> *mut c_void {
     START_ERROR.set(0);
     if name.is_null() || event.is_null() || pipeline.is_null() || submit.is_none() || !(1..=4096).contains(&frames) { start_error(1, 0); return std::ptr::null_mut(); }
-    std::panic::catch_unwind(|| {
+    std::panic::catch_unwind(move || {
         let map = Arc::new(unsafe { Mapping::open(name, event) }?);
         let stopping = Arc::new(AtomicBool::new(false)); let received = Arc::new(AtomicU64::new(0)); let failed = Arc::new(AtomicBool::new(false));
         let mut hz = 0; if unsafe { QueryPerformanceFrequency(&mut hz) } == 0 || hz <= 0 { start_error(6, unsafe { GetLastError() }); return None; }
-        let stats = Statistics::new(); // Allocate/touch statistics on control thread.
+        let mut stats = Statistics::new(); // Allocate/touch statistics on control thread.
+        stats.routes=routes;
+        let primary=Arc::new(AtomicI32::new(-1)); let primary_worker=primary.clone();
         let (m,s,r,f) = (map.clone(),stopping.clone(),received.clone(),failed.clone());
         let pipeline = pipeline as usize;
-        let worker = thread::Builder::new().name("nsp-rust-receiver".into()).spawn(move || run(m,s,r,f,pipeline,submit.unwrap(),frames,hz as u64,timing & 1 != 0,timing & 2 != 0,stats)).map_err(|e| start_error(7, e.raw_os_error().unwrap_or(0) as u32)).ok()?;
-        Some(Box::into_raw(Box::new(Control { map, stopping, received, failed, worker: Some(worker), report: None })) as *mut c_void)
+        let worker = thread::Builder::new().name("nsp-rust-receiver".into()).spawn(move || run(primary_worker,m,s,r,f,pipeline,submit.unwrap(),frames,hz as u64,timing & 1 != 0,timing & 2 != 0,stats)).map_err(|e| start_error(7, e.raw_os_error().unwrap_or(0) as u32)).ok()?;
+        Some(Box::into_raw(Box::new(Control { primary, map, stopping, received, failed, worker: Some(worker), report: None })) as *mut c_void)
     }).map_err(|_| start_error(8, 0)).ok().flatten().unwrap_or(std::ptr::null_mut())
 }
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nsp_receiver_start_priority(name: *const u16, event: *const u16, pipelines: *const *mut c_void, count: u32, submit: Option<Submit>, frames: u32, timing: u32, timeout_ms: u32) -> *mut c_void {
+    unsafe {start_priority_impl(name,event,pipelines,count,submit.map(Submission::Plain),frames,timing,timeout_ms)}
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nsp_receiver_start_priority_full(name: *const u16, event: *const u16, pipelines: *const *mut c_void, count: u32, submit: Option<SubmitTimed>, frames: u32, timing: u32, timeout_ms: u32) -> *mut c_void {
+    unsafe {start_priority_impl(name,event,pipelines,count,submit.map(Submission::Timed),frames,timing | 1,timeout_ms)}
+}
+unsafe fn start_priority_impl(name: *const u16, event: *const u16, pipelines: *const *mut c_void, count: u32, submit: Option<Submission>, frames: u32, timing: u32, timeout_ms: u32) -> *mut c_void {
+    if pipelines.is_null() || !(2..=16).contains(&count) || !(10..=5000).contains(&timeout_ms) { start_error(1,0); return std::ptr::null_mut(); }
+    let handles=unsafe {std::slice::from_raw_parts(pipelines,count as usize)};
+    if handles.iter().any(|p|p.is_null()) || handles.iter().enumerate().any(|(i,p)|handles[..i].contains(p)) {start_error(1,0);return std::ptr::null_mut();}
+    let mut pool=[0usize;16];for (i,p) in handles.iter().enumerate(){pool[i]=*p as usize;}
+    unsafe {start_impl(name,event,handles[0],submit,frames,timing,Some(PriorityRoutes::new(pool,count as usize,timeout_ms as u64*1_000_000)))}
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nsp_receiver_primary_pipeline(p: *const c_void) -> i32 { if p.is_null() { return -1; } unsafe { &*(p as *const Control) }.primary.load(Ordering::Acquire) }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nsp_receiver_received(p: *const c_void) -> u64 { if p.is_null() { return 0; } unsafe { &*(p as *const Control) }.received.load(Ordering::Acquire) }
 #[unsafe(no_mangle)]
@@ -218,7 +300,9 @@ pub unsafe extern "C" fn nsp_receiver_finish(p: *mut c_void, out: *mut u8, len: 
             let Ok(stats) = c.worker.take().unwrap().join() else { return 0; };
             let mut stages = serde_json::Map::new();
             for (name,h) in ["ownedCopyToSend","sendToAcquire","descriptorParse","nativeSubmit","captureToSubmit","captureToCopy"].iter().zip(&stats.hist) { stages.insert((*name).into(),h.json()); }
-            c.report = Some(serde_json::to_vec(&serde_json::json!({"backend":"rust-shared-memory-borrow","received":c.received.load(Ordering::Acquire),"passed":stats.error.is_none(),"errors":stats.error.iter().collect::<Vec<_>>(),"threadStopped":true,"threadId":stats.thread_id,"block":stats.block.map(|b|format!("0x{b:x}")),"firstSequence":stats.first,"lastSequence":stats.last,"timing":{"units":"ms","stages":stages},"tails":stats.tails,"tailOverflow":stats.tails_overflow,"receiverPcmCopies":0})).unwrap());
+            if stats.routes.is_some() {stages.insert("priorityDecision".into(),stats.decision.json());}
+            let routes=stats.routes.as_ref().map(|pool|pool.routes[..pool.count].iter().enumerate().filter(|(_,r)|r.block.is_some()).map(|(i,r)|serde_json::json!({"pipelineIndex":i,"block":r.block.map(|b|format!("0x{b:x}")),"firstSourceSequence":r.first,"lastSourceSequence":r.last,"everDynamic":r.ever_dynamic,"submittedBlocks":r.submitted,"filteredBlocks":r.filtered,"unsupportedBlocks":r.unsupported})).collect::<Vec<_>>());
+            c.report = Some(serde_json::to_vec(&serde_json::json!({"backend":"rust-shared-memory-borrow","received":c.received.load(Ordering::Acquire),"passed":stats.error.is_none(),"errors":stats.error.iter().collect::<Vec<_>>(),"threadStopped":true,"threadId":stats.thread_id,"block":stats.block.map(|b|format!("0x{b:x}")),"firstSequence":stats.first,"lastSequence":stats.last,"timing":{"units":"ms","stages":stages},"tails":stats.tails,"tailOverflow":stats.tails_overflow,"receiverPcmCopies":0,"streams":routes,"policy":if stats.routes.is_some(){"prefer-observed-dynamic"}else{"strict-single-stream"}})).unwrap());
         }
         let bytes = c.report.as_ref().unwrap();
         if !out.is_null() && len > bytes.len() { unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(),out,bytes.len()); *out.add(bytes.len())=0; } }
