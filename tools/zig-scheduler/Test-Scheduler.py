@@ -45,6 +45,33 @@ def cli(home, *args, **kwargs):
 
 
 class SchedulerTests(unittest.TestCase):
+    def test_default_configuration_migration_preserves_rules_and_snapshots(self):
+        import configparser
+        with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='zig-default-') as temp:
+            ini = Path(temp) / 'fsa.ini'
+            original = '[Manager]\nLanguage=zh\n[Rule:Keep]\nEnabled=1\nProfile=7.1\n[NSP]\nPython=' + sys.executable + '\nControlScript=legacy.py\n[Snapshot:Keep]\nData=untouched\n'
+            ini.write_text(original, encoding='utf-16')
+            command = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                       str(ROOT / 'tools/fsa-integration/Configure-Scheduler.ps1'), '-Configuration', str(ini)]
+            for mode in ('Zig', 'Zig', 'Python', 'Zig'):
+                result = subprocess.run(command + ['-Scheduler', mode], capture_output=True, timeout=15, **FLAGS)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                config = configparser.ConfigParser(interpolation=None)
+                config.read(ini, encoding='utf-16')
+                self.assertEqual(config['NSP']['Scheduler'], mode)
+                self.assertEqual(Path(config['NSP']['ControlExecutable']), EXE)
+                self.assertEqual(config['NSP']['Python'], sys.executable)
+                self.assertEqual(config['Rule:Keep']['Enabled'], '1')
+                self.assertEqual(config['Manager']['Language'], 'zh')
+                self.assertEqual(config['Snapshot:Keep']['Data'], 'untouched')
+            output = Path(temp) / 'must-not-start'
+            result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+                str(ROOT / 'tools/wwise-probe/Run-GameTelemetry.ps1'), '-OutputDirectory', str(output),
+                '-SchedulerExecutable', str(Path(temp) / 'missing.exe')], capture_output=True, timeout=15, **FLAGS)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(b'Python fallback is disabled', result.stderr)
+            self.assertFalse(output.exists())
+
     def test_recovery_requires_clean_endpoint_report(self):
         with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='zig-recovery-') as temp:
             home = Path(temp)

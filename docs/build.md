@@ -2,7 +2,7 @@
 
 Run commands from the repository root on Windows x64. Required tools: Git, Python 3.12, PowerShell, Rust `1.97.1-x86_64-pc-windows-gnullvm`, and an LLVM/MinGW distribution providing clang.exe and libunwind.dll. The baseline used llvm-mingw `20261006-ucrt-x86_64`. Toolchains and dependency sources are installed separately.
 
-The optional native control host additionally needs Zig 0.13.0 at build time. See [scheduler setup and validation](scheduler.md). Python remains required for telemetry.
+The default managed control host additionally needs Zig 0.13.0 at build time. See [scheduler setup and validation](scheduler.md). Python remains required for telemetry.
 
 ## Dependency layout
 

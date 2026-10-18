@@ -1,4 +1,4 @@
-param([string]$Installation='',[switch]$SkipHookBuild,[switch]$FsaOnly)
+param([string]$Installation='',[switch]$SkipHookBuild,[switch]$FsaOnly,[switch]$LegacyPythonScheduler)
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path "$PSScriptRoot/../..").Path
 $llvm=$env:NSP_LLVM_BIN
@@ -8,6 +8,8 @@ $bin=Join-Path $destination 'bin'
 $src=Join-Path $PSScriptRoot 'native'
 New-Item -ItemType Directory -Force $bin | Out-Null
 if(-not $FsaOnly){
+& powershell -NoProfile -ExecutionPolicy Bypass -File "$root/tools/zig-scheduler/Build.ps1"
+if($LASTEXITCODE){throw 'Zig scheduler build failed'}
 & powershell -NoProfile -ExecutionPolicy Bypass -File "$root/tools/telemetry/Build-Meter.ps1"
 if($LASTEXITCODE){throw 'Telemetry meter build failed'}
 if(-not $SkipHookBuild){
@@ -53,12 +55,9 @@ if(-not(Test-Path "$destination/final-spatial-audio.ini")){
  if(Test-Path "$Installation/final-spatial-audio.ini"){Copy-Item -LiteralPath "$Installation/final-spatial-audio.ini" -Destination $destination}
  else{Copy-Item -LiteralPath "$src/final-spatial-audio.example.ini" -Destination "$destination/final-spatial-audio.ini"}
  if(Test-Path "$Installation/profiles"){Copy-Item -LiteralPath "$Installation/profiles" -Destination $destination -Recurse}
- $python=(Get-Command python).Source
- $adapter=Join-Path $root 'tools/backend/fsa_control.py'
- $configPath=Join-Path $destination 'final-spatial-audio.ini'
- $configText=[IO.File]::ReadAllText($configPath)
- [IO.File]::WriteAllText($configPath,$configText+"`r`n[NSP]`r`nPython=$python`r`nControlScript=$adapter`r`n",[Text.Encoding]::Unicode)
 }
+$scheduler=if($LegacyPythonScheduler){'Python'}else{'Zig'}
+& "$PSScriptRoot/Configure-Scheduler.ps1" -Configuration "$destination/final-spatial-audio.ini" -Scheduler $scheduler
 # Build directly into the official output. If it is in use, fail without
 # closing FSA or creating another runnable copy.
 Write-Output "Built and verified Sonic NSp: $candidate"

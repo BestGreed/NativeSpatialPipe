@@ -2,16 +2,28 @@
 static LONG nsp_requested;
 static LONG nsp_ui_locked;
 static LONG nsp_next_mode=-1;
-/* Native scheduler is opt-in until live migration has been explicitly chosen.
-   Its interface matches the existing adapter and correlated disk markers. */
+/* Zig is the default. Python orchestration requires Scheduler=Python; a
+   missing native executable must never silently select the legacy host. */
 static int nsp_program(wchar_t *program,wchar_t *prefix,size_t capacity) {
-    wchar_t script[MAX_PATH];
+    wchar_t script[MAX_PATH],scheduler[32];
+    GetPrivateProfileStringW(L"NSP",L"Scheduler",L"Zig",scheduler,32,ini);
+    if(!_wcsicmp(scheduler,L"Python")){
+        GetPrivateProfileStringW(L"NSP",L"Python",L"",program,MAX_PATH,ini);
+        GetPrivateProfileStringW(L"NSP",L"ControlScript",L"",script,MAX_PATH,ini);
+        if(!program[0] || !script[0] || wcschr(program,L'"') || wcschr(script,L'"'))return 0;
+        swprintf(prefix,capacity,L"\"%ls\" ",script);return 1;
+    }
+    if(_wcsicmp(scheduler,L"Zig"))return 0;
+    prefix[0]=0;
     GetPrivateProfileStringW(L"NSP",L"ControlExecutable",L"",program,MAX_PATH,ini);
-    if(program[0]){prefix[0]=0;return !wcschr(program,L'"');}
-    GetPrivateProfileStringW(L"NSP",L"Python",L"",program,MAX_PATH,ini);
-    GetPrivateProfileStringW(L"NSP",L"ControlScript",L"",script,MAX_PATH,ini);
-    if(!program[0] || !script[0] || wcschr(program,L'"') || wcschr(script,L'"'))return 0;
-    swprintf(prefix,capacity,L"\"%ls\" ",script);return 1;
+    if(program[0])return !wcschr(program,L'"');
+    wcscpy(script,ini);
+    wchar_t *slash=wcsrchr(script,L'\\');if(!slash)slash=wcsrchr(script,L'/');
+    if(!slash)return 0;*slash=0;
+    wchar_t relative[2*MAX_PATH];
+    swprintf(relative,2*MAX_PATH,L"%ls\\..\\zig-scheduler\\nsp-scheduler.exe",script);
+    DWORD length=GetFullPathNameW(relative,MAX_PATH,program,NULL);
+    return length>0 && length<MAX_PATH && !wcschr(program,L'"');
 }
 /* Emergency dispatch bypasses the potentially blocked arbitration worker. The
    short-lived adapter verifies the target instance before calling native stop. */
@@ -24,11 +36,8 @@ static int nsp_emergency_dispatch(void) {
     CloseHandle(child.hThread);CloseHandle(child.hProcess);return 1;
 }
 static int nsp_configured(void) {
-    wchar_t value[MAX_PATH];
-    GetPrivateProfileStringW(L"NSP",L"ControlExecutable",L"",value,MAX_PATH,ini);
-    if(value[0])return GetFileAttributesW(value)!=INVALID_FILE_ATTRIBUTES;
-    GetPrivateProfileStringW(L"NSP",L"ControlScript",L"",value,MAX_PATH,ini);
-    return value[0] && GetFileAttributesW(value)!=INVALID_FILE_ATTRIBUTES;
+    wchar_t program[MAX_PATH],prefix[2*MAX_PATH];
+    return nsp_program(program,prefix,2*MAX_PATH) && GetFileAttributesW(program)!=INVALID_FILE_ATTRIBUTES;
 }
 static int nsp_control(const wchar_t *action) {
     wchar_t python[MAX_PATH],prefix[2*MAX_PATH],command[4096],local[MAX_PATH],marker[MAX_PATH],request_id[80],reply_id[80];

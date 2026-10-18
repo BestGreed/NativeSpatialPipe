@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "fe5bd6ca0c551dde290d7d1c07f97e35a370cb9f",
+  "sourceRevision": "ab2bbe8a3c73e151e9c366e3d4010395b0b572e1",
   "hashNormalization": "CRLF to LF; all other bytes preserved",
   "files": [
     {
@@ -99,8 +99,8 @@
     },
     {
       "path": "tools/backend/backend.py",
-      "sha256": "5139d3a13b6edae8062109f658061e57fd49ee4bdbd55a19c13c59c6b502f928",
-      "sourceSha256": "5139d3a13b6edae8062109f658061e57fd49ee4bdbd55a19c13c59c6b502f928"
+      "sha256": "ba9fb41ac81f8432e2e9bd52875da49ae07ad6b735c26f2ecb0b81c230314db9",
+      "sourceSha256": "ba9fb41ac81f8432e2e9bd52875da49ae07ad6b735c26f2ecb0b81c230314db9"
     },
     {
       "path": "tools/backend/fsa_control.py",
@@ -284,9 +284,14 @@
     },
     {
       "path": "tools/fsa-integration/Build-Integration.ps1",
-      "sha256": "b86e00a3b242ca72879ee479e15f633b514e2c03ff9f9f009dda568f13227541",
-      "sourceSha256": "d16b8ef5451a452d50fff020512ee20818803b3cede38a88116b694fb0b11246",
+      "sha256": "1344539cc3387838576615e0d1e9e023b061d1ef45609a664fef878459d7a998",
+      "sourceSha256": "6452721fe86ba9808431813991233bcc678ff0132f07954b6cad331e8cf61630",
       "adaptation": "Public dependency layout, documentation, or package configuration"
+    },
+    {
+      "path": "tools/fsa-integration/Configure-Scheduler.ps1",
+      "sha256": "cb99a142277735c8657e2c4bc6381e7f055eba99cc3c140ee8ab738a8470c364",
+      "sourceSha256": "cb99a142277735c8657e2c4bc6381e7f055eba99cc3c140ee8ab738a8470c364"
     },
     {
       "path": "tools/fsa-integration/LICENSE",
@@ -295,8 +300,8 @@
     },
     {
       "path": "tools/fsa-integration/README.md",
-      "sha256": "0ac5df40dd1fcb8d52600c2195f5c3ecd916491fc33d1dc3be844594474ffa48",
-      "sourceSha256": "f9fd58a7748308aca7bca168739d781436fa1e6f193a16af02f23b4aba88fec0",
+      "sha256": "eea393e4ee93c16f6010ba8f6ab265877a7a61b354c96d4570ff2967552d2bb7",
+      "sourceSha256": "1afff4cbe8c9f09d1b094d21c9a31e8c402641a4c45d87d78aee9f6d5821b6e6",
       "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
@@ -311,8 +316,8 @@
     },
     {
       "path": "tools/fsa-integration/Test-Bridge.py",
-      "sha256": "c30e4ef5f260edb90b46a25d00a60a08fa6b93e0b95c137d54c216a475b7f721",
-      "sourceSha256": "c30e4ef5f260edb90b46a25d00a60a08fa6b93e0b95c137d54c216a475b7f721"
+      "sha256": "cfaa7e127d727d225d4f7eaf36543523f3429ca98772bea2d48c0408a02c08c7",
+      "sourceSha256": "cfaa7e127d727d225d4f7eaf36543523f3429ca98772bea2d48c0408a02c08c7"
     },
     {
       "path": "tools/fsa-integration/native/README.en.md",
@@ -387,8 +392,8 @@
     },
     {
       "path": "tools/fsa-integration/native/final-spatial-audio.example.ini",
-      "sha256": "a29dd61086bb263aa68c3543335fcb1f3bdb8e390ce46365e6e91c73531ceff0",
-      "sourceSha256": "a29dd61086bb263aa68c3543335fcb1f3bdb8e390ce46365e6e91c73531ceff0"
+      "sha256": "d570bfdc18351b5dcf49e10a6b31698d818d93d8e50d43d523426e36de85d52d",
+      "sourceSha256": "d570bfdc18351b5dcf49e10a6b31698d818d93d8e50d43d523426e36de85d52d"
     },
     {
       "path": "tools/fsa-integration/native/final_spatial_audio.c",
@@ -447,8 +452,8 @@
     },
     {
       "path": "tools/fsa-integration/native/nsp_control.h",
-      "sha256": "572ad7b1c54775dc5dbfcec7ad42c6937c1e67d36c095a148d70499e537bd808",
-      "sourceSha256": "572ad7b1c54775dc5dbfcec7ad42c6937c1e67d36c095a148d70499e537bd808"
+      "sha256": "4e70beae350174e1bc10c192d0a06428b3a6488003364e854316fb9da5afac84",
+      "sourceSha256": "4e70beae350174e1bc10c192d0a06428b3a6488003364e854316fb9da5afac84"
     },
     {
       "path": "tools/fsa-integration/native/nsp_state.h",
@@ -457,8 +462,8 @@
     },
     {
       "path": "tools/fsa-integration/native/nsp_ui_test.c",
-      "sha256": "31998a60402b771b17d0a2c29229b3b7aedef4fbe0db534ebf3a579a4d03c182",
-      "sourceSha256": "31998a60402b771b17d0a2c29229b3b7aedef4fbe0db534ebf3a579a4d03c182"
+      "sha256": "fcbde183b8720dddafc89de3da6a4fcfa5c76082753ba0cfcac997468f29f0cc",
+      "sourceSha256": "fcbde183b8720dddafc89de3da6a4fcfa5c76082753ba0cfcac997468f29f0cc"
     },
     {
       "path": "tools/fsa-integration/native/popup_test.c",
@@ -924,9 +929,8 @@
     },
     {
       "path": "tools/wwise-probe/Run-GameTelemetry.ps1",
-      "sha256": "54bbaa206cf11aa0b834f9bd6f654772b3131049783b72d99bf7b10aa11b6754",
-      "sourceSha256": "36cd0ea2c17c24abb9e245ce0e85901bbde13839a692787735d28beb11a27d34",
-      "adaptation": "Public dependency layout, documentation, or package configuration"
+      "sha256": "8d9de9268165a502ab963bd995afe3a058578f1430ed75a889d8179c1cb63619",
+      "sourceSha256": "8d9de9268165a502ab963bd995afe3a058578f1430ed75a889d8179c1cb63619"
     },
     {
       "path": "tools/zig-scheduler/Benchmark-Control.py",
@@ -940,14 +944,14 @@
     },
     {
       "path": "tools/zig-scheduler/README.md",
-      "sha256": "2dcf95a12aef1437d0a0adc5b892ab233b846f15350fc1de05f7330e8b5886cc",
-      "sourceSha256": "18d5d6d82edb17515f2c90f59e04d37f5c1c9369233e7854c62d20aa7147883c",
+      "sha256": "a77202fc2a2e31de9db24b6f6356b051ca23c1ddc75ed2d0a3d47053b238502e",
+      "sourceSha256": "7b9c41f85e8ce26c015f6260fd6f600f961dbe86b7e9e829ba5c8aa32f4d696a",
       "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
       "path": "tools/zig-scheduler/Test-Scheduler.py",
-      "sha256": "301cff1b528ee9416b0224654505d86c42010b3f79c1667b7f0ca871bbf12f26",
-      "sourceSha256": "301cff1b528ee9416b0224654505d86c42010b3f79c1667b7f0ca871bbf12f26"
+      "sha256": "cf6dda6976fa4d76fc493df13898f62d08ac956950af8d4978f93871fbf09678",
+      "sourceSha256": "cf6dda6976fa4d76fc493df13898f62d08ac956950af8d4978f93871fbf09678"
     },
     {
       "path": "tools/zig-scheduler/backend.zig",

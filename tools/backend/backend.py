@@ -66,7 +66,7 @@ class Controller:
     @staticmethod
     def launch(output, config):
         args = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-                str(ROOT / 'tools/wwise-probe/Run-GameTelemetry.ps1'),
+                str(ROOT / 'tools/wwise-probe/Run-GameTelemetry.ps1'), '-LegacyPythonScheduler',
                 '-OutputDirectory', str(output), '-SpatialFormat', config['spatialFormat']]
         if config['fullTiming']:
             args.append('-FullTiming')

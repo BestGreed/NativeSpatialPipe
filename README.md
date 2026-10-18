@@ -1,6 +1,6 @@
 # Native Spatial Pipe
 
-Windows Spatial Audio object-stream capture, native rendering and real-time visualization research. **C and Rust remain the audio core; an optional Zig scheduler now handles orchestration. Python still runs telemetry and development tools.**
+Windows Spatial Audio object-stream capture, native rendering and real-time visualization research. **C and Rust remain the audio core; Zig is the default managed scheduler. Python still runs telemetry and development tools.**
 
 Updated **2026-10-19**. Capture → native receiver → ROAR rendering → telemetry → browser visualization is implemented. Own-device ASIO playback is still pending. This is a version-pinned research prototype, not a registered Spatial Sound Provider or a Dolby/DTS bitstream decoder.
 
@@ -20,7 +20,7 @@ FSA Sonic NSp → Zig or Python control host → lifecycle and persistent state
 
 Capture, receiver and renderer workers use the MMCSS + individual baseline. The Zig path replaces management and orchestration, not C/Rust DSP or transport. Windows spatial-format setup/restoration still uses PowerShell / WinRT.
 
-Managed Zig startup prepares the first pipeline, waits for Python telemetry readiness, prepares the remaining three pipelines and native receiver, then enables Hook. Telemetry remains part of that startup chain. Building Zig does not switch an existing FSA installation or running session to it.
+Managed Zig startup prepares the first pipeline, waits for Python telemetry readiness, prepares the remaining three pipelines and native receiver, then enables Hook. Telemetry remains part of that startup chain. FSA integration builds update scheduler configuration to Zig while preserving other rules and snapshots. A running backend is never restarted by the build; handover requires a normal, authorized shutdown.
 
 ## Included modules
 
@@ -44,7 +44,7 @@ Follow [build instructions](docs/build.md) for pinned MinHook/ROAR sources, Rust
 ./tools/Build-Core.ps1 -LlvmBin C:/path/to/llvm-mingw/bin
 ```
 
-The optional scheduler needs **Zig 0.13.0 at build time**, with no Zig runtime installation required:
+The default managed scheduler needs **Zig 0.13.0 at build time**, with no Zig runtime installation required:
 
 ```powershell
 ./tools/zig-scheduler/Build.ps1 -Zig C:/path/to/zig-0.13.0/zig.exe
@@ -75,11 +75,11 @@ python tools/endpoint-probe/Run-Native.py <new-output-directory> <verified-audio
 
 It requires a separately prepared endpoint and a verified, unprotected audiodg instance. The current Hook checks an internal system boundary and rejects unsupported images; it is not a supported Windows extension contract. The baseline is one stream, 480 frames at 48 kHz, without raw NSP packet archiving. `--normal-scheduling` disables all three MMCSS registrations for comparison; `--full-timing` requires separately built diagnostic DLLs.
 
-For managed Sonic NSp, use the documented backend/FSA path. The included `Run-GameTelemetry.ps1` requires an explicit verified endpoint; it does not choose a private machine's recorded device. Stop normally and verify Hook instruction and endpoint restoration before changing deployment. No build command automatically restarts the user's backend or migrates FSA configuration. Legacy generation-1 recovery still requires its original controller.
+For managed Sonic NSp, use the documented backend/FSA path. The included `Run-GameTelemetry.ps1` requires an explicit verified endpoint; it does not choose a private machine's recorded device. Stop normally and verify Hook instruction and endpoint restoration before changing deployment. Builds update FSA scheduler configuration but never restart the user's backend. FSA defaults to `Scheduler=Zig`; missing Zig fails without Python fallback. Legacy comparisons require `Scheduler=Python` in FSA or `-LegacyPythonScheduler` in the managed launcher. The single-minute development test also defaults to Zig, while the historical single-stream research entry remains unchanged. Legacy generation-1 recovery still requires its original controller.
 
 ## Validation and limits
 
-- The scheduler was checked with six isolated integration tests and a routing unit test. Ordinary and FullTiming owned-process fixtures each used 250 blocks, 128 dynamic objects plus 12 bed channels; the first eight PCM blocks matched the prior Python control path byte for byte.
+- The scheduler was checked with seven isolated integration tests, including default configuration migration and missing-Zig refusal and a routing unit test. Ordinary and FullTiming owned-process fixtures each used 250 blocks, 128 dynamic objects plus 12 bed channels; the first eight PCM blocks matched the prior Python control path byte for byte.
 - The exported source also passed 31 telemetry and 17 backend tests, the Zig build, and FSA resource/manifest/state/spinner checks. Shared-memory/socket integration checks need an ordinary Windows process environment; AppContainer restrictions have caused access-denied failures. See [startup validation](docs/receiver-startup.md).
 - One sequential Wwise comparison ran 60 seconds and 6,000 position updates per implementation. Host + telemetry whole-machine CPU was **3.47% with Python → 2.92% with Zig**, an observed 15.8% decrease for that pair. Host CPU includes native DSP. Renderer work P99 was **1.447 → 1.435 ms**, not end-to-end playback latency. See [measurement boundaries](docs/scheduler.md).
 - Historical capture-to-render-completion testing measured P99 **1.436–1.493 ms**, 23,461 packets without loss, and a 3.299 ms maximum. These historical figures do not constitute acceptance of every current feature, machine or long-running workload.

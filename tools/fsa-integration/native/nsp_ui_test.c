@@ -5,6 +5,24 @@ int wmain(int argc,wchar_t **argv) {
     assert(!wcscmp(fsa_text(FSA_EN,TXT_NSP),L"Sonic NSp"));
     assert(!wcscmp(fsa_text(FSA_ZH,TXT_NSP),L"Sonic NSp"));
     assert(mode_icon_ids[MODE_NSP]==IDI_FSA_APP);
+    {
+        wchar_t directory[MAX_PATH],temporary[MAX_PATH],program[MAX_PATH],prefix[2*MAX_PATH];
+        GetModuleFileNameW(NULL,directory,MAX_PATH);
+        wchar_t *slash=wcsrchr(directory,L'\\');assert(slash);*slash=0;
+        assert(GetTempFileNameW(directory,L"nsp",0,temporary));
+        wcscpy(ini,temporary);
+        assert(WritePrivateProfileStringW(L"NSP",L"Python",L"python.exe",ini));
+        assert(WritePrivateProfileStringW(L"NSP",L"ControlScript",L"legacy.py",ini));
+        assert(nsp_program(program,prefix,2*MAX_PATH));
+        assert(!prefix[0] && wcsstr(program,L"zig-scheduler\\nsp-scheduler.exe"));
+        assert(WritePrivateProfileStringW(L"NSP",L"Scheduler",L"Invalid",ini));
+        assert(!nsp_program(program,prefix,2*MAX_PATH));
+        assert(WritePrivateProfileStringW(L"NSP",L"Scheduler",L"Python",ini));
+        assert(nsp_program(program,prefix,2*MAX_PATH));
+        assert(!wcscmp(program,L"python.exe") && !wcscmp(prefix,L"\"legacy.py\" "));
+        assert(DeleteFileW(temporary));ini[0]=0;
+        puts("PASS default Zig resolution, no implicit Python fallback, explicit legacy selection");
+    }
     assert(sizeof(spatial_profiles)/sizeof(spatial_profiles[0])==3);
     assert(sizeof(encoders)/sizeof(encoders[0])==3);
     AL_Snapshot state={0};SpatialSettings sonic={0};sonic.words[0]=1;
@@ -28,7 +46,7 @@ int wmain(int argc,wchar_t **argv) {
         assert(nsp_control(L"status")==NSP_STOPPED);
         assert(nsp_control(L"stop")==NSP_STOPPED);
         assert(nsp_control(L"emergency-stop")==NSP_STOPPED);
-        puts("PASS native FSA -> Python adapter -> correlated user-state disk read (idle/stop/emergency)");
+        puts("PASS native FSA -> selected scheduler -> correlated user-state disk read (idle/stop/emergency)");
     }
     puts("PASS Sonic NSp display, FSA application icon, Sonic snapshot slot and separate Hook qualification");
     return 0;

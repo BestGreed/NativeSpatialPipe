@@ -1,6 +1,6 @@
 # Native scheduling and Sonic NSp integration
 
-The optional Zig 0.13.0 scheduler replaces Python orchestration: backend HTTP control, persistent session/configuration files, FSA commands, process ownership, four-stream prewarming, receiver startup, telemetry forwarding, snapshots and orderly shutdown. Capture, transport and rendering remain C/Rust. Python 3.12 still runs telemetry and development tests; this update does not remove that dependency.
+The default Zig 0.13.0 managed scheduler replaces Python orchestration: backend HTTP control, persistent session/configuration files, FSA commands, process ownership, four-stream prewarming, receiver startup, telemetry forwarding, snapshots and orderly shutdown. Capture, transport and rendering remain C/Rust. Python 3.12 still runs telemetry and development tests; this update does not remove that dependency.
 
 The first pipeline is prepared before the Python telemetry handshake. The remaining pipelines and receiver are then prepared before enabling Hook. Telemetry routing checks file growth every 100 ms outside the real-time audio path; two updates qualify a new candidate, with a one-second stale timeout. It does not change receiver routing or add checks to audio submission.
 
@@ -30,11 +30,11 @@ Opening the UI does not enable Hook. Audio startup requires an explicitly verifi
 
 The integration source derives from [Final Spatial Audio](https://github.com/BestGreed/Final_Spatial_Audio), revision `decba9b`. Its original [Unlicense](../tools/fsa-integration/LICENSE) is retained. The source includes the Sonic NSp state adapter, administrator manifest, stereo spinner and verified-ready icon behavior.
 
-FSA ICO artwork is included with the project owner's authorization. Its separate asset notice remains in effect; inclusion does not relicense artwork under the root Apache license or grant rights in third-party marks. Build the optional FSA UI with `Build-Integration.ps1 -FsaOnly`. The independent Zig scheduler does not need the artwork. The build does not close an existing FSA process or replace its active configuration.
+FSA ICO artwork is included with the project owner's authorization. Its separate asset notice remains in effect; inclusion does not relicense artwork under the root Apache license or grant rights in third-party marks. Build the optional FSA UI with `Build-Integration.ps1 -FsaOnly`. The independent Zig scheduler does not need the artwork. The build updates scheduler configuration while preserving other rules and snapshots; it does not close or restart an existing FSA/backend process. FSA defaults to `Scheduler=Zig`; an empty `ControlExecutable` resolves the native path from the integration build layout. Missing Zig fails without implicit fallback. Legacy comparisons require explicit `Scheduler=Python` or the build option `-LegacyPythonScheduler`. The managed launcher also defaults to Zig and requires `-LegacyPythonScheduler` for old orchestration. Telemetry still uses the separately configured Python interpreter.
 
 ## Validation boundary
 
-The source revision was checked with six isolated scheduler integration tests, including ordinary and FullTiming owned-process fixtures, HTTP/authentication, state correlation and recovery refusal. Each fixture used 250 blocks with 128 dynamic objects plus 12 bed channels; its first eight PCM blocks matched the prior Python control path byte for byte. Existing backend and telemetry checks also passed. These results do not guarantee arbitrary game compatibility or end-to-end audio latency.
+The source revision was checked with seven isolated scheduler integration tests, including default configuration migration and missing-Zig refusal, including ordinary and FullTiming owned-process fixtures, HTTP/authentication, state correlation and recovery refusal. Each fixture used 250 blocks with 128 dynamic objects plus 12 bed channels; its first eight PCM blocks matched the prior Python control path byte for byte. Existing backend and telemetry checks also passed. These results do not guarantee arbitrary game compatibility or end-to-end audio latency.
 
 A single sequential Wwise comparison ran 60 seconds per implementation, using the same dedicated project and 6,000 position updates per run:
 
@@ -47,7 +47,7 @@ A single sequential Wwise comparison ran 60 seconds per implementation, using th
 
 Both runs reported clean capture/receiver/render accounting, 128 dynamic objects plus 12 bed channels, restored Hook instructions and restored endpoint state. The observed combined CPU reduction was 15.8% for this pair. Host CPU includes native DSP, and renderer work time is not end-to-end latency. These are private controlled-machine measurements; raw audio, Wwise projects, logs and machine identifiers are not distributed.
 
-The old Python entry remains available for comparisons. Legacy generation-1 Hook recovery must use its original controller. Existing Rust stream-binding reclamation limitations are unchanged. The scheduler is an optional candidate path; this export does not imply that a user's running deployment was migrated.
+The old Python entry remains available for comparisons. Legacy generation-1 Hook recovery must use its original controller. Existing Rust stream-binding reclamation limitations are unchanged. Zig is the default managed path; source updates do not automatically hand over another user's running backend.
 
 ## Recording policy and deferred storage work
 

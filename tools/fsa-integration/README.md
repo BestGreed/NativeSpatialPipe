@@ -7,7 +7,7 @@
 
 ## 构建与运行
 
-2026-10-19：本目录为 NSp 专用集成源码，尚未回传 FSA 独立仓库主线。新增可选 `[NSP] ControlExecutable`，配置后直接调用 Zig 调度程序，`Python` 仅传给遥测；未配置时保留原 Python 控制路径。构建不会自动切换现场配置，部署、启动顺序与对照验证见[Zig 调度说明](../zig-scheduler/README.md)。
+2026-10-19：本目录为 NSp 专用集成源码，尚未回传 FSA 独立仓库主线。默认 `[NSP] Scheduler=Zig`，直接调用 Zig 调度程序，`Python` 仅传给遥测；`ControlExecutable` 留空时按正式构建布局解析，缺少 Zig 不隐式回退。集成构建会更新调度配置并保留规则、快照，但不会重启服务；旧路径须显式 `Scheduler=Python` 或构建参数 `-LegacyPythonScheduler`。部署、启动顺序与验证见[Zig 调度说明](../zig-scheduler/README.md)。
 
 集成版 EXE 现嵌入 `requireAdministrator` 启动清单，双击时由 Windows 请求管理员授权；已经在管理员上下文中启动时无需再次提权。测试用 EXE 不携带这份提权清单。
 
@@ -20,8 +20,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/fsa-integration/Build-
 ```
 
 产物是 `build/fsa-integration/bin/FinalSpatialAudio.exe`。构建脚本准备独立运行目录，
-第一次复制已安装 FSA 的规则和快照，写入 `[NSP]` 的 Python 与 ControlScript 绝对路径。
-以后构建保留候选版的配置。音频 DLL、Python、工具链仍使用本机 NSp 仓库，
+第一次复制已安装 FSA 的规则和快照；每次构建以 `Configure-Scheduler.ps1` 写入默认 Zig 选择及 EXE、遥测 Python 和旧对照脚本路径。
+以后构建保留其他规则和快照。完整构建先编译 Zig，`-FsaOnly` 要求已有 Zig 产物。音频 DLL、Python、工具链仍使用本机 NSp 仓库，
 这不是可脱离仓库安装的发布包。FSA 使用原有单实例互斥量，安装版运行时候选版不会另开实例。
 
 运行请使用 `tools/fsa-integration/Start Sonic NSp.cmd`，由 Windows UAC 提权并直接启动 Sonic NSp。也可右键以管理员身份运行候选 EXE 后选择 Sonic NSp。

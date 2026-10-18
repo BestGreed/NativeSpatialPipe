@@ -9,7 +9,7 @@
 - `native.zig`：直接调用现有管线与接收端 C ABI，调用原生 Hook 控制器；不经过 ctypes/Python 编排。
 - `host.zig`：四条原生管线预热、遥测进程管理、原生接收端启动、Hook 生命周期、非实时遥测转发、快照记录及结束排空。
 - `routing.zig`：迁移现有遥测文件长度选流策略，轮询间隔 100 ms、失效时间 1 s、新候选两次增长后抢占。
-- FSA 支持 `[NSP] ControlExecutable`。配置此项时直接调用 Zig EXE，`Python` 配置仅传给遥测服务；未配置时保留原 Python 路径，便于对照和回退。
+- FSA 默认 `[NSP] Scheduler=Zig`；`ControlExecutable` 可指定 Zig EXE，留空时按正式构建布局解析。`Python` 配置仅传给遥测服务。缺少 Zig 不隐式回退；旧管理路径必须显式设置 `Scheduler=Python`。
 
 启动顺序：首条原生管线准备 → Python 遥测就绪 → 其余三条管线与原生接收端准备 → Hook 启用。遥测启动失败会阻止 Hook 启用。
 
@@ -35,17 +35,18 @@ python tools/zig-scheduler/Test-Scheduler.py
 
 ## 现场切换
 
-本次实现和测试没有修改用户正在运行的会话、FSA 配置或 Hook DLL。不要为了验证而自动重启现场后端。
+默认路径现已统一为 Zig；集成构建会迁移 FSA 的调度配置并保留规则/快照，但不会重启现场进程。不要为了验证而自动重启现场后端；已有 Python 管理服务必须在明确授权的停机窗口正常退出后再接管。
 
 在用户明确选择的停机窗口，先通过原入口正常停止 NSp 并确认指令与端点恢复，然后退出旧控制后端。FSA 退出也要确认完成，再修改正式构建目录上一级的 `final-spatial-audio.ini`：
 
 ```ini
 [NSP]
+Scheduler=Zig
 ControlExecutable=C:\path\to\NativeSpatialPipe\build\zig-scheduler\nsp-scheduler.exe
 Python=<现有遥测 Python 的绝对路径>
 ```
 
-重新启动正式 FSA 后，菜单仍然使用原接口。`ControlScript` 可以保留作回退，但配置 `ControlExecutable` 时不执行它。原 Python 管理后端还活着时，Zig 会拒绝接管，不会主动终止它。
+重新启动正式 FSA 后，菜单仍然使用原接口。`ControlScript` 可保留供显式 `Scheduler=Python` 对照，但默认 Zig 不执行它。原 Python 管理后端还活着时，Zig 会拒绝接管，不会主动终止它。游戏托管脚本和单独一分钟测试也默认 Zig，Python 对照须显式选择；标准单流研究脚本保留其历史测量边界。
 
 也可只启动独立、无音频的控制服务用于查看界面（不会启用 Hook）：
 
@@ -69,7 +70,7 @@ build/zig-scheduler/nsp-scheduler.exe request --home build/zig-trial-state --act
 
 原生 Rust 的处理块绑定回收问题未在此次迁移中修改。旧 hookGeneration=1 的故障恢复需先由原控制入口完成；新托管会话使用 generation=2，Zig 对不支持的旧恢复状态返回未知并保持锁定。
 
-Python 现在仅在此新正式路径中承载遥测服务，实验/测试脚本仍可以使用 Python。新实现是可对照验证的候选路径；真实会话切换需在用户授权的停机时机执行。
+Python 现在仅在默认托管路径中承载遥测服务，实验/测试脚本仍可以使用 Python。Zig 已是默认调度；真实会话切换需在用户授权的停机时机执行。
 
 ## 一分钟实测与存储排期（2026-10-19）
 

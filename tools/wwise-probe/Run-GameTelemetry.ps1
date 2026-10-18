@@ -1,7 +1,14 @@
-param([Parameter(Mandatory=$true)][string]$OutputDirectory,[switch]$FullTiming,[ValidateSet('WindowsSonic','DTSXForHomeTheater')][string]$SpatialFormat='WindowsSonic',[switch]$Managed,[int]$OwnerPid=0,[string]$Endpoint='',[string]$SchedulerExecutable='',[string]$TelemetryPython='python.exe',[int]$TelemetryPort=8766,[string]$FrontendOrigin='http://127.0.0.1:8765')
+param([Parameter(Mandatory=$true)][string]$OutputDirectory,[switch]$FullTiming,[ValidateSet('WindowsSonic','DTSXForHomeTheater')][string]$SpatialFormat='WindowsSonic',[switch]$Managed,[int]$OwnerPid=0,[string]$Endpoint='',[string]$SchedulerExecutable='',[string]$TelemetryPython='python.exe',[int]$TelemetryPort=8766,[string]$FrontendOrigin='http://127.0.0.1:8765',[switch]$LegacyPythonScheduler)
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Set-Location -LiteralPath $root
+if($LegacyPythonScheduler -and $SchedulerExecutable){throw 'Choose either Zig or explicit legacy Python orchestration'}
+if(-not $LegacyPythonScheduler){
+ if(-not $SchedulerExecutable){$SchedulerExecutable=Join-Path $root 'build/zig-scheduler/nsp-scheduler.exe'}
+ if(-not(Test-Path -LiteralPath $SchedulerExecutable -PathType Leaf)){throw 'Build the Zig scheduler first; Python fallback is disabled'}
+ if(-not $Managed){$Managed=$true;if($OwnerPid -le 0){$OwnerPid=$PID}}
+}
+if($Managed -and $OwnerPid -le 0){throw 'Managed mode requires OwnerPid'}
 $out=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
 $stopFile="$out.stop"
 if(Test-Path -LiteralPath $out){throw 'Use a new output directory'}
