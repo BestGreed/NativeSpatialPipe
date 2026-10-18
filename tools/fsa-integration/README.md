@@ -83,7 +83,7 @@ python tools/backend/backend.py exit
 
 ## 验证与边界
 
-见 [集成验收记录](../../docs/fsa-nsp-integration-20261018.md)。受控验收及真实 Sonic 切换、捕获、正常停止、急停和重新启动均已通过。仍未替换安装版，长期性能与跨系统兼容验收另计。
+见 [集成验收记录](../../docs/scheduler.md)。受控验收及真实 Sonic 切换、捕获、正常停止、急停和重新启动均已通过。仍未替换安装版，长期性能与跨系统兼容验收另计。
 
 新 Hook 单独输出到 `build/native-hook-managed-v2/nsp_managed_hook_v2.dll`，避免覆盖已驻留的旧构建。
 目标内已有旧 `nsp_native_hook.dll` 时，必须经原控制器核实停止、原指令恢复与资源释放，才允许复用；旧 Hook 活动或无法核验时拒绝混用。目标中不同构建也拒绝按错误导出偏移调用。
