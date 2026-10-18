@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "13ae67edaa58fc7150606f82a81432f871101818",
+  "sourceRevision": "d6916546b088d0cf24239dd665413af76c536029",
   "hashNormalization": "CRLF to LF; all other bytes preserved",
   "files": [
     {
@@ -94,27 +94,72 @@
     },
     {
       "path": "tools/Build-Core.ps1",
-      "sha256": "550b2dd85630f6afdd2a3b8878a04139ca645a45bc49df1297eebf4c582400e2"
+      "sha256": "ae76d5c316f91275bde51d1448f27cab8c110f8873b9ec6d3f48c91b4fc2a05c",
+      "sourceSha256": "ae76d5c316f91275bde51d1448f27cab8c110f8873b9ec6d3f48c91b4fc2a05c"
+    },
+    {
+      "path": "tools/backend/backend.py",
+      "sha256": "5139d3a13b6edae8062109f658061e57fd49ee4bdbd55a19c13c59c6b502f928",
+      "sourceSha256": "5139d3a13b6edae8062109f658061e57fd49ee4bdbd55a19c13c59c6b502f928"
+    },
+    {
+      "path": "tools/backend/fsa_control.py",
+      "sha256": "fecc8d4d24e51d973a1c853ede1b269a4280f07edf02324e2d33ad2580600403",
+      "sourceSha256": "fecc8d4d24e51d973a1c853ede1b269a4280f07edf02324e2d33ad2580600403"
+    },
+    {
+      "path": "tools/backend/hook_state.py",
+      "sha256": "8fbf7adf475fa4d2c9653732c5d4d90b217dab8cb96b3a84d04d55537bcca78b",
+      "sourceSha256": "8fbf7adf475fa4d2c9653732c5d4d90b217dab8cb96b3a84d04d55537bcca78b"
+    },
+    {
+      "path": "tools/backend/legacy_hook.py",
+      "sha256": "6e49598c98fd1cbe300aa0160036357174975e4818171782cb0fff884a5b6d1c",
+      "sourceSha256": "6e49598c98fd1cbe300aa0160036357174975e4818171782cb0fff884a5b6d1c"
+    },
+    {
+      "path": "tools/backend/test_backend.py",
+      "sha256": "f9c98df3993b4ef693a455a28dd5cececdefde1c93eb50d0866ad8f7674c82a3",
+      "sourceSha256": "f9c98df3993b4ef693a455a28dd5cececdefde1c93eb50d0866ad8f7674c82a3"
+    },
+    {
+      "path": "tools/backend/test_fsa_control.py",
+      "sha256": "b4471438871e5dc871685a53061c34caab9d9130939ad362abfcf018bb9f7e7c",
+      "sourceSha256": "b4471438871e5dc871685a53061c34caab9d9130939ad362abfcf018bb9f7e7c"
+    },
+    {
+      "path": "tools/backend/test_http.py",
+      "sha256": "47d5640595f5c77fafd743b442a0c15ed4f7812a998ec1df13e80834b2700141",
+      "sourceSha256": "47d5640595f5c77fafd743b442a0c15ed4f7812a998ec1df13e80834b2700141"
+    },
+    {
+      "path": "tools/backend/windows_privileges.py",
+      "sha256": "3b6193ff25c41f4c044d764a80113478d9f664f9795fb35b4111ddb157b526ba",
+      "sourceSha256": "3b6193ff25c41f4c044d764a80113478d9f664f9795fb35b4111ddb157b526ba"
     },
     {
       "path": "tools/endpoint-probe/Build-CaptureScheduler.ps1",
       "sha256": "a4d30a9ebc7f43fabd64c075c43349cecc2451202215cb884c3c90dbc501d971",
-      "sourceSha256": "a507883ce7e95000c58a75448e4f23545418757203c229168cd10524be88db4f"
+      "sourceSha256": "a507883ce7e95000c58a75448e4f23545418757203c229168cd10524be88db4f",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
       "path": "tools/endpoint-probe/Build-NativeCapture.ps1",
       "sha256": "fc26e6f0c93d9ee26e68bd70b30572cd422e8c23851eaa22ebd22130e0dc4705",
-      "sourceSha256": "ce393e6a4b301cc435eb5469c7596b34fa9b5cf34278be8c1e817b27d9623b1b"
+      "sourceSha256": "ce393e6a4b301cc435eb5469c7596b34fa9b5cf34278be8c1e817b27d9623b1b",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
       "path": "tools/endpoint-probe/Build-NativeHook.ps1",
-      "sha256": "a0bcf40d666d9595f90051f5de3fe2a8102d5f08b13b7434bddfaacd4523541d",
-      "sourceSha256": "5ba5f97035326b961c4937a0eb2ec77fbe145150108508a3f6ff7fafc882d2a1"
+      "sha256": "9a9a50432e2af8d8f2adf8b381e4ff0db91e5208d5c2a8c7ca2c47972bf346da",
+      "sourceSha256": "6bb779b743413520dc65457e43fd31fb5d0849a6f6b49bc9ec5281688c7e8bc7",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
       "path": "tools/endpoint-probe/Build-NativeSend.ps1",
       "sha256": "f528ce3703912d0d372ccbdb109d387a67844bb54c7e9b16c06a4897ff304053",
-      "sourceSha256": "01c673dbed068ba53698828540799361bd309ebd61382c57cd713eb780bb052d"
+      "sourceSha256": "01c673dbed068ba53698828540799361bd309ebd61382c57cd713eb780bb052d",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
       "path": "tools/endpoint-probe/Capture-Fixture.c",
@@ -143,23 +188,23 @@
     },
     {
       "path": "tools/endpoint-probe/Native-Hook-Control.c",
-      "sha256": "3bf2b3b284f48f45c893ec71402257424237030a8a17c4012b3d3c06061316c2",
-      "sourceSha256": "3bf2b3b284f48f45c893ec71402257424237030a8a17c4012b3d3c06061316c2"
+      "sha256": "db10cfceccb3acc903648b07ecc2a56b6d7f8a1776963a9a3df60bbd1376479b",
+      "sourceSha256": "db10cfceccb3acc903648b07ecc2a56b6d7f8a1776963a9a3df60bbd1376479b"
     },
     {
       "path": "tools/endpoint-probe/Native-Hook.c",
-      "sha256": "876c6d7c127d9cfe6e6210ac1c831cf068fac59b884df74fe482defe9227bfa2",
-      "sourceSha256": "876c6d7c127d9cfe6e6210ac1c831cf068fac59b884df74fe482defe9227bfa2"
+      "sha256": "6bc41c698511c7f5433c27bb2a8cfeb45fa741ddcac03e27aec880d67282e550",
+      "sourceSha256": "6bc41c698511c7f5433c27bb2a8cfeb45fa741ddcac03e27aec880d67282e550"
     },
     {
       "path": "tools/endpoint-probe/Native-Hook.h",
-      "sha256": "a465d4c80d39908079faeda987e1c5ee3a6c3391f9a413b8ed2be5d8314084d1",
-      "sourceSha256": "a465d4c80d39908079faeda987e1c5ee3a6c3391f9a413b8ed2be5d8314084d1"
+      "sha256": "2b84105ca079a2f15bfc40fa53973c9d2c264bcd8a60fc910a07b39d53dc958b",
+      "sourceSha256": "2b84105ca079a2f15bfc40fa53973c9d2c264bcd8a60fc910a07b39d53dc958b"
     },
     {
       "path": "tools/endpoint-probe/Native-Hook.py",
-      "sha256": "051a49eaa175d2ae9623d6d67ebd26d1304a6108864dacd96b64fbf4bae35569",
-      "sourceSha256": "051a49eaa175d2ae9623d6d67ebd26d1304a6108864dacd96b64fbf4bae35569"
+      "sha256": "3857e26877930fe393087ab8441d47ed5f6ee9f6cb14ea27baa2df2e532b7cb4",
+      "sourceSha256": "3857e26877930fe393087ab8441d47ed5f6ee9f6cb14ea27baa2df2e532b7cb4"
     },
     {
       "path": "tools/endpoint-probe/Native-Receiver.py",
@@ -189,7 +234,8 @@
     {
       "path": "tools/endpoint-probe/Run-Native.py",
       "sha256": "5eeb24bcb2dd3c088b329462801dff76d00f1a67fe042fe855eddc44283bb86a",
-      "sourceSha256": "4fbf343f540c9478ac72bcde11348df826bfb0b6b2c77380c7e1815b77048a64"
+      "sourceSha256": "4fbf343f540c9478ac72bcde11348df826bfb0b6b2c77380c7e1815b77048a64",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
       "path": "tools/endpoint-probe/Stage-Timing.py",
@@ -198,8 +244,8 @@
     },
     {
       "path": "tools/endpoint-probe/Sync-Hook.py",
-      "sha256": "6288a27deb3c5635b099ff613e263bf5355ea262a4f790773255247b77f4d535",
-      "sourceSha256": "6288a27deb3c5635b099ff613e263bf5355ea262a4f790773255247b77f4d535"
+      "sha256": "9bce592afbec29f8bb3d22a7468eb71cf4e338d2e458929e59b2eff7e6847dc9",
+      "sourceSha256": "9bce592afbec29f8bb3d22a7468eb71cf4e338d2e458929e59b2eff7e6847dc9"
     },
     {
       "path": "tools/endpoint-probe/Tail-Trace.py",
@@ -213,8 +259,8 @@
     },
     {
       "path": "tools/endpoint-probe/Test-NativeHook.py",
-      "sha256": "ca534409fb212a08dbdf98c258ee5d2fa2167695adf69eea6b723f1c65b6dea4",
-      "sourceSha256": "ca534409fb212a08dbdf98c258ee5d2fa2167695adf69eea6b723f1c65b6dea4"
+      "sha256": "07ccb2d27dd25b94bf5eb96891bab1480c888214c2d3a917dab92f360e92475f",
+      "sourceSha256": "07ccb2d27dd25b94bf5eb96891bab1480c888214c2d3a917dab92f360e92475f"
     },
     {
       "path": "tools/endpoint-probe/Test-NativeReceiver.py",
@@ -237,9 +283,239 @@
       "sourceSha256": "43cfb229ef1436b037783bc77059c1c46423f1f6c8bd7b188733b021560b7a7e"
     },
     {
+      "path": "tools/fsa-integration/Build-Integration.ps1",
+      "sha256": "b86e00a3b242ca72879ee479e15f633b514e2c03ff9f9f009dda568f13227541",
+      "sourceSha256": "d16b8ef5451a452d50fff020512ee20818803b3cede38a88116b694fb0b11246",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
+    },
+    {
+      "path": "tools/fsa-integration/LICENSE",
+      "sha256": "6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e",
+      "sourceSha256": "6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e"
+    },
+    {
+      "path": "tools/fsa-integration/README.md",
+      "sha256": "0fa396dff3561e1d7f4e7e8900047e4c4fa6b00bbe268943b7da614a59b496b3",
+      "sourceSha256": "b930b1ccb80009f2f5d3e374ffe02a6fd1a26d3d85a1879ee690ec1979b09a7a",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
+    },
+    {
+      "path": "tools/fsa-integration/Start Sonic NSp.cmd",
+      "sha256": "d92cc15d4cff1a8169c34b6470dc71d73eb5d82e2c7a7a23f17095cf8d034169",
+      "sourceSha256": "d92cc15d4cff1a8169c34b6470dc71d73eb5d82e2c7a7a23f17095cf8d034169"
+    },
+    {
+      "path": "tools/fsa-integration/Start-SonicNSp.ps1",
+      "sha256": "20a524d316dd426fc410779e32a01d6f6d5d69d45606677962414b40417cd4fe",
+      "sourceSha256": "20a524d316dd426fc410779e32a01d6f6d5d69d45606677962414b40417cd4fe"
+    },
+    {
+      "path": "tools/fsa-integration/Test-Bridge.py",
+      "sha256": "c30e4ef5f260edb90b46a25d00a60a08fa6b93e0b95c137d54c216a475b7f721",
+      "sourceSha256": "c30e4ef5f260edb90b46a25d00a60a08fa6b93e0b95c137d54c216a475b7f721"
+    },
+    {
+      "path": "tools/fsa-integration/native/README.en.md",
+      "sha256": "c281b9af7ac4b6971b3f1e20ed929a64c8110b5967182c9eac277e87bfe0ab8f",
+      "sourceSha256": "c281b9af7ac4b6971b3f1e20ed929a64c8110b5967182c9eac277e87bfe0ab8f"
+    },
+    {
+      "path": "tools/fsa-integration/native/README.md",
+      "sha256": "fe3f61d2a58afa9613d57489a81bee5f43b9cecc8854609a2e59a27727d993e2",
+      "sourceSha256": "fe3f61d2a58afa9613d57489a81bee5f43b9cecc8854609a2e59a27727d993e2"
+    },
+    {
+      "path": "tools/fsa-integration/native/assets/2_0.ico",
+      "sha256": "d1f9a58bc87cc880259c46b3e89bc333d6bd7c5dc8e3ff3e8db47b5b33417402",
+      "sourceSha256": "d1f9a58bc87cc880259c46b3e89bc333d6bd7c5dc8e3ff3e8db47b5b33417402"
+    },
+    {
+      "path": "tools/fsa-integration/native/assets/5_1.ico",
+      "sha256": "2057b6280ef7a26ecb41541309174df0ccda204a02309feacb64eb9b73b468be",
+      "sourceSha256": "2057b6280ef7a26ecb41541309174df0ccda204a02309feacb64eb9b73b468be"
+    },
+    {
+      "path": "tools/fsa-integration/native/assets/7_1.ico",
+      "sha256": "bd93c4fde34d56503cc46afe27a7a5711c7492652869a0ea0dbd0fc46ccac8dc",
+      "sourceSha256": "bd93c4fde34d56503cc46afe27a7a5711c7492652869a0ea0dbd0fc46ccac8dc"
+    },
+    {
+      "path": "tools/fsa-integration/native/assets/ATMOS.ico",
+      "sha256": "aae09097a5971a0d05e2ded39b1a7e2f3b6007350a126e6fc5605a0a2ce7926a",
+      "sourceSha256": "aae09097a5971a0d05e2ded39b1a7e2f3b6007350a126e6fc5605a0a2ce7926a"
+    },
+    {
+      "path": "tools/fsa-integration/native/assets/DTSX.ico",
+      "sha256": "755ff7744cd160942cf56248c92241612c8a2d90dc57a5e514582585451864ab",
+      "sourceSha256": "755ff7744cd160942cf56248c92241612c8a2d90dc57a5e514582585451864ab"
+    },
+    {
+      "path": "tools/fsa-integration/native/assets/FSA.ico",
+      "sha256": "3f4d8ad96e789c87fcac470a883d4a53a12fa2c6e88bcc73b0b0033c6471c96c",
+      "sourceSha256": "3f4d8ad96e789c87fcac470a883d4a53a12fa2c6e88bcc73b0b0033c6471c96c"
+    },
+    {
+      "path": "tools/fsa-integration/native/assets/LICENSE.txt",
+      "sha256": "090a199e45f9bcb15c872fc34e20b3c8e4b2310a7307e90a5416268a1ad289fb",
+      "sourceSha256": "090a199e45f9bcb15c872fc34e20b3c8e4b2310a7307e90a5416268a1ad289fb"
+    },
+    {
+      "path": "tools/fsa-integration/native/assets/README.en.md",
+      "sha256": "ed4593cde02a88b1d3e04c90aa24568f7ad9f5736417495e2df281f313340bf3",
+      "sourceSha256": "ed4593cde02a88b1d3e04c90aa24568f7ad9f5736417495e2df281f313340bf3"
+    },
+    {
+      "path": "tools/fsa-integration/native/assets/README.md",
+      "sha256": "c239f53689c057f90ee293945dc6b59838a86dbe725fca5d0e0d3ee1484df2f1",
+      "sourceSha256": "c239f53689c057f90ee293945dc6b59838a86dbe725fca5d0e0d3ee1484df2f1"
+    },
+    {
+      "path": "tools/fsa-integration/native/audio_layout.c",
+      "sha256": "5ebc46c9a962fdf41a67f194018385339018768d6913aec3064f330149fc6073",
+      "sourceSha256": "5ebc46c9a962fdf41a67f194018385339018768d6913aec3064f330149fc6073"
+    },
+    {
+      "path": "tools/fsa-integration/native/audio_layout.h",
+      "sha256": "325d22b4e4c3500c2204e08f4402779a703cfc4a4e4b79c5a25246d28b62ea10",
+      "sourceSha256": "325d22b4e4c3500c2204e08f4402779a703cfc4a4e4b79c5a25246d28b62ea10"
+    },
+    {
+      "path": "tools/fsa-integration/native/build.ps1",
+      "sha256": "9c17554f7416d34d27a9afc49bc884dcdcc3e5002a4e499a233b613fc58ed295",
+      "sourceSha256": "4d751a0426a0d8063d9a2b666ce468e3c8189281741d313ce4f947ba255198cc",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
+    },
+    {
+      "path": "tools/fsa-integration/native/final-spatial-audio.example.ini",
+      "sha256": "a29dd61086bb263aa68c3543335fcb1f3bdb8e390ce46365e6e91c73531ceff0",
+      "sourceSha256": "a29dd61086bb263aa68c3543335fcb1f3bdb8e390ce46365e6e91c73531ceff0"
+    },
+    {
+      "path": "tools/fsa-integration/native/final_spatial_audio.c",
+      "sha256": "93cff3e914fac84221dca7d3a95cb703188eae9be7cf93521781d1a7cc092e7a",
+      "sourceSha256": "93cff3e914fac84221dca7d3a95cb703188eae9be7cf93521781d1a7cc092e7a"
+    },
+    {
+      "path": "tools/fsa-integration/native/final_spatial_audio.manifest",
+      "sha256": "ead1969eedd087b73a11bf8f3a31fc3e87adb204af3c0b0ddba8010baa8bcf61",
+      "sourceSha256": "ead1969eedd087b73a11bf8f3a31fc3e87adb204af3c0b0ddba8010baa8bcf61"
+    },
+    {
+      "path": "tools/fsa-integration/native/final_spatial_audio.rc",
+      "sha256": "81496cc676e7499e81d0ab83300d30ef9bcccfd81bd44c5d73031f8219ae8912",
+      "sourceSha256": "81496cc676e7499e81d0ab83300d30ef9bcccfd81bd44c5d73031f8219ae8912"
+    },
+    {
+      "path": "tools/fsa-integration/native/fluent_menu.c",
+      "sha256": "70c5c6bdc01d03b0f1e7fd8719ec378e467097778dd71c0ddf81cbf5427ae17a",
+      "sourceSha256": "70c5c6bdc01d03b0f1e7fd8719ec378e467097778dd71c0ddf81cbf5427ae17a"
+    },
+    {
+      "path": "tools/fsa-integration/native/fluent_menu.h",
+      "sha256": "0b57d09add6768bdc22c1db69c8c3e2f445dee0c66b601120e421eadde706732",
+      "sourceSha256": "0b57d09add6768bdc22c1db69c8c3e2f445dee0c66b601120e421eadde706732"
+    },
+    {
+      "path": "tools/fsa-integration/native/icon_test.c",
+      "sha256": "ec4f9901602d1cad5bde6d7993cecc3f637cc7cb337c512b35dbd409fcd83567",
+      "sourceSha256": "ec4f9901602d1cad5bde6d7993cecc3f637cc7cb337c512b35dbd409fcd83567"
+    },
+    {
+      "path": "tools/fsa-integration/native/language.h",
+      "sha256": "20dc3cf40cef4818b83dea9f7b280f57c628450f04e3114d81d7ad376c6561a1",
+      "sourceSha256": "20dc3cf40cef4818b83dea9f7b280f57c628450f04e3114d81d7ad376c6561a1"
+    },
+    {
+      "path": "tools/fsa-integration/native/language_test.c",
+      "sha256": "facf126792eb2080cdf2b8d44be4e068feb95c388cfb38682aeea4953b05d44a",
+      "sourceSha256": "facf126792eb2080cdf2b8d44be4e068feb95c388cfb38682aeea4953b05d44a"
+    },
+    {
+      "path": "tools/fsa-integration/native/main.c",
+      "sha256": "e5b7918c53798e7dd1964943ec2172dd64bf7e9127c06e511c2c53cdbe6fb588",
+      "sourceSha256": "e5b7918c53798e7dd1964943ec2172dd64bf7e9127c06e511c2c53cdbe6fb588"
+    },
+    {
+      "path": "tools/fsa-integration/native/material_test.c",
+      "sha256": "bd41121f7e2a63ac89484acaa2b56fe11da751c72c24000415108dfdafe06209",
+      "sourceSha256": "bd41121f7e2a63ac89484acaa2b56fe11da751c72c24000415108dfdafe06209"
+    },
+    {
+      "path": "tools/fsa-integration/native/nsp-state_test.c",
+      "sha256": "cf31985ab8a5351a5b8ed41afd95e1bcc20e50fb767ffda6d8b1881643a0581e",
+      "sourceSha256": "cf31985ab8a5351a5b8ed41afd95e1bcc20e50fb767ffda6d8b1881643a0581e"
+    },
+    {
+      "path": "tools/fsa-integration/native/nsp_control.h",
+      "sha256": "572ad7b1c54775dc5dbfcec7ad42c6937c1e67d36c095a148d70499e537bd808",
+      "sourceSha256": "572ad7b1c54775dc5dbfcec7ad42c6937c1e67d36c095a148d70499e537bd808"
+    },
+    {
+      "path": "tools/fsa-integration/native/nsp_state.h",
+      "sha256": "0d49d6dfbd99d2ba90b597bafd42fea4325bf08ba1fbf8f33536fb3a3fc595b6",
+      "sourceSha256": "0d49d6dfbd99d2ba90b597bafd42fea4325bf08ba1fbf8f33536fb3a3fc595b6"
+    },
+    {
+      "path": "tools/fsa-integration/native/nsp_ui_test.c",
+      "sha256": "31998a60402b771b17d0a2c29229b3b7aedef4fbe0db534ebf3a579a4d03c182",
+      "sourceSha256": "31998a60402b771b17d0a2c29229b3b7aedef4fbe0db534ebf3a579a4d03c182"
+    },
+    {
+      "path": "tools/fsa-integration/native/popup_test.c",
+      "sha256": "3a189da0d28fc1c4ab94ca1a7458799323157a7a247e2b7e348d7c183cd6c2d1",
+      "sourceSha256": "3a189da0d28fc1c4ab94ca1a7458799323157a7a247e2b7e348d7c183cd6c2d1"
+    },
+    {
+      "path": "tools/fsa-integration/native/profile_store.h",
+      "sha256": "b0632ebab77b5511ef9aa4ec887aadea80b545d38c1785a0de410b4efadcf839",
+      "sourceSha256": "b0632ebab77b5511ef9aa4ec887aadea80b545d38c1785a0de410b4efadcf839"
+    },
+    {
+      "path": "tools/fsa-integration/native/profile_test.c",
+      "sha256": "6601059832e6a5b72902acf4b050ffad879af5868384659b4917f0e333a2a54f",
+      "sourceSha256": "8b046f4401bcdf6d2aa36e02a0f86a87fa0c169a24f45f82d14c319013ab60cc",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
+    },
+    {
+      "path": "tools/fsa-integration/native/resolver.h",
+      "sha256": "63cf7828e83c7cd1be020cf646c33cec7b22d1e03437b03c784ee71e749b6db0",
+      "sourceSha256": "63cf7828e83c7cd1be020cf646c33cec7b22d1e03437b03c784ee71e749b6db0"
+    },
+    {
+      "path": "tools/fsa-integration/native/resolver_test.c",
+      "sha256": "45343b50f5213b966b51ec6cf7db68c9b1a50e832c7401c22026386f0e228516",
+      "sourceSha256": "45343b50f5213b966b51ec6cf7db68c9b1a50e832c7401c22026386f0e228516"
+    },
+    {
+      "path": "tools/fsa-integration/native/resource.h",
+      "sha256": "bd246e0fc08006396284d1f6f26ace357f24853b00b080a7de72efa828c216b3",
+      "sourceSha256": "bd246e0fc08006396284d1f6f26ace357f24853b00b080a7de72efa828c216b3"
+    },
+    {
+      "path": "tools/fsa-integration/native/spatial_policy.c",
+      "sha256": "b5db2f29e3cba9fb5223ee5ac5f9490cc294d12a85f6ce34eea33fe15c6ef368",
+      "sourceSha256": "b5db2f29e3cba9fb5223ee5ac5f9490cc294d12a85f6ce34eea33fe15c6ef368"
+    },
+    {
+      "path": "tools/fsa-integration/native/test.c",
+      "sha256": "98f411c0d1d51ee0c37dbf1c0c1fd63cbf3281653b35f67353d70b11352fa3b0",
+      "sourceSha256": "98f411c0d1d51ee0c37dbf1c0c1fd63cbf3281653b35f67353d70b11352fa3b0"
+    },
+    {
+      "path": "tools/fsa-integration/native/tray_animation_test.c",
+      "sha256": "68675b013e9e57ef7a4f7971748240171de6c3aa254d592c5a45bdbd2ae0bb43",
+      "sourceSha256": "68675b013e9e57ef7a4f7971748240171de6c3aa254d592c5a45bdbd2ae0bb43"
+    },
+    {
+      "path": "tools/fsa-integration/native/tray_spinner.h",
+      "sha256": "7632c9f82404293e4ef146b9f4f777f7494564726e79847734533d9779ec727b",
+      "sourceSha256": "7632c9f82404293e4ef146b9f4f777f7494564726e79847734533d9779ec727b"
+    },
+    {
       "path": "tools/native-receiver/Build.ps1",
       "sha256": "f723fe43118882d5fb4612f820c8c236df5efdf5c1681bae3cfd8498829e5cda",
-      "sourceSha256": "7df7671053388a6585f3b96a1fca7484a55d5597d8957a769383f58d03e85c02"
+      "sourceSha256": "7df7671053388a6585f3b96a1fca7484a55d5597d8957a769383f58d03e85c02",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
       "path": "tools/native-receiver/Cargo.lock",
@@ -249,7 +525,8 @@
     {
       "path": "tools/native-receiver/Cargo.toml",
       "sha256": "66871e9cf17320dd3bfb365d5fb907a56c3e4cda9b5fe37f35e1c0a56c634f35",
-      "sourceSha256": "edde5f25f6e5545d6ae069347091cb282d63944ff51b1025e6004ab5dea31996"
+      "sourceSha256": "edde5f25f6e5545d6ae069347091cb282d63944ff51b1025e6004ab5dea31996",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
       "path": "tools/native-receiver/src/lib.rs",
@@ -269,7 +546,8 @@
     {
       "path": "tools/roar-bridge/Cargo.toml",
       "sha256": "ea58d52e7bb9efaba244778629a0cab167f1b71fed3430f7a6e9f2fbcb0b55cf",
-      "sourceSha256": "1b02acda30cb39ecae4c8e68215a8e661ff558f2178c8f8af830f5a62689a719"
+      "sourceSha256": "1b02acda30cb39ecae4c8e68215a8e661ff558f2178c8f8af830f5a62689a719",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
       "path": "tools/roar-bridge/patches/olr-block-mix.patch",
@@ -292,9 +570,25 @@
       "sourceSha256": "8c71ef212ed308736708da50fd6e0d4938984f5a64e27ac76d8d2ce79912f5e4"
     },
     {
+      "path": "tools/telemetry/Build-Meter.ps1",
+      "sha256": "e19e7dfbb8560ade1fa6a418e1aa03640f4be12c19cd8a8bb7073a5e02b9ae53",
+      "sourceSha256": "4b9313b71f579db159b0cf53bb53e49944d438dfa1f3273990f92f7b5daf4387",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
+    },
+    {
+      "path": "tools/telemetry/benchmark_meter.py",
+      "sha256": "2c027d4a8e131a41d8e5d4c2d18ef9013bc2bd45c737050c862eaab47c8465da",
+      "sourceSha256": "2c027d4a8e131a41d8e5d4c2d18ef9013bc2bd45c737050c862eaab47c8465da"
+    },
+    {
+      "path": "tools/telemetry/benchmark_service.py",
+      "sha256": "836049d6e3127e461057c1043db53e2e1e5cca2ce9a1114237e706bf5c0856d8",
+      "sourceSha256": "836049d6e3127e461057c1043db53e2e1e5cca2ce9a1114237e706bf5c0856d8"
+    },
+    {
       "path": "tools/telemetry/client.py",
-      "sha256": "3e22132ca4e63fb09f1b3ee915b08c8ff62f2a56cdffef24e614619eac3ff5c5",
-      "sourceSha256": "3e22132ca4e63fb09f1b3ee915b08c8ff62f2a56cdffef24e614619eac3ff5c5"
+      "sha256": "688b45d1d61cd396498bf4be5d9164cb4bae2beef54a45e3145a753bc5e89614",
+      "sourceSha256": "688b45d1d61cd396498bf4be5d9164cb4bae2beef54a45e3145a753bc5e89614"
     },
     {
       "path": "tools/telemetry/demo.py",
@@ -303,18 +597,38 @@
     },
     {
       "path": "tools/telemetry/engine.py",
-      "sha256": "b7a5172d4d4752e0cbe90552a17d01bde76362537ccfb1c6413ef75d98282e22",
-      "sourceSha256": "b7a5172d4d4752e0cbe90552a17d01bde76362537ccfb1c6413ef75d98282e22"
+      "sha256": "c2eeb4d66d8270dbd437782615aab3be57175c6375a35a570d5154784c9391c6",
+      "sourceSha256": "c2eeb4d66d8270dbd437782615aab3be57175c6375a35a570d5154784c9391c6"
+    },
+    {
+      "path": "tools/telemetry/meter_native.c",
+      "sha256": "1b98719d55f7f6b20192ed97867bb8c51690bf08be6fdf2043ae516fa17cf2cb",
+      "sourceSha256": "1b98719d55f7f6b20192ed97867bb8c51690bf08be6fdf2043ae516fa17cf2cb"
+    },
+    {
+      "path": "tools/telemetry/metering.py",
+      "sha256": "9193ee01141217beaefbb35d0d7c030c567a54649e333df27277382ff8228a4f",
+      "sourceSha256": "9193ee01141217beaefbb35d0d7c030c567a54649e333df27277382ff8228a4f"
+    },
+    {
+      "path": "tools/telemetry/routing.py",
+      "sha256": "a53bb88b06d15c2507e7b1c06cf650193f3579dcd5c3d7f910a8e7ecf0c0a22d",
+      "sourceSha256": "a53bb88b06d15c2507e7b1c06cf650193f3579dcd5c3d7f910a8e7ecf0c0a22d"
     },
     {
       "path": "tools/telemetry/service.py",
-      "sha256": "04ca55b54e40a49a52c36755a326b5e54a0725f4a27766e537b69aaa7c81e448",
-      "sourceSha256": "04ca55b54e40a49a52c36755a326b5e54a0725f4a27766e537b69aaa7c81e448"
+      "sha256": "92ba673c15ae48de6bd3d5531380ebe292b8c4b565e7cf23c43e84ebddb4f0fd",
+      "sourceSha256": "92ba673c15ae48de6bd3d5531380ebe292b8c4b565e7cf23c43e84ebddb4f0fd"
     },
     {
       "path": "tools/telemetry/soundscape.py",
-      "sha256": "5c4036249d1761c75ca0e5b42bea272c794b5da64cd46e630c24d7475ca76451",
-      "sourceSha256": "5c4036249d1761c75ca0e5b42bea272c794b5da64cd46e630c24d7475ca76451"
+      "sha256": "c66ce3a7b492667344774c07c8c92311ca361b0387b24a889734bad6bf8e1aae",
+      "sourceSha256": "c66ce3a7b492667344774c07c8c92311ca361b0387b24a889734bad6bf8e1aae"
+    },
+    {
+      "path": "tools/telemetry/standalone.py",
+      "sha256": "9bf251d03440a6550af2528b49fa1403487690b3618925da2e74b730923f81fc",
+      "sourceSha256": "9bf251d03440a6550af2528b49fa1403487690b3618925da2e74b730923f81fc"
     },
     {
       "path": "tools/telemetry/test_engine.py",
@@ -322,9 +636,19 @@
       "sourceSha256": "cd12b963321ee6531f6d182b9c03c6bbd0a310ade97671d75ea7b4f4cd9b9345"
     },
     {
+      "path": "tools/telemetry/test_metering.py",
+      "sha256": "368d0a32aa5da167e919940f72f34992d4675c1959ca07b3467756a1b7a3cea6",
+      "sourceSha256": "368d0a32aa5da167e919940f72f34992d4675c1959ca07b3467756a1b7a3cea6"
+    },
+    {
+      "path": "tools/telemetry/test_routing.py",
+      "sha256": "09660746c503c7273d5755c0227bddf28cd9b0eeb40f9ff32df64ddef1273ddd",
+      "sourceSha256": "09660746c503c7273d5755c0227bddf28cd9b0eeb40f9ff32df64ddef1273ddd"
+    },
+    {
       "path": "tools/telemetry/test_service.py",
-      "sha256": "7115d97a22c39559bda5589acd58af8d92eee6f3cd776af2dff04380fc564eae",
-      "sourceSha256": "7115d97a22c39559bda5589acd58af8d92eee6f3cd776af2dff04380fc564eae"
+      "sha256": "cab7728c0465ad8a428e9aa184840301026439ac1c77644509136d3d0dc48485",
+      "sourceSha256": "cab7728c0465ad8a428e9aa184840301026439ac1c77644509136d3d0dc48485"
     },
     {
       "path": "tools/telemetry/test_soundscape.py",
@@ -338,8 +662,8 @@
     },
     {
       "path": "tools/visualization-contract/contract.py",
-      "sha256": "97cab033d6b2db068b4631447784989333d9532cbf024aa2018c6c5215760825",
-      "sourceSha256": "97cab033d6b2db068b4631447784989333d9532cbf024aa2018c6c5215760825"
+      "sha256": "54a803cc5bb61873ef960bf3b52cfac6b9b47875dcd06b7ccaf40a956a34f3cc",
+      "sourceSha256": "54a803cc5bb61873ef960bf3b52cfac6b9b47875dcd06b7ccaf40a956a34f3cc"
     },
     {
       "path": "tools/visualization-contract/fixtures.py",
@@ -352,6 +676,11 @@
       "sourceSha256": "a85ed95c1b21cf92547dc3d51b93035cf379a783c2b83923ab7b1d4026f66cf1"
     },
     {
+      "path": "tools/visualization-contract/test_compiled_shape.py",
+      "sha256": "5bf7eb9df52bcc78ab037ed8f70f24f986bc1b040fa191d950d87ab1bcb3dbe7",
+      "sourceSha256": "5bf7eb9df52bcc78ab037ed8f70f24f986bc1b040fa191d950d87ab1bcb3dbe7"
+    },
+    {
       "path": "tools/visualization-contract/test_contract.py",
       "sha256": "0740caa1fcf8fa824c25cbd976aea3e48361c36a4cbc05f82d6ec5430e7bf525",
       "sourceSha256": "0740caa1fcf8fa824c25cbd976aea3e48361c36a4cbc05f82d6ec5430e7bf525"
@@ -359,12 +688,13 @@
     {
       "path": "tools/visualization-frontend/README.md",
       "sha256": "4058fee9b21efd1f56331a75ce20f53ac6dc52e8e24f43f52bf335dcd96ae1ab",
-      "sourceSha256": "23fa1e25288f097ede53b0c5ded7d36743243d6c8e527927a686e8f70da38bd9"
+      "sourceSha256": "23fa1e25288f097ede53b0c5ded7d36743243d6c8e527927a686e8f70da38bd9",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
       "path": "tools/visualization-frontend/app.js",
-      "sha256": "dafbd7a98edea59383eed97106e29979b091d06c5a3adc1b2425753a731ff281",
-      "sourceSha256": "dafbd7a98edea59383eed97106e29979b091d06c5a3adc1b2425753a731ff281"
+      "sha256": "6ce5efdbdeb1d01ca3efbcbd0fe8a796be073d08966433fac2fb95dab82ea608",
+      "sourceSha256": "6ce5efdbdeb1d01ca3efbcbd0fe8a796be073d08966433fac2fb95dab82ea608"
     },
     {
       "path": "tools/visualization-frontend/assets/README.md",
@@ -395,6 +725,11 @@
       "path": "tools/visualization-frontend/data.js",
       "sha256": "06e4cdba8b5f8098d619ecdf593161596ed992d43c74c279b1f1494fd67013ea",
       "sourceSha256": "06e4cdba8b5f8098d619ecdf593161596ed992d43c74c279b1f1494fd67013ea"
+    },
+    {
+      "path": "tools/visualization-frontend/diagnostics.js",
+      "sha256": "1df3f133b154eec75be23d0b0ae5d37aba96283664fc6e793ba2860c4a71bd33",
+      "sourceSha256": "1df3f133b154eec75be23d0b0ae5d37aba96283664fc6e793ba2860c4a71bd33"
     },
     {
       "path": "tools/visualization-frontend/ground-grid.js",
@@ -438,13 +773,14 @@
     },
     {
       "path": "tools/visualization-frontend/navigation.js",
-      "sha256": "9b01c56972a6423e9f5b999711a491acd7358cf8e2ce66a5dcbcdb58887c4223",
-      "sourceSha256": "9b01c56972a6423e9f5b999711a491acd7358cf8e2ce66a5dcbcdb58887c4223"
+      "sha256": "0a3223dd77ea3ac2ae42606d063ac45e6f74abc9416e0da303e41ef2719a2eb3",
+      "sourceSha256": "0a3223dd77ea3ac2ae42606d063ac45e6f74abc9416e0da303e41ef2719a2eb3"
     },
     {
       "path": "tools/visualization-frontend/package.json",
       "sha256": "2d47e26929e3b1f15367c1414e03f77a707a067d3f84bd09bc02778db967ae1f",
-      "sourceSha256": "8468473147e23e71d88eabc4381bfa5c3d787d67037b03fbae5eed53e5842e7d"
+      "sourceSha256": "8468473147e23e71d88eabc4381bfa5c3d787d67037b03fbae5eed53e5842e7d",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
       "path": "tools/visualization-frontend/replay.js",
@@ -585,6 +921,68 @@
       "path": "tools/visualization-frontend/weak-field.js",
       "sha256": "9cca6ff55d32af3a7a5d448c7eedd3385670f56a44901b2b600e120cf7450703",
       "sourceSha256": "9cca6ff55d32af3a7a5d448c7eedd3385670f56a44901b2b600e120cf7450703"
+    },
+    {
+      "path": "tools/wwise-probe/Run-GameTelemetry.ps1",
+      "sha256": "54bbaa206cf11aa0b834f9bd6f654772b3131049783b72d99bf7b10aa11b6754",
+      "sourceSha256": "36cd0ea2c17c24abb9e245ce0e85901bbde13839a692787735d28beb11a27d34",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
+    },
+    {
+      "path": "tools/zig-scheduler/Benchmark-Control.py",
+      "sha256": "1a4e143ccd87b0f5e5f5e1419d4340bd733db925eb016e447789b15740079af7",
+      "sourceSha256": "1a4e143ccd87b0f5e5f5e1419d4340bd733db925eb016e447789b15740079af7"
+    },
+    {
+      "path": "tools/zig-scheduler/Build.ps1",
+      "sha256": "af385c0e5e2063ab077d4cb2b5d66986a407a95c83e623fd3fff6aa02c880d84",
+      "sourceSha256": "af385c0e5e2063ab077d4cb2b5d66986a407a95c83e623fd3fff6aa02c880d84"
+    },
+    {
+      "path": "tools/zig-scheduler/README.md",
+      "sha256": "621aac35ed5f90a094b0877f894d29201ceefaf5ee265cf53b8a8c3c1f4ae6d6",
+      "sourceSha256": "ee09f69d84cc641645a141040fe6a289e4c8dfec416f54c4f0f7f804fcbe99ba",
+      "adaptation": "Public dependency layout, documentation, or package configuration"
+    },
+    {
+      "path": "tools/zig-scheduler/Test-Scheduler.py",
+      "sha256": "301cff1b528ee9416b0224654505d86c42010b3f79c1667b7f0ca871bbf12f26",
+      "sourceSha256": "301cff1b528ee9416b0224654505d86c42010b3f79c1667b7f0ca871bbf12f26"
+    },
+    {
+      "path": "tools/zig-scheduler/backend.zig",
+      "sha256": "572e930546bbaf9e07c8857573f0ba8702dfecda2f87720a83e3e254ed17224d",
+      "sourceSha256": "572e930546bbaf9e07c8857573f0ba8702dfecda2f87720a83e3e254ed17224d"
+    },
+    {
+      "path": "tools/zig-scheduler/common.zig",
+      "sha256": "9f38428a73abd440586b64ba88b77b3a6a1a4383e6d9eb9cb44a0be2ead8df10",
+      "sourceSha256": "9f38428a73abd440586b64ba88b77b3a6a1a4383e6d9eb9cb44a0be2ead8df10"
+    },
+    {
+      "path": "tools/zig-scheduler/control.zig",
+      "sha256": "39b291dd7d60d7c551bae5cbcd844e8b8ddb026d4270f5b56383e23bc3239438",
+      "sourceSha256": "39b291dd7d60d7c551bae5cbcd844e8b8ddb026d4270f5b56383e23bc3239438"
+    },
+    {
+      "path": "tools/zig-scheduler/host.zig",
+      "sha256": "c88d614f266dfb872dd2a0d1b69164628bd24034bf2cb0de9fb27c9dafebfad2",
+      "sourceSha256": "c88d614f266dfb872dd2a0d1b69164628bd24034bf2cb0de9fb27c9dafebfad2"
+    },
+    {
+      "path": "tools/zig-scheduler/main.zig",
+      "sha256": "2ab8db5519a0b19bbd70e1d7fcc11d743291a3c4a67740d78b3bef28a984bd96",
+      "sourceSha256": "2ab8db5519a0b19bbd70e1d7fcc11d743291a3c4a67740d78b3bef28a984bd96"
+    },
+    {
+      "path": "tools/zig-scheduler/native.zig",
+      "sha256": "23c6de636de5c03caa8b25884b6004bd8ed1a7ed030c960dae82c0a86a9f320b",
+      "sourceSha256": "23c6de636de5c03caa8b25884b6004bd8ed1a7ed030c960dae82c0a86a9f320b"
+    },
+    {
+      "path": "tools/zig-scheduler/routing.zig",
+      "sha256": "c358888b2b621cc9cbba84d5b964da5a9024c12936d509947808c415aa5c8b7b",
+      "sourceSha256": "c358888b2b621cc9cbba84d5b964da5a9024c12936d509947808c415aa5c8b7b"
     }
   ]
 }

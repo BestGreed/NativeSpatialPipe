@@ -16,7 +16,7 @@ static SRWLOCK control=SRWLOCK_INIT;
 static volatile LONG gate=1,generation=0,wrappers=0,state=0;
 static Boundary original;static void *target,*ctx,*link;
 static Packet packet;static Stop stop_capture;static Report report_capture;static Destroy destroy_capture;static Close close_link;
-static HMODULE capture_dll,send_dll;static HANDLE stop_event,watchdog;
+static HMODULE capture_dll,send_dll;static HANDLE stop_event,watchdog,owner_process,host_process;
 static unsigned char before[32];static char final_report[10000];static DWORD stop_error;
 static LONG read_atomic(volatile LONG *p){return InterlockedCompareExchange(p,0,0);}
 static uintptr_t detour(void *a,void *b,void *c){
@@ -44,13 +44,25 @@ static void finish(void){
  size_t n=strlen(final_report);if(n&&final_report[n-1]=='}')n--;
  snprintf(final_report+n,sizeof(final_report)-n,",\"hookBackend\":\"minhook\",\"hookBytesRestored\":%s,\"captureLibraryReleased\":%s,\"transportLibraryReleased\":%s,\"hookModuleResident\":true,\"trampolineRetained\":true,\"activeOriginalCallsAtStop\":%ld}",memcmp(before,target,32)==0?"true":"false",capture_released?"true":"false",send_released?"true":"false",read_atomic(&wrappers));
 }
-static DWORD WINAPI watch(void *duration){WaitForSingleObject(stop_event,(DWORD)(uintptr_t)duration);finish();InterlockedExchange(&state,2);return 0;}
+static DWORD WINAPI watch(void *duration){
+ DWORD timeout=(DWORD)(uintptr_t)duration;
+ if(owner_process){HANDLE events[]={stop_event,owner_process,host_process};WaitForMultipleObjects(host_process?3:2,events,FALSE,INFINITE);}
+ else WaitForSingleObject(stop_event,timeout);
+ finish();InterlockedExchange(&state,stop_error?3:2);return 0;
+}
 static DWORD fail(HookConfig *c,DWORD e){c->error=e;c->win32=GetLastError();return e;}
 __declspec(dllexport) DWORD WINAPI nsp_hook_start(HookConfig *c){
  if(!c||c->magic!=NSP_HOOK_MAGIC||c->size!=sizeof(*c))return 1;
  AcquireSRWLockExclusive(&control);DWORD result=0;
  if(read_atomic(&state)==1||read_atomic(&wrappers)||stop_error){result=fail(c,2);goto done;}
- if(c->duration_ms<100||c->duration_ms>1200000||c->fixture>1){result=fail(c,3);goto done;}
+ if((c->duration_ms && (c->duration_ms<100||c->duration_ms>1200000))||c->fixture>1||(!c->duration_ms&&!c->owner_pid)){result=fail(c,3);goto done;}
+ if(owner_process){CloseHandle(owner_process);owner_process=NULL;}
+ if(host_process){CloseHandle(host_process);host_process=NULL;}
+ if(!c->duration_ms){
+  owner_process=(HANDLE)(uintptr_t)c->owner_handle;
+  if(!owner_process||WaitForSingleObject(owner_process,0)!=WAIT_TIMEOUT){result=fail(c,30);goto cleanup;}
+  if(c->host_pid){host_process=(HANDLE)(uintptr_t)c->host_handle;if(!host_process||WaitForSingleObject(host_process,0)!=WAIT_TIMEOUT){result=fail(c,31);goto cleanup;}}
+ }
  c->capture[1023]=0;c->send[1023]=0;c->mapping[255]=0;c->event[255]=0;
  HMODULE image=GetModuleHandleW(c->fixture?L"nsp_fixture.dll":NULL);
  wchar_t image_path[1024];if(!image||!GetModuleFileNameW(image,image_path,1024)){result=fail(c,4);goto done;}
@@ -83,7 +95,11 @@ __declspec(dllexport) DWORD WINAPI nsp_hook_start(HookConfig *c){
  cleanup:
  if(ctx){stop_capture(ctx);destroy_capture(ctx);ctx=NULL;}if(link){close_link(link);link=NULL;}
  if(capture_dll){FreeLibrary(capture_dll);capture_dll=NULL;}if(send_dll){FreeLibrary(send_dll);send_dll=NULL;}
- done:ReleaseSRWLockExclusive(&control);return result;
+ if(owner_process){CloseHandle(owner_process);owner_process=NULL;}
+ if(host_process){CloseHandle(host_process);host_process=NULL;}
+ done:
+ if(result&&read_atomic(&state)!=1){if(owner_process){CloseHandle(owner_process);owner_process=NULL;}if(host_process){CloseHandle(host_process);host_process=NULL;}}
+ ReleaseSRWLockExclusive(&control);return result;
 }
 __declspec(dllexport) DWORD WINAPI nsp_hook_stop(HookConfig *c){
  if(!c||c->magic!=NSP_HOOK_MAGIC||c->size!=sizeof(*c))return 1;
@@ -96,6 +112,7 @@ __declspec(dllexport) DWORD WINAPI nsp_hook_stop(HookConfig *c){
 }
 __declspec(dllexport) DWORD WINAPI nsp_hook_status(HookConfig *c){
  if(!c||c->magic!=NSP_HOOK_MAGIC||c->size!=sizeof(*c))return 1;
- snprintf(c->output,sizeof(c->output),"{\"state\":%ld,\"activeOriginalCalls\":%ld}",read_atomic(&state),read_atomic(&wrappers));return 0;
+ LONG s=read_atomic(&state);
+ snprintf(c->output,sizeof(c->output),"{\"state\":%ld,\"activeOriginalCalls\":%ld,\"stopError\":%lu,\"hookBytesRestored\":%s,\"hookEnabled\":%s}",s,read_atomic(&wrappers),stop_error,(s==2&&target&&!memcmp(before,target,32))?"true":"false",s==1?"true":"false");return 0;
 }
 BOOL WINAPI DllMain(HINSTANCE h,DWORD why,LPVOID reserved){(void)reserved;if(why==DLL_PROCESS_ATTACH)DisableThreadLibraryCalls(h);return TRUE;}

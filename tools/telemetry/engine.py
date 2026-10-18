@@ -7,6 +7,7 @@ from pathlib import Path
 import struct
 import time
 import uuid
+from metering import Metering
 
 spec = importlib.util.spec_from_file_location('output_contract', Path(__file__).resolve().parents[1] / 'visualization-contract/contract.py')
 contract = importlib.util.module_from_spec(spec)
@@ -27,7 +28,8 @@ def cov(n, expected):
 
 
 class Engine:
-    def __init__(self, route='native-route', clock=time.monotonic):
+    def __init__(self, route='native-route', clock=time.monotonic, meter_backend=None):
+        self.metering = Metering(meter_backend)
         self.route = route
         self.session = str(uuid.uuid4())
         self.clock = clock
@@ -84,15 +86,10 @@ class Engine:
         self.last_end = seq + 1
         self.last_received = self.clock()
         self.received += 1
-        values = struct.unpack_from('<5760f', raw, HEADER.size)
-        finite = all(map(math.isfinite, values))
+        measured = self.metering.rows(raw, HEADER.size, 480*4, 12)
+        finite = measured is not None
         if not finite:
             self.invalid += 1
-        measured = []
-        if finite:
-            for c in range(12):
-                samples = values[c*480:(c+1)*480]
-                measured.append((sum(x*x for x in samples), max(map(abs, samples))))
         if self.batch is None:
             self.batch = dict(start=start, end=seq+1, n=0, energy=[0.]*12, peak=[None]*12, deadline=self.clock()+.1)
         batch = self.batch
@@ -166,6 +163,6 @@ class Engine:
 
     def status(self):
         age = self.clock()-self.last_received if self.last_received is not None else None
-        return dict(status='warmup' if age is None else 'stale' if age>.25 else 'live',
+        return dict(status='warmup' if age is None else 'stale' if age>.25 else 'live',meterBackend=self.metering.name,
             receivedBlocks=self.received,invalidBlocks=self.invalid,reorderedBlocks=self.reordered,
             unobservedBlocks=self.source_gaps,historyBuckets=len(self.buckets))

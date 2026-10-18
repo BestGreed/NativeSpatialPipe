@@ -1,12 +1,14 @@
-param([switch]$TestFixtures)
+param([switch]$TestFixtures,[switch]$Managed=$true)
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path "$PSScriptRoot/../..").Path
-$clang=if($env:NSP_LLVM_BIN){Join-Path $env:NSP_LLVM_BIN 'clang.exe'}else{Join-Path $root 'work/rust-bootstrap/llvm-fast/llvm-mingw-20261006-ucrt-x86_64/bin/clang.exe'}
+$clang=Join-Path $env:NSP_LLVM_BIN 'clang.exe'
 $mh=Join-Path $root 'work/minhook'
 $out=Join-Path $root 'build/native-hook'
+$hookName='nsp_native_hook.dll'
+if($Managed){$out=Join-Path $root 'build/native-hook-managed-v2';$hookName='nsp_managed_hook_v2.dll'}
 if((git -C $mh rev-parse HEAD) -ne 'c3fcafdc10146beb5919319d0683e44e3c30d537'){throw 'MinHook revision mismatch'}
 New-Item -ItemType Directory -Force -Path $out|Out-Null
-& $clang -O2 -fms-extensions -shared -Wall -Wextra -I "$mh/include" "$PSScriptRoot/Native-Hook.c" "$mh/src/hook.c" "$mh/src/buffer.c" "$mh/src/trampoline.c" "$mh/src/hde/hde64.c" -o "$out/nsp_native_hook.dll"
+& $clang -O2 -fms-extensions -shared -Wall -Wextra -I "$mh/include" "$PSScriptRoot/Native-Hook.c" "$mh/src/hook.c" "$mh/src/buffer.c" "$mh/src/trampoline.c" "$mh/src/hde/hde64.c" -o "$out/$hookName"
 if($LASTEXITCODE){throw 'Hook build failed'}
 & $clang -O2 -municode -Wall -Wextra "$PSScriptRoot/Native-Hook-Control.c" -ladvapi32 -o "$out/nsp_hook_control.exe"
 if($LASTEXITCODE){throw 'Controller build failed'}

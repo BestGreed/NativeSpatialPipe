@@ -8,7 +8,9 @@ try {
  & ./tools/endpoint-probe/Build-NativeSend.ps1
  & ./tools/endpoint-probe/Build-NativeCapture.ps1
  & ./tools/endpoint-probe/Build-CaptureScheduler.ps1
- & ./tools/endpoint-probe/Build-NativeHook.ps1 -TestFixtures
+ & ./tools/endpoint-probe/Build-NativeHook.ps1 -Managed:$false -TestFixtures
+ & ./tools/endpoint-probe/Build-NativeHook.ps1 -Managed -TestFixtures
+ & ./tools/telemetry/Build-Meter.ps1
  & ./tools/native-receiver/Build.ps1
  & ./tools/native-receiver/Build.ps1 -TargetDirectory build/native-receiver-scheduler
  & ./tools/roar-bridge/Build.ps1 -LlvmBin $env:NSP_LLVM_BIN

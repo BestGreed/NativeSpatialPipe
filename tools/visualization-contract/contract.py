@@ -124,20 +124,20 @@ def close(a, b):
     return math.isclose(a, b, rel_tol=1e-8, abs_tol=1e-10)
 
 
-def validate_shape(value, schema, path='$'):
+def _validate_shape_interpreted(value, schema, path='$'):
     """Strict validator for this module's schema vocabulary only; fail on unknown keywords."""
     supported = {'$ref', '$schema', '$defs', 'title', 'oneOf', 'anyOf', 'type', 'enum',
                  'minimum', 'maximum', 'minLength', 'maxLength', 'items', 'minItems',
                  'maxItems', 'properties', 'required', 'additionalProperties'}
     require(not set(schema) - supported, f'{path}: unsupported schema keyword')
     if '$ref' in schema:
-        return validate_shape(value, SCHEMA['$defs'][schema['$ref'].split('/')[-1]], path)
+        return _validate_shape_interpreted(value, SCHEMA['$defs'][schema['$ref'].split('/')[-1]], path)
     for key in ('oneOf', 'anyOf'):
         if key in schema:
             successes = 0
             for option in schema[key]:
                 try:
-                    validate_shape(value, option, path)
+                    _validate_shape_interpreted(value, option, path)
                     successes += 1
                 except ValueError:
                     pass
@@ -163,10 +163,94 @@ def validate_shape(value, schema, path='$'):
         require(set(schema['required']) <= set(value), f'{path}: missing fields')
         require(set(value) <= set(schema['properties']), f'{path}: unknown fields (PCM/addresses forbidden)')
         for key, item in value.items():
-            validate_shape(item, schema['properties'][key], path + '.' + key)
+            _validate_shape_interpreted(item, schema['properties'][key], path + '.' + key)
     if kind == 'array':
         for i, item in enumerate(value):
-            validate_shape(item, schema['items'], f'{path}[{i}]')
+            _validate_shape_interpreted(item, schema['items'], f'{path}[{i}]')
+
+
+def _compile_shape(root):
+    """Prebind the immutable built-in schema; retain every shape constraint.
+
+    Avoid constructing keyword sets, lambdas, and error-path strings for every
+    scalar in every live snapshot. Invalid input uses the interpreter below to
+    preserve the original detailed diagnostics.
+    """
+    cache={}
+    supported={'$ref','$schema','$defs','title','oneOf','anyOf','type','enum',
+               'minimum','maximum','minLength','maxLength','items','minItems',
+               'maxItems','properties','required','additionalProperties'}
+    def compile_node(schema):
+        if id(schema) in cache:return cache[id(schema)]
+        require(not set(schema)-supported,'unsupported schema keyword')
+        if '$ref' in schema:
+            return compile_node(root['$defs'][schema['$ref'].split('/')[-1]])
+        union='oneOf' if 'oneOf' in schema else 'anyOf' if 'anyOf' in schema else None
+        if union:
+            options=tuple(compile_node(option) for option in schema[union])
+            def check_union(value):
+                successes=0
+                for option in options:
+                    try:option(value)
+                    except ValueError:continue
+                    successes+=1
+                    if union=='anyOf':return
+                if successes!=1:raise ValueError('union')
+            cache[id(schema)]=check_union
+            return check_union
+        kind=schema.get('type')
+        enum_values=tuple((type(v),v) for v in schema['enum']) if 'enum' in schema else None
+        minimum=schema.get('minimum');maximum=schema.get('maximum')
+        min_length=schema.get('minItems',schema.get('minLength'))
+        max_length=schema.get('maxItems',schema.get('maxLength'))
+        properties={key:compile_node(item) for key,item in schema.get('properties',{}).items()}
+        required=frozenset(schema.get('required',()))
+        allowed=frozenset(properties)
+        items=compile_node(schema['items']) if 'items' in schema else None
+        def check(value):
+            typ=type(value)
+            if enum_values is not None:
+                if not any(typ is expected and value==candidate for expected,candidate in enum_values):raise ValueError('enum')
+            if kind=='object':
+                if typ is not dict or not required<=value.keys() or not value.keys()<=allowed:raise ValueError('object')
+                for key,item in value.items():properties[key](item)
+            elif kind=='array':
+                if typ is not list:raise ValueError('array')
+                if min_length is not None and len(value)<min_length:raise ValueError('min length')
+                if max_length is not None and len(value)>max_length:raise ValueError('max length')
+                for item in value:items(item)
+            elif kind=='number':
+                if typ not in (int,float) or not math.isfinite(value):raise ValueError('number')
+            elif kind=='integer':
+                if typ is not int:raise ValueError('integer')
+            elif kind=='string':
+                if typ is not str:raise ValueError('string')
+            elif kind=='boolean':
+                if typ is not bool:raise ValueError('boolean')
+            elif kind=='null':
+                if value is not None:raise ValueError('null')
+            elif kind:raise ValueError('unsupported type')
+            if minimum is not None and value<minimum:raise ValueError('minimum')
+            if maximum is not None and value>maximum:raise ValueError('maximum')
+            if min_length is not None and len(value)<min_length:raise ValueError('min length')
+            if max_length is not None and len(value)>max_length:raise ValueError('max length')
+        cache[id(schema)]=check
+        return check
+    return compile_node(root)
+
+
+_compiled_shape=None
+
+
+def validate_shape(value, schema, path='$'):
+    global _compiled_shape
+    if schema is not SCHEMA:
+        return _validate_shape_interpreted(value,schema,path)
+    if _compiled_shape is None:_compiled_shape=_compile_shape(SCHEMA)
+    try:
+        _compiled_shape(value)
+    except (ValueError,TypeError,KeyError,OverflowError):
+        return _validate_shape_interpreted(value,schema,path)
 
 
 def check_coverage(c):

@@ -11,13 +11,19 @@ import time
 import unittest
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError
-from client import TelemetryService
+from client import TelemetryService as _TelemetryService
 from engine import contract
 from test_engine import block
 from test_soundscape import objects
 from transport import fragments
 
 ROOT=Path(__file__).resolve().parents[2]
+
+
+def TelemetryService(**kwargs):
+    # Test services must never take over the live frontend's telemetry port.
+    kwargs.setdefault('http_port',0)
+    return _TelemetryService(**kwargs)
 spec=importlib.util.spec_from_file_location('native_control',ROOT/'tools/endpoint-probe/Native-Roar.py')
 native=importlib.util.module_from_spec(spec); spec.loader.exec_module(native)
 DLL=ROOT/'build/telemetry-objects/release/nsp_roar_bridge.dll'
@@ -31,9 +37,10 @@ def audio_packet(seq):
 class ServiceTests(unittest.TestCase):
     def test_fixed_port_and_conflict(self):
         with TelemetryService() as svc:
-            self.assertEqual(svc.info['url'], 'http://127.0.0.1:8766')
-            with self.assertRaisesRegex(RuntimeError, '127.0.0.1:8766'):
-                TelemetryService()
+            port=int(svc.info['url'].rsplit(':',1)[1])
+            self.assertGreater(port,0)
+            with self.assertRaisesRegex(RuntimeError, f'127.0.0.1:{port}'):
+                TelemetryService(http_port=port)
             self.assertIn('status', svc.query('status'))
 
     def test_finish_drains_after_renderer_join_before_handle_destroy(self):

@@ -15,6 +15,10 @@ Cargo.lock files pin direct and transitive Rust dependencies. Their own licenses
 
 Windows binaries, proprietary audio codecs, game audio, Wwise projects and ASIO SDK materials are not distributed here.
 
+## Final Spatial Audio integration
+
+The FSA source under `tools/fsa-integration` derives from BestGreed/Final_Spatial_Audio revision `decba9b` and retains its own Unlicense in that directory. Its icon artwork is included with the project owner's authorization and retains its separate asset notice. See `docs/scheduler.md` and that notice before reusing artwork. The root Apache license does not override these notices or grant rights in third-party marks.
+
 ## Frontend listener model
 
 The small listener model and derived wire geometry originate from Kenney Furniture Kit under CC0 1.0. See tools/visualization-frontend/assets/README.md for provenance and the original model hash. They retain their upstream dedication.

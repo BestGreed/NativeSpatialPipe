@@ -41,18 +41,19 @@ class SoundscapeEngine(Engine):
         if self.object_epoch is not None and (epoch<self.object_epoch or epoch==self.object_epoch and seq<=self.object_last):
             self.object_invalid+=1;return False
         rows=[];seen=set();mode=None
+        measured=self.metering.rows(raw,32+ROW.size,STRIDE,count)
+        if measured is None:self.object_invalid+=1;return False
         for i in range(count):
             at=32+i*STRIDE
             slot,ident,typ,flags,gen,x,y,z,valid,gain,applied=ROW.unpack_from(raw,at)
-            values=struct.unpack_from('<480f',raw,at+ROW.size)
-            if slot in seen or slot>=160 or typ not in (1,*contract.BED_TYPES) or not 1<=gen<=contract.MAX_INT or valid not in (0,1) or applied not in (0,1) or not all(map(math.isfinite,(x,y,z,gain,*values))) or mode is not None and mode!=applied:
+            if slot in seen or slot>=160 or typ not in (1,*contract.BED_TYPES) or not 1<=gen<=contract.MAX_INT or valid not in (0,1) or applied not in (0,1) or not all(map(math.isfinite,(x,y,z,gain))) or mode is not None and mode!=applied:
                 self.object_invalid+=1;return False
             seen.add(slot);mode=applied
             previous=self.object_meta.get(slot) if epoch==self.object_epoch else None
             if previous and (gen<previous[0] or gen==previous[0] and (ident,typ)!=previous[1:]):
                 self.object_invalid+=1;return False
             rows.append(dict(slot=slot,ident=ident,typ=typ,flags=flags,gen=gen,
-                spatial=spatial([x,y,z] if valid else None),energy=sum(v*v for v in values),peak=max(map(abs,values))))
+                position=[x,y,z] if valid else None,energy=measured[i][0],peak=measured[i][1]))
         if epoch!=self.object_epoch:
             self.object_epoch=epoch;self.object_frames.clear();self.object_track.clear();self.last_input=None
             self.object_meta.clear()
@@ -82,33 +83,35 @@ class SoundscapeEngine(Engine):
                 key=(row['slot'],row['gen'])
                 previous=self.object_track.get(row['slot'])
                 created=previous['created'] if previous and previous['key']==key else seq
-                identity=dict(sessionId=self.session,streamEpoch=self.epoch,slot=row['slot'],generation=row['gen'])
-                aggregate=totals.setdefault(key,dict(n=0,energy=0.,peak=0.))
+                aggregate=totals.get(key)
+                if aggregate is None:
+                    aggregate=totals[key]=dict(n=0,energy=0.,peak=0.)
                 aggregate['n']+=480;aggregate['energy']+=row['energy'];aggregate['peak']=max(aggregate['peak'],row['peak'])
                 onset=(bool(row['flags']&1) or continuous and (previous is None or previous['key']!=key)) and row['peak']>.02
                 ended=bool(row['flags']&8)
                 if onset or ended:
+                    identity=dict(sessionId=self.session,streamEpoch=self.epoch,slot=row['slot'],generation=row['gen'])
+                    position=spatial(row['position'])
                     for kind in (['onset'] if onset else [])+(['ended'] if ended else []):
                         source=self.base+(seq+1-self.origin)*10000
                         event=dict(eventId=f'{seq}:{row["slot"]}:{row["gen"]}:{kind}',objectKey=identity,kind=kind,
-                            sourceTimeUs=source,expiresTimeUs=source+500000,spatial=row['spatial'],strength=row['peak'],
+                            sourceTimeUs=source,expiresTimeUs=source+500000,spatial=position,strength=row['peak'],
                             risePerSecond=None,endReason='source-flag' if kind=='ended' else None,exactEosSample=None)
                         if len(events)<256:events.append(event)
                         else:overflow+=1
                 if not ended:
-                    current[row['slot']]=dict(key=key,created=created)
-                row=dict(row,identity=identity,created=created)
-                if not ended:current[row['slot']]['row']=row
+                    current[row['slot']]=dict(key=key,created=created,row=row)
             self.object_track=current;self.last_input=seq
-            last_rows=[v['row'] for v in current.values()]
+            last_rows=[(v['row'],v['created']) for v in current.values()]
         n=len(frames)*480;expected=(end-start)*480
         complete=n==expected
         objects=[]
-        for row in last_rows:
+        for row,created in last_rows:
             t=totals[(row['slot'],row['gen'])]
-            objects.append(dict(objectKey=row['identity'],sourceIdent=row['ident'],kind='dynamic' if row['typ']==1 else 'static',
-                staticType=None if row['typ']==1 else row['typ'],spatial=row['spatial'],meter=meter(t['n'],t['energy'],t['peak']),
-                activeDurationUs=(frames[-1][0]-row['created']+1)*10000,applicationName=None,sourceCategory=None))
+            identity=dict(sessionId=self.session,streamEpoch=self.epoch,slot=row['slot'],generation=row['gen'])
+            objects.append(dict(objectKey=identity,sourceIdent=row['ident'],kind='dynamic' if row['typ']==1 else 'static',
+                staticType=None if row['typ']==1 else row['typ'],spatial=spatial(row['position']),meter=meter(t['n'],t['energy'],t['peak']),
+                activeDurationUs=(frames[-1][0]-created+1)*10000,applicationName=None,sourceCategory=None))
         tap=dict(quality='live' if complete else 'gap' if frames else 'disconnected',coverage=cov(n,expected),
             droppedBlocks=(expected-n)//480,snapshotComplete=complete,gainMode=mode,objects=objects,channels=[])
         message['taps']['decoded-input']=tap;message['coverage']['decoded-input']=dict(tap['coverage'])

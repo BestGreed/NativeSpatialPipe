@@ -1,16 +1,16 @@
 """Native-only owned target tests. This test does not import Frida."""
-import importlib.util,json,pathlib,struct,subprocess,sys,time,unittest
+import importlib.util,json,os,pathlib,struct,subprocess,sys,time,unittest
 ROOT=pathlib.Path(__file__).resolve().parents[2];HERE=pathlib.Path(__file__).parent
 def load(name,file):
  s=importlib.util.spec_from_file_location(name,HERE/file);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);return m
 hook=load('hook','Native-Hook.py');transport=load('send','Native-Send.py')
-SAMPLE=ROOT/'build/native-hook/test-fixture.bin'
+SAMPLE=hook.HOOK_DIR/'test-fixture.bin'
 props=bytearray(140*32)
 for i in range(140):struct.pack_into('<II',props,i*32,i,480)
 SAMPLE.write_bytes(props+bytes(140*1920))
 class Tests(unittest.TestCase):
  def run_source(self,fixture,packets,mode='normal'):
-  child=subprocess.Popen([str(ROOT/'build/native-hook/nsp_fixture_host.exe'),str(ROOT/'build'/fixture/'nsp_fixture.dll'),str(SAMPLE),str(packets)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,creationflags=subprocess.CREATE_NO_WINDOW)
+  child=subprocess.Popen([str(hook.HOOK_DIR/'nsp_fixture_host.exe'),str(ROOT/'build'/fixture/'nsp_fixture.dll'),str(SAMPLE),str(packets)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,creationflags=subprocess.CREATE_NO_WINDOW)
   receiver=control=None
   try:
    self.assertEqual(child.stdout.readline().strip(),'ready');received=[]
@@ -26,7 +26,7 @@ class Tests(unittest.TestCase):
    result=json.loads(child.stdout.readline());self.assertGreaterEqual(result['instrumentedCallTotalUs'],0)
    r=control.stop();self.assertEqual(r,control.stop());control.unload()
    self.assertIsNone(child.poll());self.assertTrue(r['hookBytesRestored']);self.assertTrue(r['captureLibraryReleased']);self.assertTrue(r['transportLibraryReleased']);self.assertFalse(r['errors']);self.assertEqual(r['queueDropped'],0)
-   after=[n.lower() for n in r['moduleAudit']['after']];self.assertIn('nsp_native_hook.dll',after);self.assertNotIn('nsp_native_capture.dll',after);self.assertNotIn('nsp_native_send.dll',after)
+   after=[n.lower() for n in r['moduleAudit']['after']];self.assertIn(hook.HOOK_DLL.name,after);self.assertNotIn('nsp_native_capture.dll',after);self.assertNotIn('nsp_native_send.dll',after)
    end=time.monotonic()+2
    while len(received)<r['copies'] and time.monotonic()<end:time.sleep(.001)
    self.assertEqual(len(received),r['copies']);self.assertTrue(all(data==SAMPLE.read_bytes() for data in received))
@@ -43,4 +43,32 @@ class Tests(unittest.TestCase):
  def test_pending_original_can_return_after_stop(self):self.run_source('capture-fixture-delay',1,'pending')
  def test_watchdog_stops_without_host_request(self):self.run_source('capture-fixture',40,'watchdog')
  def test_restart_reuses_resident_trampoline(self):self.run_source('capture-fixture',20,'restart')
+ def managed(self,kind):
+  child=subprocess.Popen([str(hook.HOOK_DIR/'nsp_fixture_host.exe'),str(ROOT/'build/capture-fixture/nsp_fixture.dll'),str(SAMPLE),'1'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,creationflags=subprocess.CREATE_NO_WINDOW)
+  owner=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'],creationflags=subprocess.CREATE_NO_WINDOW)
+  receiver=control=None
+  try:
+   self.assertEqual(child.stdout.readline().strip(),'ready')
+   receiver=transport.Receiver();receiver.start(lambda *_:None)
+   control=hook.Controller(child.pid,receiver.config,duration=0,fixture=True,owner_pid=owner.pid if kind=='owner' else os.getpid())
+   if kind=='host':
+    control.config.host_pid=owner.pid;control.path.write_bytes(bytes(control.config))
+   control.load();time.sleep(.25)
+   self.assertEqual(control.status()['state'],1)
+   if kind=='emergency':control._call('stop')
+   else:owner.terminate();owner.wait(5)
+   end=time.monotonic()+5
+   while control.status()['state']==1 and time.monotonic()<end:time.sleep(.01)
+   state=control.status()
+   self.assertEqual(state['state'],2);self.assertFalse(state['hookEnabled']);self.assertTrue(state['hookBytesRestored'])
+   result=control.stop();control.unload();self.assertTrue(result['hookBytesRestored']);self.assertFalse(result['errors'])
+  finally:
+   if control and control.started and control.result is None:control.stop();control.unload()
+   if receiver:receiver.finish()
+   for p in (owner,child):
+    if p.poll() is None:p.terminate();p.wait(5)
+   child.stdin.close();child.stdout.close();child.stderr.close()
+ def test_managed_owner_exit_stops_and_restores(self):self.managed('owner')
+ def test_managed_host_exit_stops_and_restores(self):self.managed('host')
+ def test_emergency_stop_is_independent_and_verified(self):self.managed('emergency')
 if __name__=='__main__':unittest.main()

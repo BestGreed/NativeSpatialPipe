@@ -2,6 +2,8 @@
 
 Run commands from the repository root on Windows x64. Required tools: Git, Python 3.12, PowerShell, Rust `1.97.1-x86_64-pc-windows-gnullvm`, and an LLVM/MinGW distribution providing clang.exe and libunwind.dll. The baseline used llvm-mingw `20261006-ucrt-x86_64`. Toolchains and dependency sources are installed separately.
 
+The optional native control host additionally needs Zig 0.13.0 at build time. See [scheduler setup and validation](scheduler.md). Python remains required for telemetry.
+
 ## Dependency layout
 
 ```powershell
@@ -26,7 +28,21 @@ cargo +1.97.1-x86_64-pc-windows-gnullvm fetch --locked --manifest-path tools/roa
 ./tools/Build-Core.ps1 -LlvmBin $env:NSP_LLVM_BIN
 ```
 
-Subsequent builds use `--locked --offline`. `Build-Core.ps1` builds both capture scheduling variants, both receiver output directories, native Hook/control/fixture binaries, the sender and the standard renderer. It does not download SDKs or run audio capture.
+Subsequent builds use `--locked --offline`. `Build-Core.ps1` builds the following runtime targets. It does not download SDKs or run audio capture.
+
+| Runtime component | Output directory | Used by |
+|---|---|---|
+| Shared-memory transport | `build/native-send` | All native receiver paths |
+| Capture worker | `build/native-capture`, `build/capture-scheduler-normal`, `build/capture-scheduler-mmcss` | Hook and standard scheduling options |
+| Hook/controller | `build/native-hook` | Native capture host |
+| Standard Rust receivers | `build/native-receiver/release`, `build/native-receiver-scheduler/release` | Standard single-stream entry |
+| Dynamic-stream receiver | `build/native-receiver-routing/release` | Optional priority routing |
+| Standard ROAR renderer | `build/roar-native/release` | Standard capture entry |
+| Object/output tap renderer | `build/telemetry-objects/release` | Telemetry demo and object visualization |
+
+Rust output directories also receive `libunwind.dll`. Keep that file beside the generated DLLs. For a controlled render/service/frontend run, see [telemetry and visualization](telemetry-visualization.md).
+
+The LLVM argument may point outside the checkout; the C and receiver scripts use `NSP_LLVM_BIN`, which Build-Core sets from that argument. Rust/Cargo and upstream checkouts still use the dependency layout above. Install Node.js separately only if you want to run frontend JavaScript development checks; the frontend preview itself needs Python and a WebGL2 browser, without npm installation.
 
 ## Owned-process tests
 

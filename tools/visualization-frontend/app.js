@@ -15,6 +15,10 @@ import {prepareToiletOccluders,coveredToiletLine} from './toilet-occlusion.js';
 import {projectViewPoint,namedView,dragView} from './view-camera.js';
 import {Navigation as LegacyNavigation} from './navigation-legacy.js';
 import {scenarios,scenarioObjects,metricScenario} from './navigation-scenarios.js';
+import {FrontendDiagnostics} from './diagnostics.js';
+let diagnosticStorage=null;try{diagnosticStorage=localStorage;}catch{}
+const diagnostics=new FrontendDiagnostics({storage:diagnosticStorage});
+function diagnostic(kind,message,details={}){const event=diagnostics.record(kind,message,details);if(event)console.info('[NSp frontend]',JSON.stringify(event));}
 const baseline=new URLSearchParams(location.search).get('navigation')==='off';
 const legacyMode=new URLSearchParams(location.search).get('navigation')==='legacy';
 const navigation=legacyMode?new LegacyNavigation():new Navigation(),heading=new VisualHeading(),forecast=new NavigationForecast(),pattern=new SpatialPattern(),weakInertia=new WeakInertia(),toiletFollow=new ToiletFollow(),toiletCenter=toiletBoundsCenter(toiletLines);
@@ -41,6 +45,9 @@ let schema, validate, seed, demoStart=performance.now(), lastDemo=0, lastDraw=0,
 let replay=null,replayGeneration=0,replayManifest=null,hiddenReplayPlaying=false;
 let replayScrubbing=false,replayResumeAfterScrub=false;
 const notice = text => { $('notice').textContent=text; };
+window.addEventListener('error',e=>diagnostic('runtime-error',e.message,{file:e.filename,line:e.lineno,stack:e.error?.stack}));
+window.addEventListener('unhandledrejection',e=>diagnostic('unhandled-rejection',e.reason?.message||String(e.reason),{stack:e.reason?.stack}));
+diagnostic('page-open','Frontend loaded');
 const identityText = k => `槽位 ${k.slot} / 代次 ${k.generation}`;
 function meter(peak,n=4800){const mean=peak*peak/2;return {sampleCount:n,sumSquares:mean*n,meanSquare:mean,samplePeak:peak,rmsDbfs:peak?10*Math.log10(mean):null,peakDbfs:peak?20*Math.log10(peak):null,silent:peak===0,overFullScale:peak>1};}
 function spatial(p){const r=Math.hypot(...p)||1;return {position:p,positionValid:true,coordinateSystem:'listener-relative-x-right-y-up-z-back',provenance:'raw',units:'source-unverified',rendererPosition:[p[0]/r,-p[2]/r,p[1]/r],rendererTransform:'normalize-x-negz-y'};}
@@ -329,11 +336,11 @@ function navigationStep(now){
   const prediction=displayNav.result.prediction;
   const fresh=(now-state.received<350||prediction?.active)&&advancing;
   const manual=!!drag||now<manualUntil;
-  heading.step(displayNav,dt,{manual,reduced:state.reduced,fresh});
+  heading.step(displayNav,dt,{manual,reduced:state.reduced,fresh,idleForwardSpeed:state.mode==='navigation'&&!baseline&&!legacyMode ? .025 : 0});
   const rollFresh=state.snapshot?.telemetrySeq!==lastRollSeq;
   if(rollFresh)lastRollSeq=state.snapshot?.telemetrySeq;
   const motionEnabled=state.mode==='navigation'&&!baseline&&!legacyMode&&!manual&&!state.reduced&&fresh&&!heading.phase&&
-    (displayNav.result.navigationCandidate?.valid||prediction?.active);
+    !displayNav.result.stationaryLock?.active&&(displayNav.result.navigationCandidate?.valid||prediction?.active||heading.idleForward>1e-5);
   // Return-to-center and forecast reconciliation are camera presentation,
   // not new measured angular motion. Never feed them back into prop inertia.
   const observationDt=Math.max(.05,(state.snapshot?.sourceSequenceRange.endExclusive-state.snapshot?.sourceSequenceRange.start)*.01||.1);
@@ -580,8 +587,14 @@ $('replayRestart').onclick=()=>replay?.seek(0,true).catch(e=>notice(e.message));
 $('replaySeek').oninput=()=>{if(!replayScrubbing){replayResumeAfterScrub=replay?.playing||false;replayScrubbing=true;replay?.pause();}};
 $('replaySeek').onchange=e=>{const resume=replayScrubbing?replayResumeAfterScrub:replay?.playing;replayScrubbing=false;replay?.seek(Number(e.target.value),resume).catch(e=>notice(e.message));};
 document.addEventListener('visibilitychange',()=>{if(!replay)return;if(document.hidden){hiddenReplayPlaying=replay.playing;replay.pause();}else if(hiddenReplayPlaying){hiddenReplayPlaying=false;replay.play();}});
-$('connect').onclick=async()=>{
-  if(socket){disconnect();state.error='连接已断开';notice(state.error);updateUI();return;}
+let reconnectTimer=null,liveWanted=false;
+function rememberConnection(){try{localStorage.setItem('nsp.liveConnection',JSON.stringify({enabled:liveWanted,endpoint:$('endpoint').value}));}catch{}}
+$('demo').addEventListener('click',()=>{liveWanted=false;rememberConnection();clearTimeout(reconnectTimer);});
+$('loadReplay').addEventListener('click',()=>{liveWanted=false;rememberConnection();clearTimeout(reconnectTimer);});
+$('file').addEventListener('change',()=>{liveWanted=false;rememberConnection();clearTimeout(reconnectTimer);});
+function scheduleReconnect(){clearTimeout(reconnectTimer);if(liveWanted&&state.source==='socket')reconnectTimer=setTimeout(()=>{if(!socket&&liveWanted)connectLive();},2000);}
+async function connectLive(){
+  liveWanted=true;rememberConnection();
   try{const url=new URL($('endpoint').value);assert(['ws:','wss:'].includes(url.protocol),'请输入 ws:// 或 wss:// 地址');resetSource('socket');const generation=socketGeneration;
     const http=new URL(url);http.protocol=url.protocol==='wss:'?'https:':'http:';http.pathname='/v1/capabilities';http.search='';
     notice('正在读取服务能力…');const response=await fetch(http,{signal:AbortSignal.timeout(5000)});assert(response.ok,'无法读取 capabilities；请检查服务和跨域配置');const caps=validate(await response.json());assert(caps.messageType==='capabilities'&&caps.routes.length,'服务未提供路由');if(generation!==socketGeneration)return;
@@ -589,8 +602,12 @@ $('connect').onclick=async()=>{
     socket=new WebSocket(url);$('connect').textContent='断开';
     socket.onopen=()=>{if(generation!==socketGeneration)return;socket.send(JSON.stringify({schemaVersion:caps.schemaVersion,messageType:'subscribe',routeId:route.routeId,mode:route.soundNavigation&&route.soundSpectrum?'both':route.soundNavigation?'sound-navigation':'sound-spectrum',publishRateHz:caps.publishRatesHz.includes(10)?10:caps.publishRatesHz[0],bands:['all']}));notice('已连接 · 等待协商与快照');};
     socket.onmessage=e=>{if(generation!==socketGeneration)return;try{assert(typeof e.data==='string'&&e.data.length<2*1024*1024,'消息格式错误或超过 2 MiB');accept(JSON.parse(e.data));}catch(err){state.error=`数据被拒绝：${err.message}`;notice(state.error);}};
-    socket.onclose=()=>{if(generation!==socketGeneration)return;socket=null;state.error='服务已断开 · 可手动重新连接';$('connect').textContent='连接';notice(state.error);updateUI();};socket.onerror=()=>notice('连接失败，请检查地址与服务状态');
-  }catch(e){state.error=e.message;notice(e.message);}
+    socket.onclose=()=>{if(generation!==socketGeneration)return;socket=null;state.error='服务已断开 · 正在等待重连';$('connect').textContent='连接';notice(state.error);updateUI();scheduleReconnect();};socket.onerror=()=>notice('连接失败，请检查地址与服务状态');
+  }catch(e){state.error=e.message;notice(e.message);scheduleReconnect();}
+}
+$('connect').onclick=()=>{
+  if(socket||liveWanted){liveWanted=false;rememberConnection();clearTimeout(reconnectTimer);disconnect();state.error='连接已断开';notice(state.error);updateUI();return;}
+  connectLive();
 };
 $('file').onchange=async e=>{try{
   const messages=[];for(const file of e.target.files){assert(file.size<=2*1024*1024,'文件超过 2 MiB');messages.push(validate(JSON.parse(await file.text())));}
@@ -600,6 +617,7 @@ $('file').onchange=async e=>{try{
 }catch(err){notice(`导入失败：${err.message}`);}finally{e.target.value='';}};
 async function init(){try{schema=await fetchJSON('schema.json');validate=createValidator(schema);seed=await fetchJSON('fixtures/silence.json');state.layout=validate(await fetchJSON('fixtures/layout.json'));simulate(performance.now());}catch(e){notice(`启动失败：${e.message}`);return;}
   if(new URLSearchParams(location.search).get('replay')==='wwise-minute')await loadReplay();
+  else try{const saved=JSON.parse(localStorage.getItem('nsp.liveConnection'));if(saved?.enabled&&typeof saved.endpoint==='string'){$('endpoint').value=saved.endpoint;connectLive();}}catch{}
   function loop(now){requestAnimationFrame(loop);if(document.hidden)return;if(state.source==='demo'&&now-lastDemo>=100){lastDemo=now;simulate(now);}if(state.source==='replay')replay?.tick(now);if(!state.paused&&now-lastNavigation>=50)navigationStep(now);if(!state.paused&&now-lastDraw>=1000/30){lastDraw=now;draw(now);}if(state.source==='socket'&&now-state.received>1500&&!state.paused&&now-lastStatus>500){lastStatus=now;updateUI();}}requestAnimationFrame(loop);
 }
 // Only subscribes; no route-control or Hook lifecycle requests exist in this page.

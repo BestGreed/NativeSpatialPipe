@@ -1,8 +1,10 @@
 """Control adapter only; native executable loads/controls MinHook. No Frida import."""
 import ctypes as C,json,pathlib,subprocess,tempfile
 ROOT=pathlib.Path(__file__).resolve().parents[2]
+HOOK_DIR=ROOT/'build/native-hook-managed-v2'
+HOOK_DLL=HOOK_DIR/'nsp_managed_hook_v2.dll'
 class Config(C.Structure):
- _fields_=[('magic',C.c_uint32),('size',C.c_uint32),('fixture',C.c_uint32),('duration_ms',C.c_uint32),('budget',C.c_uint64),('capture',C.c_wchar*1024),('send',C.c_wchar*1024),('mapping',C.c_wchar*256),('event',C.c_wchar*256),('error',C.c_uint32),('win32',C.c_uint32),('output',C.c_char*10000)]
+ _fields_=[('magic',C.c_uint32),('size',C.c_uint32),('fixture',C.c_uint32),('duration_ms',C.c_uint32),('budget',C.c_uint64),('capture',C.c_wchar*1024),('send',C.c_wchar*1024),('mapping',C.c_wchar*256),('event',C.c_wchar*256),('error',C.c_uint32),('win32',C.c_uint32),('output',C.c_char*10000),('owner_pid',C.c_uint32),('host_pid',C.c_uint32),('target_created',C.c_uint64),('legacy_stopped',C.c_uint32),('owner_handle',C.c_uint64),('host_handle',C.c_uint64)]
 class Module(C.Structure):
  _fields_=[('dwSize',C.c_uint32),('th32ModuleID',C.c_uint32),('th32ProcessID',C.c_uint32),('GlblcntUsage',C.c_uint32),('ProccntUsage',C.c_uint32),('modBaseAddr',C.c_void_p),('modBaseSize',C.c_uint32),('hModule',C.c_void_p),('szModule',C.c_wchar*256),('szExePath',C.c_wchar*260)]
 def modules(pid):
@@ -18,19 +20,29 @@ def modules(pid):
  finally:k.CloseHandle(h)
  return sorted(result,key=str.lower)
 class Controller:
- def __init__(self,pid,transport,duration=120,fixture=False,capture_dll=None):
+ def __init__(self,pid,transport,duration=120,fixture=False,capture_dll=None,owner_pid=0):
   self.pid=pid;self.result=None;self.started=False;self.callback=None;self.exports_sync=self
   self.config=Config();c=self.config;c.magic=0x4e534831;c.size=C.sizeof(c);c.fixture=fixture;c.duration_ms=int(duration*1000);c.budget=max(512*1024*1024,c.duration_ms*32000)
+  c.owner_pid=owner_pid;c.host_pid=__import__('os').getpid() if owner_pid else 0
+  if not duration:
+   if not owner_pid:raise ValueError('Managed hook requires a live owner PID')
+   c.budget=0xffffffffffffffff
   c.capture=str(ROOT/'build/native-capture/nsp_native_capture.dll');c.send=transport['dll'];c.mapping=transport['name'];c.event=transport['event']
   if capture_dll is not None:c.capture=str(pathlib.Path(capture_dll).resolve(strict=True))
   self.before=modules(pid)
+  if 'nsp_native_hook.dll' in [name.lower() for name in self.before]:
+   import sys
+   sys.path.insert(0,str(ROOT/'tools/backend'))
+   from legacy_hook import verify_stopped
+   verify_stopped(pid);c.legacy_stopped=1
   if any(any(t in n.lower() for t in ['frida','gum-js','quickjs','v8']) for n in self.before):raise RuntimeError('Runtime module already present in target')
   f=tempfile.NamedTemporaryFile(prefix='nsp-hook-',suffix='.bin',delete=False);self.path=pathlib.Path(f.name);f.write(bytes(c));f.close()
  def _call(self,action):
-  p=subprocess.run([str(ROOT/'build/native-hook/nsp_hook_control.exe'),str(self.pid),str(ROOT/'build/native-hook/nsp_native_hook.dll'),action,str(self.path)],capture_output=True,text=True,timeout=40,creationflags=subprocess.CREATE_NO_WINDOW)
+  p=subprocess.run([str(HOOK_DIR/'nsp_hook_control.exe'),str(self.pid),str(HOOK_DLL),action,str(self.path)],capture_output=True,text=True,timeout=40,creationflags=subprocess.CREATE_NO_WINDOW)
   if p.returncode:raise RuntimeError(f'Native {action}: {p.stderr.strip()}')
   return json.loads(p.stdout)
  def on(self,event,callback):self.callback=callback
+ def status(self):return self._call('status')
  def load(self):
   ready=self._call('start');self.started=True;self.during=modules(self.pid)
   if self.callback:self.callback({'type':'send','payload':ready},None)

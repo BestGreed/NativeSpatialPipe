@@ -135,8 +135,8 @@ export class Navigation {
 }
 export class VisualHeading {
   constructor({limit=40*rad,recenter=125*rad,hysteresis=20*rad}={}){Object.assign(this,{limit,recenter,hysteresis});this.reset();}
-  reset(){this.yaw=0;this.pitch=0;this.anchorYaw=0;this.anchorPitch=0;this.fade=1;this.phase=0;this.cooldown=0;this.relocations=0;this.armed=true;this.flow=[0,0,0];this.trustAge=1;}
-  step(nav,dt,{manual=false,reduced=false,fresh=true}={}){
+  reset(){this.yaw=0;this.pitch=0;this.anchorYaw=0;this.anchorPitch=0;this.fade=1;this.phase=0;this.cooldown=0;this.relocations=0;this.armed=true;this.flow=[0,0,0];this.idleForward=0;this.trustAge=1;}
+  step(nav,dt,{manual=false,reduced=false,fresh=true,idleForwardSpeed=0}={}){
     dt=clamp(dt,0,.1);const trusted=nav.result.prediction?.pose!=='predicted'&&nav.result.valid&&nav.result.confidence>=(nav.result.coordinateMode==='source' ? .5 : .7)&&fresh;
     this.trustAge=trusted?0:this.trustAge+dt;
     const offset=nav.yaw-this.anchorYaw,pitch=nav.pitch-this.anchorPitch;
@@ -155,7 +155,13 @@ export class VisualHeading {
     this.yaw+=(target(nav.yaw-this.anchorYaw)-this.yaw)*gain;
     this.pitch+=(target(nav.pitch-this.anchorPitch)-this.pitch)*gain;
     const flowEnabled=(enabled||nav.result.cooperativeFlow?.valid&&fresh&&!manual&&!reduced||['predicted','reconciling'].includes(nav.result.prediction?.flow)&&fresh&&!manual&&!reduced);
-    for(let i=0;i<3;i++)this.flow[i]+=((flowEnabled?(nav.result.visualFlow||nav.result.translation)?.[i]||0:0)-this.flow[i])*gain;
+    const observedFlow=flowEnabled?(nav.result.visualFlow||nav.result.translation):null;
+    // A presentation-only default: fixed scenery drifts toward +Z when the
+    // observer moves forward. Real travel and stationary references take over.
+    const drifting=fresh&&!manual&&!reduced&&!this.phase&&!nav.result.stationaryLock?.active&&norm(observedFlow||[0,0,0])<.04;
+    const driftTarget=drifting?clamp(idleForwardSpeed,0,.05):0;
+    this.idleForward+=(driftTarget-this.idleForward)*(1-Math.exp(-dt/(driftTarget ? .85 : .3)));
+    for(let i=0;i<3;i++)this.flow[i]+=(((observedFlow?.[i]||0)+(i===2?this.idleForward:0))-this.flow[i])*gain;
     return this;
   }
 }

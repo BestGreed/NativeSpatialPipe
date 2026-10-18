@@ -1,6 +1,5 @@
 """Separate service process: raw UDP ingress, metering, read-only HTTP/WebSocket."""
 import base64
-import copy
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -26,6 +25,16 @@ def run(connection, secret, allowed_origins, debug=False, http_port=8766):
     lock = threading.Lock()
     slots = threading.BoundedSemaphore(8)
     origins = set(allowed_origins)
+    encoded_key=encoded_body=None
+
+    def snapshot_bytes(snapshot):
+        # Called under lock. Published snapshots are immutable: flush builds a
+        # new tree before releasing the lock. Cache one encoding for all viewers.
+        nonlocal encoded_key,encoded_body
+        key=(snapshot['sessionId'],snapshot['streamEpoch'],snapshot['telemetrySeq'])
+        if key!=encoded_key:
+            encoded_body=encode(snapshot);encoded_key=key
+        return encoded_body
     ingress = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     ingress.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4*1024*1024)
     ingress.bind(('127.0.0.1', 0))
@@ -92,7 +101,7 @@ def run(connection, secret, allowed_origins, debug=False, http_port=8766):
                         args = parse_qs(path.query)
                         if set(args)-{'window','band'} or any(len(v)!=1 for v in args.values()): raise ValueError()
                         value = engine.history(int(args.get('window',['600'])[0]),args.get('band',['all'])[0])
-                    elif path.path == '/v1/routes/native-route/snapshot': value = copy.deepcopy(engine.latest) if engine.status()['status']=='live' else None
+                    elif path.path == '/v1/routes/native-route/snapshot': value = engine.latest if engine.status()['status']=='live' else None
                     elif path.path == '/internal/status' and debug: value = engine.status()
                     else: value = None
                 if value is None:
@@ -143,11 +152,13 @@ def run(connection, secret, allowed_origins, debug=False, http_port=8766):
                     if time.monotonic()>=deadline:
                         with lock:
                             live=engine.status()['status']=='live'
-                            latest=copy.deepcopy(engine.latest) if live else None
-                        if latest is not None:
-                            ident=(latest['streamEpoch'],latest['telemetrySeq'])
-                            if ident!=last:
-                                self.send_frame(1,encode(latest)); last=ident
+                            latest=engine.latest if live else None
+                            body=None
+                            if latest is not None:
+                                ident=(latest['streamEpoch'],latest['telemetrySeq'])
+                                if ident!=last:body=snapshot_bytes(latest)
+                        if body is not None:
+                            self.send_frame(1,body);last=ident
                         deadline=time.monotonic()+1/request['publishRateHz']
                     if select.select([self.connection],[],[],.02)[0]:
                         opcode,body=self.read_frame()
@@ -171,7 +182,7 @@ def run(connection, secret, allowed_origins, debug=False, http_port=8766):
     origins.add(f'http://127.0.0.1:{server.server_port}')
     thread=threading.Thread(target=server.serve_forever,daemon=True)
     thread.start()
-    connection.send(dict(pid=os.getpid(),udp=ingress.getsockname(),url=f'http://127.0.0.1:{server.server_port}'))
+    connection.send(dict(pid=os.getpid(),udp=ingress.getsockname(),url=f'http://127.0.0.1:{server.server_port}',meterBackend=engine.metering.name))
     try:
         running=True
         while running:
@@ -180,7 +191,7 @@ def run(connection, secret, allowed_origins, debug=False, http_port=8766):
                 with lock:
                     if command=='stop': running=False; value=True
                     elif command=='status': value=dict(engine.status(),pid=os.getpid())
-                    elif command=='snapshot': value=copy.deepcopy(engine.latest)
+                    elif command=='snapshot': value=engine.latest
                     elif command in ('history600','history3600'): value=engine.history(int(command[7:]))
                     else: value={'error':'unsupported command'}
                 connection.send(value)

@@ -1,6 +1,6 @@
 # Native Spatial Pipe
 
-Windows Spatial Audio object-stream capture and external-rendering research, implemented in C and Rust with a Python control host.
+Windows Spatial Audio object-stream capture and external-rendering research, implemented in C and Rust with Python and optional Zig control hosts.
 
 ```text
 Windows object submission → native capture worker → bounded shared memory
@@ -28,6 +28,8 @@ The endpoint and PID must be prepared and verified separately. The host may need
 The export now includes isolated output/object telemetry, versioned contracts, a browser frontend, synthetic tests and an optional dynamic-stream preference policy. See [module setup and limitations](docs/telemetry-visualization.md). Private recordings and game-specific orchestration are excluded.
 
 ## Status
+
+The optional [Zig scheduler and Sonic NSp integration](docs/scheduler.md) now provide native orchestration, persistent backend state and managed lifecycle control. Telemetry still uses Python. This update also adds native metering, file-growth telemetry routing and frontend reconnect/diagnostic improvements. C/Rust remain the audio core.
 
 The original controlled-machine experiment measured capture-to-render-completion P99 of 1.436–1.493 ms over three random-load runs, with 23,461 packets and no packet loss. The worst observed latency was 3.299 ms. These are historical measurements, not measurements from this source export or a hard deadline guarantee. Private raw game captures and the research archive are excluded.
 

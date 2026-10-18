@@ -24,6 +24,7 @@ class TelemetryService:
         self.buffer=C.create_string_buffer(BLOCK_BYTES)
         self.object_buffer=C.create_string_buffer(MAX_BLOCK)
         self.frame_id=0
+        self.stream_epoch=-1
         if not self.connection.poll(10):
             self.close(); raise RuntimeError('Telemetry service startup timeout')
         try: self.info=self.connection.recv()
@@ -48,6 +49,8 @@ class TelemetryService:
             size=fn(pipeline.handle,self.buffer,len(self.buffer))
             if size==0: break
             if size!=BLOCK_BYTES: raise RuntimeError('Unsupported raw tap format')
+            epoch=C.c_uint64.from_buffer(self.buffer,16)
+            self.stream_epoch=max(self.stream_epoch,epoch.value);epoch.value=self.stream_epoch
             try:
                 self.socket.sendto(self.secret+self.buffer.raw,self.info['udp'])
                 self.forwarded+=1
@@ -61,6 +64,8 @@ class TelemetryService:
                 size=object_fn(pipeline.handle,self.object_buffer,len(self.object_buffer))
                 if size==0:break
                 if not 32<=size<=MAX_BLOCK:raise RuntimeError('Unsupported object tap format')
+                epoch=C.c_uint64.from_buffer(self.object_buffer,16)
+                self.stream_epoch=max(self.stream_epoch,epoch.value);epoch.value=self.stream_epoch
                 self.frame_id+=1
                 for part in fragments(C.string_at(self.object_buffer,size),self.frame_id):
                     try:self.socket.sendto(self.secret+part,self.info['udp'])
@@ -73,7 +78,11 @@ class TelemetryService:
         getattr(pipeline.lib.dll,'nsp_pipeline_object_tap_read')
         pipeline.set_telemetry(False)
         pipeline.set_telemetry(True)
-        self.pump(pipeline) # Discard any queued blocks belonging to the old epoch.
+        # Native epochs are local to each pipeline. Give every attachment its
+        # own increasing wire epoch so switching to sequence zero is accepted.
+        # Only the bridge's copied headers change; native packets are untouched.
+        self.stream_epoch+=2
+        self.pump(pipeline) # Native reader discards queued blocks from old local epochs.
 
     def query(self, command, timeout=2):
         """Single control caller only. A timed-out channel is never reused."""

@@ -43,6 +43,9 @@ def main():
     if native_send and not (unmarked and streaming):raise ValueError('Native send requires unmarked streaming')
     duration = int(sys.argv[sys.argv.index('--duration')+1]) if '--duration' in sys.argv else 15
     if not 5<=duration<=1200:raise ValueError('Duration must be 5..1200 seconds')
+    managed='--managed' in sys.argv
+    owner_pid=int(sys.argv[sys.argv.index('--owner-pid')+1]) if '--owner-pid' in sys.argv else os.getpid()
+    if managed and not native_hook:raise ValueError('Managed sessions require native hook')
     stop_file=pathlib.Path(sys.argv[sys.argv.index('--stop-file')+1]) if '--stop-file' in sys.argv else None
     split_streams='--split-streams' in sys.argv
     pack_mode=sys.argv[sys.argv.index('--capture-pack')+1] if '--capture-pack' in sys.argv else 'js'
@@ -126,6 +129,9 @@ def main():
         if hashlib.sha256(image.read_bytes()).hexdigest() != '3dd24fe6faf0b56f99d5b00f24687b5f3b3e76e15b219e23f0963114a0dce9a5':
             raise RuntimeError('audiodg version mismatch')
         pid = int(sys.argv[2])
+        sys.path.insert(0,str(ROOT/'tools/backend'))
+        from windows_privileges import enable_debug
+        enable_debug()
         k = ctypes.WinDLL('kernel32', use_last_error=True)
         k.OpenProcess.argtypes = [ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32]
         k.OpenProcess.restype = ctypes.c_void_p
@@ -174,28 +180,38 @@ def main():
             prepared=native_module.NativePipeline(prepared_out,native_dll,capacity=consumer_capacity,mode=native_mode,gain=native_gain)
             prepared.prepare(prewarm_frames)
             if telemetry_enabled:
-                sys.path.insert(0,str(ROOT/'tools/telemetry'))
+                sys.path.insert(0,str(pathlib.Path(os.environ.get('NSP_TELEMETRY_SOURCE_DIR',ROOT/'tools/telemetry')).resolve()))
                 from client import TelemetryService
+                from routing import TelemetryRoutes
                 telemetry_service=TelemetryService()
-                telemetry_service.attach(prepared);telemetry_pipeline=prepared
+                telemetry_routes=TelemetryRoutes()
                 (out/'telemetry-service.json').write_text(json.dumps(telemetry_service.info,indent=2),encoding='utf-8')
                 report['telemetryService']=telemetry_service.info
                 def bridge():
                     nonlocal telemetry_pipeline
+                    last_route_report=0
                     while not telemetry_stop.is_set():
                         try:
-                            selected=native_receiver.telemetry_pipeline if native_receiver is not None else None
-                            if selected is not None and selected is not telemetry_pipeline:
-                                # Attach only on the control thread. The receiver
-                                # publishes its selected dynamic route atomically.
-                                telemetry_service.attach(selected)
-                                telemetry_pipeline.set_telemetry(False)
+                            pipelines=(native_receiver.priority_pipelines or [native_receiver.pipeline]) if native_receiver is not None and native_receiver.handle else []
+                            selected=telemetry_routes.select(pipelines)
+                            changed=selected is not telemetry_pipeline
+                            if changed:
+                                if telemetry_pipeline is not None:telemetry_pipeline.set_telemetry(False)
+                                if selected is not None:telemetry_service.attach(selected)
                                 telemetry_pipeline=selected
-                                report['telemetrySelectedDirectory']=str(selected.out)
-                            telemetry_service.pump(telemetry_pipeline)
+                                report['telemetrySelectedDirectory']=str(selected.out) if selected is not None else None
+                            if telemetry_pipeline is not None:telemetry_service.pump(telemetry_pipeline)
+                            if changed or time.monotonic()-last_route_report>=1:
+                                routing_status=telemetry_routes.status();report['telemetryRouting']=routing_status
+                                target=out/'telemetry-routing.json';temporary=target.with_suffix('.tmp')
+                                try:
+                                    temporary.write_text(json.dumps(routing_status,indent=2),encoding='utf-8');temporary.replace(target)
+                                except OSError as exc:report['telemetryRoutingLogError']=repr(exc)
+                                last_route_report=time.monotonic()
                         except Exception as exc:
                             report['telemetryBridgeError']=repr(exc);break
                         telemetry_stop.wait(.005)
+                    telemetry_routes.close()
                 def record_telemetry():
                     last=None
                     with (out/'telemetry-snapshots.jsonl').open('x',encoding='utf-8') as snapshots:
@@ -331,10 +347,14 @@ def main():
         if waitable and not native_hook:source='const STREAM_WAITABLE=true;\n'+(ROOT/'tools/endpoint-probe/Waitable-Drain.js').read_text()+'\n'+source
         if native_hook:
             spec=importlib.util.spec_from_file_location('native_hook',ROOT/'tools/endpoint-probe/Native-Hook.py');hook_module=importlib.util.module_from_spec(spec);spec.loader.exec_module(hook_module)
-            script=hook_module.Controller(pid,native_receiver.config,duration=duration,capture_dll=capture_override)
+            script=hook_module.Controller(pid,native_receiver.config,duration=0 if managed else duration,capture_dll=capture_override,owner_pid=owner_pid if managed else 0)
             report['agent']='Native-Hook.c';report['configuration']['fridaImported']='frida' in sys.modules
         else:script = session.create_script(source)
         script.on('message', message)
+        if managed:
+            sys.path.insert(0,str(ROOT/'tools/backend'))
+            from hook_state import identity
+            (out/'hook-session.json').write_text(json.dumps({'pid':pid,'created':identity(pid),'ownerPid':owner_pid,'hookGeneration':2}),encoding='utf-8')
         script.load()
         if not ready.wait(5): raise RuntimeError('Hook did not become ready')
         def cpu_snapshot():
@@ -347,8 +367,13 @@ def main():
                 return {'wallNs':time.perf_counter_ns(),'hostCpuSeconds':time.process_time(),'audioHostCpuSeconds':(fields[2].value+fields[3].value)/1e7}
             finally:k.CloseHandle(h)
         cpu_start=cpu_snapshot()
-        deadline=time.monotonic()+(duration+1 if unmarked else 13)
+        deadline=float('inf') if managed else time.monotonic()+(duration+1 if unmarked else 13)
+        next_hook_check=0
         while time.monotonic()<deadline:
+            if managed and time.monotonic()>=next_hook_check:
+                next_hook_check=time.monotonic()+1
+                if script.status()['state']!=1:
+                    report['stopReason']='hook-protection-stop';break
             if rust_receiver:report['streamPacketsReceived']=native_receiver.received
             if recorder:recorder.tick()
             if stop_file and stop_file.exists():
@@ -442,13 +467,14 @@ def main():
         if tail:report['tailTrace']=tail.finish()
         with lock: (out/'observer.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     stats=report.get('finalStats', {})
+    no_input=managed and stats.get('copies')==0 and report.get('stopReason') in ('external-stop-file','hook-protection-stop')
     failed=('error' in report or not stats.get('hookBytesRestored') or not (report.get('scriptUnloaded') or report.get('nativeControlStopped'))
             or not (report.get('sessionDetached') or report.get('nativeControlStopped')) or report.get('agentErrors') or stats.get('errors') or report.get('tailDrainError') or report.get('prewarmFinishError'))
     if unmarked:
-        failed=failed or not stats.get('copies') or stats.get('queueDropped') or stats.get('budgetRejected') or stats.get('queueRemaining')
+        failed=failed or (not stats.get('copies') and not no_input) or stats.get('queueDropped') or stats.get('budgetRejected') or stats.get('queueRemaining')
     if native_send:failed=failed or report.get('nativeTransportError') or not report.get('nativeTransport',{}).get('passed') or not stats.get('nativeSendStats',{}).get('libraryReleased') or stats.get('nativeSendStats',{}).get('rejected')
     if priority:failed=failed or not report.get('hostPriorityRestore',{}).get('restored')
-    if streaming:failed=failed or not report.get('streamSummary',{}).get('passed')
+    if streaming:failed=failed or (not report.get('streamSummary',{}).get('passed') and not no_input) or report.get('consumerFinishErrors') or report.get('consumerFinishError')
     if roar_enabled:failed=failed or report.get('roarFinishErrors') or not report.get('roarSummaries') or not all(s['passed'] for s in report['roarSummaries'].values())
     if recorder:failed=failed or not report.get('archive',{}).get('passed') or not report.get('archive',{}).get('threadStopped')
     return int(bool(failed))
