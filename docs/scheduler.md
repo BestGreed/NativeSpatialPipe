@@ -48,3 +48,9 @@ A single sequential Wwise comparison ran 60 seconds per implementation, using th
 Both runs reported clean capture/receiver/render accounting, 128 dynamic objects plus 12 bed channels, restored Hook instructions and restored endpoint state. The observed combined CPU reduction was 15.8% for this pair. Host CPU includes native DSP, and renderer work time is not end-to-end latency. These are private controlled-machine measurements; raw audio, Wwise projects, logs and machine identifiers are not distributed.
 
 The old Python entry remains available for comparisons. Legacy generation-1 Hook recovery must use its original controller. Existing Rust stream-binding reclamation limitations are unchanged. The scheduler is an optional candidate path; this export does not imply that a user's running deployment was migrated.
+
+## Recording policy and deferred storage work
+
+Full PCM output and continuous fresh telemetry snapshots remain enabled for development debugging and review. This is intentional, not a bounded production logging mode. The default managed `sessions/` directory under `%LOCALAPPDATA%/NativeSpatialPipe` can grow by roughly 10–12 GB/hour for an observed 12-channel stream with about 140 objects; PCM alone is 8.29 GB/hour. Actual volume depends on active streams and snapshot size.
+
+D15 storage governance is pending after D05 audio-interface playback is working. It will retain an explicit full-recording mode while adding lighter operation, configurable output directories/limits and protected retention. Telemetry selection must first stop depending on recording file growth, using non-real-time progress observations. This release does not enable automatic pruning, reduce snapshot frequency or change recording defaults. See the [current project overview](../README.md).

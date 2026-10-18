@@ -7,6 +7,8 @@
 
 ## 构建与运行
 
+2026-10-19：本目录为 NSp 专用集成源码，尚未回传 FSA 独立仓库主线。新增可选 `[NSP] ControlExecutable`，配置后直接调用 Zig 调度程序，`Python` 仅传给遥测；未配置时保留原 Python 控制路径。构建不会自动切换现场配置，部署、启动顺序与对照验证见[Zig 调度说明](../zig-scheduler/README.md)。
+
 集成版 EXE 现嵌入 `requireAdministrator` 启动清单，双击时由 Windows 请求管理员授权；已经在管理员上下文中启动时无需再次提权。测试用 EXE 不携带这份提权清单。
 
 仅更新 FSA 可给构建命令增加 `-FsaOnly`，不会重建或覆盖正在使用的 Hook／遥测 DLL。构建直接生成并检查正式的 `build/fsa-integration/bin/FinalSpatialAudio.exe`。如果 EXE 被占用则构建失败，不关闭进程，也不生成 pending 副本。

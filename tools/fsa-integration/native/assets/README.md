@@ -6,7 +6,7 @@
 
 | 文件 | 用途 |
 |---|---|
-| FSA.ico | 程序标识，不用于托盘 |
+| FSA.ico | 程序标识；本 NSp 集成在 Sonic 与 Hook 验证成功后也作为托盘状态图标 |
 | 2_0.ico / 5_1.ico / 7_1.ico | PCM 状态 |
 | ATMOS.ico / DTSX.ico | 空间音频状态 |
 

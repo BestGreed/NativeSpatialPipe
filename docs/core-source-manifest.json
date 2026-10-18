@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "d6916546b088d0cf24239dd665413af76c536029",
+  "sourceRevision": "4e06a2f3060bcd929d5da55fb630c7ba0248f07d",
   "hashNormalization": "CRLF to LF; all other bytes preserved",
   "files": [
     {
@@ -295,8 +295,8 @@
     },
     {
       "path": "tools/fsa-integration/README.md",
-      "sha256": "0fa396dff3561e1d7f4e7e8900047e4c4fa6b00bbe268943b7da614a59b496b3",
-      "sourceSha256": "b930b1ccb80009f2f5d3e374ffe02a6fd1a26d3d85a1879ee690ec1979b09a7a",
+      "sha256": "0039bd685499661603cd85a178947f363f98497622ef33cb4d63a7fb127c7e41",
+      "sourceSha256": "f9fd58a7748308aca7bca168739d781436fa1e6f193a16af02f23b4aba88fec0",
       "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
@@ -361,13 +361,13 @@
     },
     {
       "path": "tools/fsa-integration/native/assets/README.en.md",
-      "sha256": "ed4593cde02a88b1d3e04c90aa24568f7ad9f5736417495e2df281f313340bf3",
-      "sourceSha256": "ed4593cde02a88b1d3e04c90aa24568f7ad9f5736417495e2df281f313340bf3"
+      "sha256": "2ea24bde5bc379bc223d5aa77aa164f32a320978cba2bf1f907fc8a7d1d6c045",
+      "sourceSha256": "2ea24bde5bc379bc223d5aa77aa164f32a320978cba2bf1f907fc8a7d1d6c045"
     },
     {
       "path": "tools/fsa-integration/native/assets/README.md",
-      "sha256": "c239f53689c057f90ee293945dc6b59838a86dbe725fca5d0e0d3ee1484df2f1",
-      "sourceSha256": "c239f53689c057f90ee293945dc6b59838a86dbe725fca5d0e0d3ee1484df2f1"
+      "sha256": "2e649a78a34d8a26f291662dbe606846f53cb8ff10a5f001dac33e40acd607a5",
+      "sourceSha256": "2e649a78a34d8a26f291662dbe606846f53cb8ff10a5f001dac33e40acd607a5"
     },
     {
       "path": "tools/fsa-integration/native/audio_layout.c",
@@ -940,8 +940,8 @@
     },
     {
       "path": "tools/zig-scheduler/README.md",
-      "sha256": "621aac35ed5f90a094b0877f894d29201ceefaf5ee265cf53b8a8c3c1f4ae6d6",
-      "sourceSha256": "ee09f69d84cc641645a141040fe6a289e4c8dfec416f54c4f0f7f804fcbe99ba",
+      "sha256": "2dcf95a12aef1437d0a0adc5b892ab233b846f15350fc1de05f7330e8b5886cc",
+      "sourceSha256": "18d5d6d82edb17515f2c90f59e04d37f5c1c9369233e7854c62d20aa7147883c",
       "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {

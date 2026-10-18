@@ -6,7 +6,7 @@ Project artwork is covered by [LICENSE.txt](LICENSE.txt); artwork and third-part
 
 | File | Use |
 |---|---|
-| FSA.ico | Application identity; never used in the tray |
+| FSA.ico | Application identity; this NSp integration also uses it in the tray after Sonic and Hook verification |
 | 2_0.ico / 5_1.ico / 7_1.ico | PCM mode status |
 | ATMOS.ico / DTSX.ico | Spatial audio status |
 
