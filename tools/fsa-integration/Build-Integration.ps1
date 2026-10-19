@@ -42,6 +42,12 @@ if($LASTEXITCODE){throw 'Icon tests failed'}
 if($LASTEXITCODE){throw 'NSp UI contract build failed'}
 & "$bin/nsp-ui-test.exe"
 if($LASTEXITCODE){throw 'NSp UI contract failed'}
+& $clang @flags "$src/nsp_exit_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/nsp-exit-test.exe"
+if($LASTEXITCODE){throw 'NSp exit regression build failed'}
+1..2 | ForEach-Object {
+ & "$bin/nsp-exit-test.exe"
+ if($LASTEXITCODE){throw 'NSp exit/reopen regression failed'}
+}
 & $clang @flags "$src/tray_animation_test.c" "$src/fluent_menu.c" "$bin/fsa-test-resource.o" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/tray-animation-test.exe"
 if($LASTEXITCODE){throw 'Tray animation test build failed'}
 & "$bin/tray-animation-test.exe"

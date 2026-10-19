@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "ab2bbe8a3c73e151e9c366e3d4010395b0b572e1",
+  "sourceRevision": "17ab177fc5194c198fd12cd9eb2b4bd8b3d55fa2",
   "hashNormalization": "CRLF to LF; all other bytes preserved",
   "files": [
     {
@@ -95,7 +95,8 @@
     {
       "path": "tools/Build-Core.ps1",
       "sha256": "ae76d5c316f91275bde51d1448f27cab8c110f8873b9ec6d3f48c91b4fc2a05c",
-      "sourceSha256": "ae76d5c316f91275bde51d1448f27cab8c110f8873b9ec6d3f48c91b4fc2a05c"
+      "sourceSha256": null,
+      "sourceKind": "public-only build adaptation"
     },
     {
       "path": "tools/backend/backend.py",
@@ -284,8 +285,8 @@
     },
     {
       "path": "tools/fsa-integration/Build-Integration.ps1",
-      "sha256": "1344539cc3387838576615e0d1e9e023b061d1ef45609a664fef878459d7a998",
-      "sourceSha256": "6452721fe86ba9808431813991233bcc678ff0132f07954b6cad331e8cf61630",
+      "sha256": "46d3cae5b25d5540f47d752d9eadec93785fd17540d301f74184feb08b5a5227",
+      "sourceSha256": "4b6a281c9df6542db4127ed94757d9d7c7daa4177b567789a65c5211c13d735e",
       "adaptation": "Public dependency layout, documentation, or package configuration"
     },
     {
@@ -397,8 +398,8 @@
     },
     {
       "path": "tools/fsa-integration/native/final_spatial_audio.c",
-      "sha256": "93cff3e914fac84221dca7d3a95cb703188eae9be7cf93521781d1a7cc092e7a",
-      "sourceSha256": "93cff3e914fac84221dca7d3a95cb703188eae9be7cf93521781d1a7cc092e7a"
+      "sha256": "4f30beaa3aa9b1b293f443e6e60ae8b789cabde6df8f1f94012c13d905f828c3",
+      "sourceSha256": "4f30beaa3aa9b1b293f443e6e60ae8b789cabde6df8f1f94012c13d905f828c3"
     },
     {
       "path": "tools/fsa-integration/native/final_spatial_audio.manifest",
@@ -412,13 +413,13 @@
     },
     {
       "path": "tools/fsa-integration/native/fluent_menu.c",
-      "sha256": "70c5c6bdc01d03b0f1e7fd8719ec378e467097778dd71c0ddf81cbf5427ae17a",
-      "sourceSha256": "70c5c6bdc01d03b0f1e7fd8719ec378e467097778dd71c0ddf81cbf5427ae17a"
+      "sha256": "9e4d3705a64ae91ac6c1b4198b828e70cfd11df6147b5275ca5d697e582fa55e",
+      "sourceSha256": "9e4d3705a64ae91ac6c1b4198b828e70cfd11df6147b5275ca5d697e582fa55e"
     },
     {
       "path": "tools/fsa-integration/native/fluent_menu.h",
-      "sha256": "0b57d09add6768bdc22c1db69c8c3e2f445dee0c66b601120e421eadde706732",
-      "sourceSha256": "0b57d09add6768bdc22c1db69c8c3e2f445dee0c66b601120e421eadde706732"
+      "sha256": "366054baa608c55195bf09bdc47365129f6ad7d87754319872691a1f4f574b2f",
+      "sourceSha256": "366054baa608c55195bf09bdc47365129f6ad7d87754319872691a1f4f574b2f"
     },
     {
       "path": "tools/fsa-integration/native/icon_test.c",
@@ -427,8 +428,8 @@
     },
     {
       "path": "tools/fsa-integration/native/language.h",
-      "sha256": "20dc3cf40cef4818b83dea9f7b280f57c628450f04e3114d81d7ad376c6561a1",
-      "sourceSha256": "20dc3cf40cef4818b83dea9f7b280f57c628450f04e3114d81d7ad376c6561a1"
+      "sha256": "0d2ceb581aa9d1011ff0bf8939f9f0628d518e0629f0b8fe2d1810a5f3212626",
+      "sourceSha256": "0d2ceb581aa9d1011ff0bf8939f9f0628d518e0629f0b8fe2d1810a5f3212626"
     },
     {
       "path": "tools/fsa-integration/native/language_test.c",
@@ -452,8 +453,13 @@
     },
     {
       "path": "tools/fsa-integration/native/nsp_control.h",
-      "sha256": "4e70beae350174e1bc10c192d0a06428b3a6488003364e854316fb9da5afac84",
-      "sourceSha256": "4e70beae350174e1bc10c192d0a06428b3a6488003364e854316fb9da5afac84"
+      "sha256": "726b46e3889a97dabfeab295e0fd875f678b7c424f9a332f5da7bbd2d3d47270",
+      "sourceSha256": "726b46e3889a97dabfeab295e0fd875f678b7c424f9a332f5da7bbd2d3d47270"
+    },
+    {
+      "path": "tools/fsa-integration/native/nsp_exit_test.c",
+      "sourceSha256": "885025bc65fbdeb0dc6b1af233a9f40a61de9b6a3b3d230c36734a8219bef9db",
+      "sha256": "885025bc65fbdeb0dc6b1af233a9f40a61de9b6a3b3d230c36734a8219bef9db"
     },
     {
       "path": "tools/fsa-integration/native/nsp_state.h",
@@ -462,13 +468,13 @@
     },
     {
       "path": "tools/fsa-integration/native/nsp_ui_test.c",
-      "sha256": "fcbde183b8720dddafc89de3da6a4fcfa5c76082753ba0cfcac997468f29f0cc",
-      "sourceSha256": "fcbde183b8720dddafc89de3da6a4fcfa5c76082753ba0cfcac997468f29f0cc"
+      "sha256": "a8a989bfb55281ac9faf5fa226fcad71fa8579165849c10a93789752f6878814",
+      "sourceSha256": "a8a989bfb55281ac9faf5fa226fcad71fa8579165849c10a93789752f6878814"
     },
     {
       "path": "tools/fsa-integration/native/popup_test.c",
-      "sha256": "3a189da0d28fc1c4ab94ca1a7458799323157a7a247e2b7e348d7c183cd6c2d1",
-      "sourceSha256": "3a189da0d28fc1c4ab94ca1a7458799323157a7a247e2b7e348d7c183cd6c2d1"
+      "sha256": "bcef5a307b338038227d562e5162d9d4418fbed9ed1741ad3f0e23449ade7d45",
+      "sourceSha256": "bcef5a307b338038227d562e5162d9d4418fbed9ed1741ad3f0e23449ade7d45"
     },
     {
       "path": "tools/fsa-integration/native/profile_store.h",
@@ -652,8 +658,8 @@
     },
     {
       "path": "tools/telemetry/test_service.py",
-      "sha256": "cab7728c0465ad8a428e9aa184840301026439ac1c77644509136d3d0dc48485",
-      "sourceSha256": "cab7728c0465ad8a428e9aa184840301026439ac1c77644509136d3d0dc48485"
+      "sha256": "a45f793b30a16440907f5ac66c1f8634658be9a8985eeecdf2b7e09cc0236681",
+      "sourceSha256": "a45f793b30a16440907f5ac66c1f8634658be9a8985eeecdf2b7e09cc0236681"
     },
     {
       "path": "tools/telemetry/test_soundscape.py",
@@ -939,8 +945,8 @@
     },
     {
       "path": "tools/zig-scheduler/Build.ps1",
-      "sha256": "af385c0e5e2063ab077d4cb2b5d66986a407a95c83e623fd3fff6aa02c880d84",
-      "sourceSha256": "af385c0e5e2063ab077d4cb2b5d66986a407a95c83e623fd3fff6aa02c880d84"
+      "sha256": "706846429b8cf7e8ef64ff7a7cc9df6c5e2a910bfc81f3d4cb66fceb8953fcaf",
+      "sourceSha256": "706846429b8cf7e8ef64ff7a7cc9df6c5e2a910bfc81f3d4cb66fceb8953fcaf"
     },
     {
       "path": "tools/zig-scheduler/README.md",
@@ -950,23 +956,23 @@
     },
     {
       "path": "tools/zig-scheduler/Test-Scheduler.py",
-      "sha256": "cf6dda6976fa4d76fc493df13898f62d08ac956950af8d4978f93871fbf09678",
-      "sourceSha256": "cf6dda6976fa4d76fc493df13898f62d08ac956950af8d4978f93871fbf09678"
+      "sha256": "f6b4a74ba8c2a04eca77144d34c5627015c829a386b75e997a97537eb5afdfb2",
+      "sourceSha256": "f6b4a74ba8c2a04eca77144d34c5627015c829a386b75e997a97537eb5afdfb2"
     },
     {
       "path": "tools/zig-scheduler/backend.zig",
-      "sha256": "572e930546bbaf9e07c8857573f0ba8702dfecda2f87720a83e3e254ed17224d",
-      "sourceSha256": "572e930546bbaf9e07c8857573f0ba8702dfecda2f87720a83e3e254ed17224d"
+      "sha256": "baf092dd37241ebc6f421fbd4c3895b4164410f0284b03cf4fbd5a461872a38e",
+      "sourceSha256": "baf092dd37241ebc6f421fbd4c3895b4164410f0284b03cf4fbd5a461872a38e"
     },
     {
       "path": "tools/zig-scheduler/common.zig",
-      "sha256": "9f38428a73abd440586b64ba88b77b3a6a1a4383e6d9eb9cb44a0be2ead8df10",
-      "sourceSha256": "9f38428a73abd440586b64ba88b77b3a6a1a4383e6d9eb9cb44a0be2ead8df10"
+      "sha256": "046a7ac97155a43b849800a577d3d30f37fa515bb36b9dba8fa94366d773e164",
+      "sourceSha256": "046a7ac97155a43b849800a577d3d30f37fa515bb36b9dba8fa94366d773e164"
     },
     {
       "path": "tools/zig-scheduler/control.zig",
-      "sha256": "39b291dd7d60d7c551bae5cbcd844e8b8ddb026d4270f5b56383e23bc3239438",
-      "sourceSha256": "39b291dd7d60d7c551bae5cbcd844e8b8ddb026d4270f5b56383e23bc3239438"
+      "sha256": "cfd9ca70e576336c15c96654134f8ea623024b9d31312be8b6322bed96b4873f",
+      "sourceSha256": "cfd9ca70e576336c15c96654134f8ea623024b9d31312be8b6322bed96b4873f"
     },
     {
       "path": "tools/zig-scheduler/host.zig",
@@ -987,6 +993,11 @@
       "path": "tools/zig-scheduler/routing.zig",
       "sha256": "c358888b2b621cc9cbba84d5b964da5a9024c12936d509947808c415aa5c8b7b",
       "sourceSha256": "c358888b2b621cc9cbba84d5b964da5a9024c12936d509947808c415aa5c8b7b"
+    },
+    {
+      "path": "tools/zig-scheduler/socket_io.zig",
+      "sourceSha256": "f264588a85924fce1b68b4890285d8dc0a2079f021a257b47217d916ebd3dc36",
+      "sha256": "f264588a85924fce1b68b4890285d8dc0a2079f021a257b47217d916ebd3dc36"
     }
   ]
 }

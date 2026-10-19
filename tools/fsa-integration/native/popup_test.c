@@ -10,14 +10,14 @@ static LRESULT CALLBACK owner_proc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
         KillTimer(hwnd,1);
         if(test_case>=16) {
             SendMessageW(popup,WM_KEYDOWN,VK_HOME,0);
-            if(test_case==17)SendMessageW(popup,WM_KEYDOWN,VK_DOWN,0);
+            for(int i=0;i<(test_case==18?5:test_case==17?1:0);i++)SendMessageW(popup,WM_KEYDOWN,VK_DOWN,0);
             SendMessageW(popup,WM_KEYDOWN,VK_RETURN,0);
             return 0;
         }
         if(test_case>=13) {
             if(test_case==13){
                 SendMessageW(popup,WM_KEYDOWN,VK_HOME,0);
-                for(int i=0;i<5;i++)SendMessageW(popup,WM_KEYDOWN,VK_DOWN,0);
+                for(int i=0;i<6;i++)SendMessageW(popup,WM_KEYDOWN,VK_DOWN,0);
                 SendMessageW(popup,WM_KEYDOWN,VK_RETURN,0);
             } else {
                 SendMessageW(popup,WM_KEYDOWN,VK_LEFT,0);
@@ -36,14 +36,14 @@ static LRESULT CALLBACK owner_proc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
             if(!child){geometry_failed=1;SendMessageW(popup,WM_CLOSE,0,0);SetCursorPos(original_cursor.x,original_cursor.y);return 0;}
             UINT dpi=GetDpiForWindow(popup);
             if(phase==1) {
-                POINT margin={MulDiv(3,dpi,96),MulDiv(269,dpi,96)},screen=margin;
+                POINT margin={MulDiv(3,dpi,96),MulDiv(303,dpi,96)},screen=margin;
                 ClientToScreen(popup,&screen);SetCursorPos(screen.x,screen.y);
                 SendMessageW(popup,WM_MOUSEMOVE,0,MAKELPARAM(margin.x,margin.y));
                 if(!IsWindow(child))geometry_failed=1;
                 phase=2;SetTimer(hwnd,1,200,NULL);return 0;
             }
             if(phase==2) {
-                POINT gap={-MulDiv(2,dpi,96),MulDiv(269,dpi,96)};ClientToScreen(popup,&gap);SetCursorPos(gap.x,gap.y);
+                POINT gap={-MulDiv(2,dpi,96),MulDiv(303,dpi,96)};ClientToScreen(popup,&gap);SetCursorPos(gap.x,gap.y);
                 SendMessageW(popup,WM_MOUSELEAVE,0,0);
                 phase=3;SetTimer(hwnd,1,200,NULL);return 0;
             }
@@ -76,7 +76,7 @@ static LRESULT CALLBACK owner_proc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
         }
         if(test_case>=8) {
             if(phase==0) {
-                POINT at={70,269};UINT dpi=GetDpiForWindow(popup);at.x=MulDiv(at.x,dpi,96);at.y=MulDiv(at.y,dpi,96);
+                POINT at={70,303};UINT dpi=GetDpiForWindow(popup);at.x=MulDiv(at.x,dpi,96);at.y=MulDiv(at.y,dpi,96);
                 POINT screen=at;ClientToScreen(popup,&screen);SetCursorPos(screen.x,screen.y);
                 SendMessageW(popup,WM_MOUSEMOVE,0,MAKELPARAM(at.x,at.y));
                 if(FindWindowW(L"FSAFluentPopup",L"Final Spatial Audio Advanced"))geometry_failed=1;
@@ -120,11 +120,12 @@ int main(int argc,char **argv) {
     WNDCLASSW wc={0};wc.hInstance=instance;wc.lpfnWndProc=owner_proc;wc.lpszClassName=L"FSAPopupTestOwner";RegisterClassW(&wc);
     HWND owner=CreateWindowW(wc.lpszClassName,L"Popup test",0,0,0,0,0,NULL,NULL,instance,NULL);
     if(!owner)return 1;
-    UINT expected[]={205,0,101,0,206,209,200,205,0,0,0,0,206,106,209,208,100,102};int failed=0;
-    for(test_case=0;test_case<18;test_case++) {
-        ticks=phase=0;GetCursorPos(&original_cursor);SetTimer(owner,1,250,NULL);
+    UINT expected[]={205,0,101,0,206,209,200,205,0,0,0,0,206,106,209,208,100,102,105};int failed=0;
+    for(test_case=0;test_case<19;test_case++) {
+        ticks=phase=0;GetCursorPos(&original_cursor);SetCursorPos(0,0);SetTimer(owner,1,250,NULL);
         FSA_MenuState state={2,1,0,test_case==6?1u:test_case==17?125u:127u,test_language,test_case>=14};
         UINT actual=fsa_popup(owner,&state);
+        SetCursorPos(original_cursor.x,original_cursor.y);
         KillTimer(owner,1);
         printf("Popup case %d: got %u expected %u geometry=%d\n",test_case,actual,expected[test_case],geometry_failed);
         if(actual!=expected[test_case] || ticks>25) {failed=1;break;}

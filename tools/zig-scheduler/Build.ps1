@@ -14,5 +14,7 @@ if($LASTEXITCODE){throw 'Zig scheduler build failed'}
 if(-not $SkipTests){
  & $Zig test "$PSScriptRoot/routing.zig" -O ReleaseSafe
  if($LASTEXITCODE){throw 'Zig routing tests failed'}
+ & $Zig test "$PSScriptRoot/control.zig" @flags "-femit-bin=$out/control-tests.exe"
+ if($LASTEXITCODE){throw 'Zig orphan recovery tests failed'}
 }
 Write-Output "Built native scheduler: $out/nsp-scheduler.exe"

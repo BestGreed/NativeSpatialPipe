@@ -14,7 +14,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
-EXE = ROOT / 'build/zig-scheduler/nsp-scheduler.exe'
+EXE = Path(os.environ.get('NSP_SCHEDULER_TEST_EXE', ROOT / 'build/zig-scheduler/nsp-scheduler.exe'))
 FLAGS = {'creationflags': subprocess.CREATE_NO_WINDOW}
 
 
@@ -40,11 +40,151 @@ def wait_for(predicate, process=None, timeout=15):
 
 
 def cli(home, *args, **kwargs):
+    kwargs.setdefault('timeout', 15)
     return subprocess.run([str(EXE), *args, '--root', str(ROOT), '--home', str(home)],
-                          capture_output=True, text=True, timeout=15, **FLAGS, **kwargs)
+                          capture_output=True, text=True, **FLAGS, **kwargs)
 
 
 class SchedulerTests(unittest.TestCase):
+    def test_explicit_start_recovers_retired_fault_only_after_live_stop_proof(self):
+        target=subprocess.Popen([sys.executable,'-c','pass'],**FLAGS);target.wait(timeout=5)
+        with tempfile.TemporaryDirectory(dir=ROOT/'build',prefix='zig-restart-fault-') as temp:
+            home=Path(temp);output=home/'sessions/old';(output/'observed').mkdir(parents=True)
+            (home/'session.json').write_text(json.dumps(dict(id='old',outputDirectory=str(output),state='faulted',ownerPid=123,endpoint='fixture',orchestratorPid=target.pid)))
+            (output/'observed/hook-session.json').write_text(json.dumps(dict(hookGeneration=2,pid=target.pid,created=1)))
+            host=subprocess.Popen([str(EXE),'serve','--root',str(ROOT),'--home',temp,'--port','0'],**FLAGS)
+            try:
+                wait_for(lambda:(home/'runtime.json').exists(),host)
+                # Owner zero intentionally rejects the new start before any
+                # audio work. The previous-session transition is still real.
+                result=cli(home,'start','--owner-pid','0','--endpoint','fixture')
+                self.assertEqual(result.returncode,20)
+                self.assertEqual(json.loads(cli(home,'request').stdout)['sessionState'],'recovery-required')
+                (output/'endpoint.json').write_text(json.dumps(dict(restored=True,hookCompleted=True,hookExitCode=20)))
+                result=cli(home,'start','--owner-pid','0','--endpoint','fixture')
+                self.assertEqual(result.returncode,20)
+                self.assertEqual(json.loads(cli(home,'request').stdout)['sessionState'],'stopped')
+            finally:
+                (output/'endpoint.json').write_text(json.dumps(dict(restored=True,hookCompleted=True,hookExitCode=0)))
+                cli(home,'request','--action','recover');cli(home,'request','--action','exit');host.wait(timeout=5)
+
+    def test_shutdown_idle_manager_exits_through_native_control_adapter(self):
+        with tempfile.TemporaryDirectory(dir=ROOT/'build',prefix='zig-idle-exit-') as temp:
+            home=Path(temp)
+            host=subprocess.Popen([str(EXE),'serve','--root',str(ROOT),'--home',temp,'--port','0'],**FLAGS)
+            try:
+                wait_for(lambda:(home/'runtime.json').exists(),host)
+                result=cli(home,'shutdown')
+                self.assertEqual(result.returncode,10,result.stdout+result.stderr)
+                self.assertEqual(host.wait(timeout=5),0)
+                self.assertFalse((home/'runtime.json').exists())
+            finally:
+                if host.poll() is None:
+                    cli(home,'request','--action','exit');host.wait(timeout=5)
+
+    def test_shutdown_fault_is_separate_from_live_hook_and_requires_teardown(self):
+        # An owned process which has really exited supplies the target identity.
+        # inspect returns targetExited without opening or loading any Hook DLL.
+        target = subprocess.Popen([sys.executable, '-c', 'pass'], **FLAGS)
+        target.wait(timeout=5)
+        for reachable in (False, True):
+            with self.subTest(backendReachable=reachable), tempfile.TemporaryDirectory(dir=ROOT/'build', prefix='zig-shutdown-') as temp:
+                home=Path(temp); output=home/'sessions/fault'; (output/'observed').mkdir(parents=True)
+                owner=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)'],**FLAGS)
+                session=dict(id='fault',outputDirectory=str(output),state='faulted',ownerPid=123,
+                             endpoint='fixture',orchestratorPid=owner.pid)
+                (home/'session.json').write_text(json.dumps(session))
+                (output/'observed/hook-session.json').write_text(json.dumps(dict(hookGeneration=2,pid=target.pid,created=1)))
+                (output/'endpoint.json').write_text(json.dumps(dict(restored=True,hookCompleted=True,hookExitCode=20,error='Writer queue failed')))
+                host=None
+                try:
+                    if reachable:
+                        host=subprocess.Popen([str(EXE),'serve','--root',str(ROOT),'--home',temp,'--port','0'],**FLAGS)
+                        wait_for(lambda:(home/'runtime.json').exists(),host)
+                    # A live owner must not be mistaken for completed teardown.
+                    self.assertEqual(cli(home,'shutdown').returncode,20)
+                    owner.terminate();owner.wait(timeout=5)
+                    (output/'endpoint.json').write_text(json.dumps(dict(restored=False,hookCompleted=True,hookExitCode=20)))
+                    self.assertEqual(cli(home,'shutdown').returncode,20)
+                    (output/'endpoint.json').write_text(json.dumps(dict(restored=True,hookCompleted=True,hookExitCode=20,error='Writer queue failed')))
+                    result=cli(home,'shutdown')
+                    self.assertEqual(result.returncode,10,result.stdout+result.stderr)
+                    if host: self.assertEqual(host.wait(timeout=5),0)
+                finally:
+                    if owner.poll() is None: owner.terminate();owner.wait(timeout=5)
+                    if host and host.poll() is None:
+                        cli(home,'request','--action','recover')
+                        cli(home,'request','--action','exit')
+                        try: host.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            # Only this test's own fixture, never a live host.
+                            host.terminate();host.wait(timeout=5)
+
+    def test_repeated_stop_after_fault_stays_responsive_without_false_recovery(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='zig-fault-stop-') as temp:
+            home = Path(temp)
+            output = home / 'sessions/failed'
+            output.mkdir(parents=True)
+            (home / 'session.json').write_text(json.dumps(dict(id='failed', outputDirectory=str(output),
+                state='faulted', ownerPid=123, endpoint='test')))
+            host = subprocess.Popen([str(EXE), 'serve', '--root', str(ROOT), '--home', temp, '--port', '0'], **FLAGS)
+            try:
+                wait_for(lambda: (home / 'runtime.json').exists(), host)
+                for _ in range(3):
+                    for action in ('stop', 'emergency-stop'):
+                        result = cli(home, action)
+                        self.assertEqual(result.returncode, 20)
+                    result = cli(home, 'request')
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(json.loads(result.stdout)['sessionState'], 'recovery-required')
+                # Unproven stop must not be reported as successful merely to exit.
+                self.assertNotEqual(cli(home, 'request', '--action', 'exit').returncode, 0)
+                (output / 'endpoint.json').write_text(json.dumps(dict(restored=True, hookCompleted=True, hookExitCode=0)))
+                self.assertEqual(cli(home, 'request', '--action', 'recover').returncode, 0)
+            finally:
+                cli(home, 'request', '--action', 'exit')
+                host.wait(timeout=5)
+
+    def test_idle_and_partial_http_connections_have_a_total_deadline(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='zig-http-timeout-') as temp:
+            home = Path(temp)
+            host = subprocess.Popen([str(EXE), 'serve', '--root', str(ROOT), '--home', temp,
+                                     '--port', '0', '--python', sys.executable], **FLAGS)
+            try:
+                runtime = wait_for(lambda: json.loads((home / 'runtime.json').read_text()), host)
+                cases = [b'', b'GET / HTTP/1.1\r\nHost: localhost\r\n',
+                         ('POST /api/backend/configure HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer '
+                          + runtime['token'] + '\r\nContent-Length: 100\r\n\r\n{').encode()]
+                for payload in cases:
+                    with socket.create_connection(('127.0.0.1', runtime['port']), timeout=2) as idle:
+                        if payload:
+                            idle.sendall(payload)
+                        time.sleep(.1)
+                        started = time.monotonic()
+                        with urlopen(runtime['url'] + '/api/backend/status', timeout=4) as reply:
+                            self.assertEqual(json.load(reply)['sessionState'], 'idle')
+                        self.assertLess(time.monotonic() - started, 3.5)
+                        # Same manager serves the actual frontend and schema.
+                        for asset in ('/', '/contracts/visualization/v0/schema.json'):
+                            with urlopen(runtime['url']+asset,timeout=2) as reply:
+                                self.assertGreater(len(reply.read()),0)
+            finally:
+                cli(home, 'request', '--action', 'exit')
+                host.wait(timeout=5)
+
+    def test_control_client_times_out_when_server_never_replies(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='zig-client-timeout-') as temp:
+            with socket.socket() as listener:
+                listener.bind(('127.0.0.1', 0))
+                listener.listen(1)
+                home = Path(temp)
+                (home / 'runtime.json').write_text(json.dumps(dict(scheduler='zig', port=listener.getsockname()[1], token='test')))
+                started = time.monotonic()
+                reply = cli(home, 'request', timeout=5)
+                self.assertEqual(reply.returncode, 20)
+                self.assertIn('SocketTimeout', reply.stderr)
+                self.assertLess(time.monotonic() - started, 3.5)
+
     def test_default_configuration_migration_preserves_rules_and_snapshots(self):
         import configparser
         with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='zig-default-') as temp:
@@ -59,7 +199,7 @@ class SchedulerTests(unittest.TestCase):
                 config = configparser.ConfigParser(interpolation=None)
                 config.read(ini, encoding='utf-16')
                 self.assertEqual(config['NSP']['Scheduler'], mode)
-                self.assertEqual(Path(config['NSP']['ControlExecutable']), EXE)
+                self.assertEqual(Path(config['NSP']['ControlExecutable']), ROOT / 'build/zig-scheduler/nsp-scheduler.exe')
                 self.assertEqual(config['NSP']['Python'], sys.executable)
                 self.assertEqual(config['Rule:Keep']['Enabled'], '1')
                 self.assertEqual(config['Manager']['Language'], 'zh')

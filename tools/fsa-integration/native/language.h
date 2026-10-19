@@ -10,7 +10,7 @@ typedef enum {
     TXT_READING, TXT_CAPTURED, TXT_INIT_FAILED, TXT_COM_FAILED, TXT_UNAVAILABLE,
     TXT_READY, TXT_SWITCHING, TXT_VERIFIED, TXT_SWITCH_FAILED, TXT_UNKNOWN,
     TXT_MANUAL, TXT_STARTUP_FAILED, TXT_NO_SPATIAL, TXT_CAPTURE_OK, TXT_CAPTURE_FAILED,
-    TXT_NSP, TXT_NSP_STOP, TXT_NSP_EMERGENCY,
+    TXT_NSP, TXT_NSP_STOP, TXT_NSP_EMERGENCY, TXT_SONIC,
     TXT_COUNT
 } FSA_Text;
 
@@ -42,9 +42,10 @@ static inline const wchar_t *fsa_text(FSA_Language language,FSA_Text id) {
          L"当前输出设备未报告可用的家庭影院空间音频模式（Dolby Atmos / DTS:X）。可能与设备、连接方式或空间音频组件有关。不可用的模式已置灰；可继续使用支持的标准模式。"},
         {L"The current Windows audio settings have been captured and saved to the corresponding mode profile.",L"已捕获当前系统音频设置，并更新对应模式的配置。"},
         {L"Capture failed: the current state is not a supported mode, or the profile could not be saved. See the log for details.",L"捕获失败：当前状态无法识别为受支持模式，或配置无法保存。请查看日志。"}
-        ,{L"Sonic NSp",L"Sonic NSp"}
+        ,{L"NSp",L"NSp"}
         ,{L"Stop NSp",L"\u505c\u6b62 NSp"}
         ,{L"Emergency stop NSp",L"\u6025\u505c NSp"}
+        ,{L"Windows Sonic",L"Windows Sonic"}
     };
     if((unsigned)id>=TXT_COUNT) return L"";
     return strings[id][language==FSA_ZH?FSA_ZH:FSA_EN];

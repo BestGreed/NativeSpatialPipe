@@ -15,6 +15,8 @@
 #define WM_NOTICE (WM_APP+3)
 #define WM_NSP_COMMAND (WM_APP+4)
 #define WM_MODE_COMMAND (WM_APP+5)
+#define WM_EXIT_READY (WM_APP+6)
+static LONG exit_requested,exit_verified;
 static const wchar_t *names[]={L"Stereo",L"5.1",L"7.1",L"Dolby Atmos",L"DTS:X",L"Windows Sonic",L"Sonic NSp"};
 static const GUID encoders[3]={{0xa289735d,0xfa3e,0x4e35,{0x9d,0x7d,0xb6,0xf8,0x96,0xac,0xb2,0xe7}},{0x10201b4a,0x3322,0x4967,{0xbf,0x40,0x2c,0xaa,0x9b,0xaf,0xca,0x44}},{0xb53d940c,0xb846,0x4831,{0x9f,0x76,0xd1,0x02,0xb9,0xb7,0x25,0xa0}}};
 static HWND window;
@@ -89,6 +91,41 @@ static void publish(int mode,const wchar_t *text) {
     current=mode; wcsncpy(status,text,127); status[127]=0;
     ReleaseSRWLockExclusive(&state_lock);
     if(changed) PostMessageW(window,WM_STATUS,0,0);
+}
+static void request_exit(void) {
+    if(InterlockedExchange(&exit_requested,1))return;
+    InterlockedExchange(&nsp_next_mode,-1);
+    InterlockedExchange(&nsp_requested,0);
+    InterlockedExchange(&capture_requested,0);
+    AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
+    InterlockedIncrement(&control_generation);
+    publish(-1,language==FSA_ZH?L"正在停止 NSp 并验证退出…":L"Stopping NSp and verifying exit...");
+    SetEvent(wake);
+}
+static int exit_ready(void) {
+    if(!InterlockedCompareExchange(&exit_requested,0,0))return 0;
+    int code=nsp_configured()?nsp_shutdown():InterlockedCompareExchange(&nsp_ui_locked,0,0)?NSP_UNKNOWN:NSP_STOPPED;
+    if(code==NSP_STOPPED)return 1;
+    publish(-1,language==FSA_ZH?L"退出等待停止验证；可重试急停，托盘仍可操作":L"Exit awaiting stop verification; emergency stop remains available");
+    return 0;
+}
+static void retry_start_after_stop(LONG request,int code,int locked) {
+    /* Backend teardown can finish before the UI worker's next observation.
+       Preserve an explicit new start across that last locked iteration. */
+    if(request==1 && locked && code==NSP_STOPPED && !InterlockedCompareExchange(&exit_requested,0,0)){
+        nsp_queue_request(1);SetEvent(wake);
+    }
+}
+/* Also keeps the exit path available after endpoint/COM initialization fails. */
+static unsigned exit_only_worker(void) {
+    HANDLE events[]={stop,wake};
+    while(WaitForSingleObject(stop,0)!=WAIT_OBJECT_0){
+        if(exit_ready()){
+            InterlockedExchange(&exit_verified,1);PostMessageW(window,WM_EXIT_READY,0,0);return 0;
+        }
+        WaitForMultipleObjects(2,events,FALSE,2000);
+    }
+    return 0;
 }
 static int profile_id(const wchar_t *value) {
     for(int i=0;i<MODE_COUNT;i++) if(!_wcsicmp(value,names[i])) return i;
@@ -299,12 +336,12 @@ static HRESULT switch_mode(SpatialPolicy *p,int mode) {
 }
 static unsigned __stdcall worker(void *unused) {
     (void)unused; HRESULT hr=CoInitializeEx(NULL,COINIT_MULTITHREADED);
-    if(FAILED(hr)) { InterlockedExchange(&nsp_starting,0);publish(-1,UI(TXT_COM_FAILED)); return 1; }
+    if(FAILED(hr)) { InterlockedExchange(&nsp_starting,0);publish(-1,UI(TXT_COM_FAILED)); return exit_only_worker(); }
     SpatialPolicy *p=NULL;
     hr=CoCreateInstance(&spatial_policy_class,NULL,CLSCTX_ALL,&spatial_policy_iid,(void**)&p);
     if(FAILED(hr))log_line(L"Spatial interface unavailable; PCM only",hr);
     int first=0;
-    if(!initialize_profiles(&first)) {InterlockedExchange(&nsp_starting,0);publish(-1,UI(TXT_INIT_FAILED));if(p)p->v->release(p);CoUninitialize();return 1;}
+    if(!initialize_profiles(&first)) {InterlockedExchange(&nsp_starting,0);publish(-1,UI(TXT_INIT_FAILED));if(p)p->v->release(p);CoUninitialize();return exit_only_worker();}
     check_capabilities(p);
     if(first && !(available_modes&24) && !quiet_start)PostMessageW(window,WM_NOTICE,1,0);
     AL_Snapshot baseline={0};SpatialSettings baseline_spatial={0};int have_baseline=0;
@@ -314,6 +351,13 @@ static unsigned __stdcall worker(void *unused) {
     int nsp_locked=0,nsp_fault=0;ULONGLONG nsp_due=0;
     HANDLE events[]={stop,wake};
     while(WaitForSingleObject(stop,0)!=WAIT_OBJECT_0) {
+        if(InterlockedCompareExchange(&exit_requested,0,0)){
+            if(exit_ready()){
+                if(p)p->v->release(p);CoUninitialize();
+                InterlockedExchange(&exit_verified,1);PostMessageW(window,WM_EXIT_READY,0,0);return 0;
+            }
+            WaitForMultipleObjects(2,events,FALSE,2000);continue;
+        }
         if(InterlockedExchange(&reload_requested,0)) { load_rules(); d.pending=-1; }
         LONG latest=InterlockedCompareExchange(&control_generation,0,0);
         if(latest!=generation) { generation=latest; d.pending=-1; audit=0; }
@@ -326,17 +370,18 @@ static unsigned __stdcall worker(void *unused) {
             if(request==1 && !nsp_locked) {
                 AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
                 nsp_locked=1;nsp_fault=0;
-                HRESULT selected=nsp_control(L"preflight")==NSP_PREFLIGHT?switch_mode(p,MODE_SONIC):E_ACCESSDENIED;
+                HRESULT selected=nsp_control(L"preflight")==NSP_PREFLIGHT && !InterlockedCompareExchange(&exit_requested,0,0)?switch_mode(p,MODE_SONIC):E_ACCESSDENIED;
                 if(SUCCEEDED(selected))selected=capture_intent(p);
-                code=SUCCEEDED(selected)?nsp_control(L"start"):20;
+                code=SUCCEEDED(selected) && !InterlockedCompareExchange(&exit_requested,0,0)?nsp_control(L"start"):20;
                 if(FAILED(selected))nsp_fault=1;
             } else code=nsp_control(request==3?L"emergency-stop":request==2?L"stop":L"status");
+            retry_start_after_stop(request,code,nsp_locked);
             nsp_due=GetTickCount64()+2000;
-            if(!nsp_blocks_rules(code) && (!nsp_fault || request==2 || request==3 || InterlockedCompareExchange(&nsp_next_mode,0,0)>=0)){
+            if(!nsp_blocks_rules(code) && (!nsp_fault || request==1 || request==2 || request==3 || InterlockedCompareExchange(&nsp_next_mode,0,0)>=0)){
                 InterlockedExchange(&nsp_starting,0);
                 nsp_locked=0;nsp_fault=0;have_baseline=0;audit=0;
                 LONG target=InterlockedExchange(&nsp_next_mode,-1);
-                if(target>=MODE_STEREO && target<=MODE_DTS && (available_modes&(1u<<target))){
+                if(target>=MODE_STEREO && target<=MODE_SONIC && (available_modes&(1u<<target))){
                     AcquireSRWLockExclusive(&state_lock);manual=target;automatic=0;ReleaseSRWLockExclusive(&state_lock);
                     InterlockedIncrement(&control_generation);
                     log_line(L"NSp stopped and verified; applying requested audio mode",S_OK);
@@ -422,12 +467,6 @@ static unsigned __stdcall worker(void *unused) {
         if(nsp_configured() && delay>2000)delay=2000;
         if(WaitForMultipleObjects(2,events,FALSE,delay)==WAIT_OBJECT_0) break;
     }
-    if(nsp_configured()) {
-        int code=nsp_control(L"stop");
-        ULONGLONG until=GetTickCount64()+45000;
-        while(code!=10 && GetTickCount64()<until){Sleep(200);code=nsp_control(L"status");}
-        if(code!=10)nsp_control(L"emergency-stop");
-    }
     if(p)p->v->release(p); CoUninitialize(); return 0;
 }
 static NOTIFYICONDATAW tray;
@@ -464,11 +503,12 @@ static void open_text(const wchar_t *path) {
     ShellExecuteW(window,L"open",L"notepad.exe",argument,NULL,SW_SHOWNORMAL);
 }
 static void request_manual_mode(int target) {
-    if(target<MODE_STEREO || target>MODE_DTS || !(available_modes&(1u<<target)))return;
+    if(InterlockedCompareExchange(&exit_requested,0,0))return;
+    if(target<MODE_STEREO || target>MODE_SONIC || !(available_modes&(1u<<target)))return;
     if(InterlockedCompareExchange(&nsp_ui_locked,0,0)){
         InterlockedExchange(&nsp_starting,0);
         InterlockedExchange(&nsp_next_mode,target);
-        InterlockedExchange(&nsp_requested,2);
+        nsp_queue_request(2);
         publish(-1,L"NSp: stopping before audio mode switch");
     }else{
         AcquireSRWLockExclusive(&state_lock);manual=target;automatic=0;ReleaseSRWLockExclusive(&state_lock);
@@ -484,29 +524,36 @@ static void menu(void) {
     state.available=(unsigned)InterlockedCompareExchange(&available_modes,0,0);state.startup=startup_enabled();
     showing=1;UINT command=fsa_popup(window,&state);showing=0;
     if(!IsWindow(window))return;
-    if(command==106){InterlockedExchange(&nsp_starting,1);update_tray();InterlockedExchange(&nsp_next_mode,-1);InterlockedExchange(&nsp_ui_locked,1);InterlockedExchange(&nsp_requested,1);SetEvent(wake);return;}
+    if(InterlockedCompareExchange(&exit_requested,0,0) && command!=209 && command!=205 && command!=204)return;
+    if(command==106){
+        AcquireSRWLockShared(&state_lock);state.selected=current;ReleaseSRWLockShared(&state_lock);
+        LONG request=fsa_nsp_toggle_request(&state);
+        InterlockedExchange(&nsp_starting,request==1);update_tray();
+        InterlockedExchange(&nsp_next_mode,-1);InterlockedExchange(&nsp_ui_locked,1);
+        nsp_queue_request(request);SetEvent(wake);return;
+    }
     if(command==209){
         InterlockedExchange(&nsp_starting,0);update_tray();
         InterlockedExchange(&nsp_next_mode,-1);
         InterlockedExchange(&nsp_ui_locked,1);
         if(!nsp_emergency_dispatch())publish(-1,L"Sonic NSp: emergency dispatch failed");
-        InterlockedExchange(&nsp_requested,3);SetEvent(wake);return;
+        nsp_queue_request(3);SetEvent(wake);return;
     }
-    if(command==208){InterlockedExchange(&nsp_starting,0);update_tray();InterlockedExchange(&nsp_next_mode,-1);InterlockedExchange(&nsp_requested,2);SetEvent(wake);return;}
+    if(command==208){InterlockedExchange(&nsp_starting,0);update_tray();InterlockedExchange(&nsp_next_mode,-1);nsp_queue_request(2);SetEvent(wake);return;}
     if(InterlockedCompareExchange(&nsp_ui_locked,0,0) && (command==200 || command==206))return;
-    if(command>=100 && command<105 && (available_modes&(1<<(command-100)))) {
+    if(command>=100 && command<106 && (available_modes&(1<<(command-100)))) {
         request_manual_mode(command-100);return;
     } else if(command==200) {
         AcquireSRWLockExclusive(&state_lock);manual=-1;automatic=!automatic;ReleaseSRWLockExclusive(&state_lock);
     } else if(command==202)open_text(ini);
     else if(command==203){InterlockedExchange(&reload_requested,1);SetEvent(wake);}
     else if(command==204)open_text(logpath);
-    else if(command==205)DestroyWindow(window);
+    else if(command==205)request_exit();
     else if(command==206) {
         AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
         InterlockedExchange(&capture_requested,1);
     } else if(command==207)toggle_startup();
-    if((command>=100 && command<105) || command==200 || command==206){InterlockedIncrement(&control_generation);SetEvent(wake);}
+    if((command>=100 && command<106) || command==200 || command==206){InterlockedIncrement(&control_generation);SetEvent(wake);}
     if(IsWindow(window))update_tray();
 }
 static void CALLBACK foreground_event(HWINEVENTHOOK hook,DWORD event,HWND hwnd,LONG object,LONG child,DWORD tid,DWORD time) {
@@ -525,20 +572,22 @@ static LRESULT CALLBACK wndproc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
     }
     if(msg==WM_STATUS) { update_tray(); return 0; }
     if(msg==WM_NSP_COMMAND && w>=1 && w<=3) {
+        if(InterlockedCompareExchange(&exit_requested,0,0) && w!=3)return 0;
         InterlockedExchange(&nsp_starting,w==1);update_tray();
         InterlockedExchange(&nsp_next_mode,-1);
         InterlockedExchange(&nsp_ui_locked,1);
         if(w==3)nsp_emergency_dispatch();
-        InterlockedExchange(&nsp_requested,(LONG)w);SetEvent(wake);return 0;
+        nsp_queue_request((LONG)w);SetEvent(wake);return 0;
     }
-    if(msg==WM_MODE_COMMAND && w<=MODE_DTS){request_manual_mode((int)w);return 0;}
+    if(msg==WM_MODE_COMMAND && w<=MODE_SONIC){request_manual_mode((int)w);return 0;}
     if(msg==WM_SETTINGCHANGE || msg==WM_DPICHANGED) {
         if(load_mode_icons((HINSTANCE)GetWindowLongPtrW(hwnd,GWLP_HINSTANCE))) update_tray();
         return 0;
     }
     if(msg==WM_TIMER && w==TIMER_NSP_SPIN) {update_tray();return 0;}
-    if(msg==WM_TIMER && w==1) { DestroyWindow(hwnd); return 0; }
-    if(msg==WM_CLOSE) { DestroyWindow(hwnd); return 0; }
+    if(msg==WM_TIMER && w==1) {KillTimer(hwnd,1);request_exit();return 0;}
+    if(msg==WM_CLOSE) {request_exit();return 0;}
+    if(msg==WM_EXIT_READY) {if(InterlockedCompareExchange(&exit_verified,0,0))DestroyWindow(hwnd);return 0;}
     if(msg==WM_DESTROY) {KillTimer(hwnd,TIMER_NSP_SPIN);spin_timer=0;SetEvent(stop); Shell_NotifyIconW(NIM_DELETE,&tray); PostQuitMessage(0); return 0; }
     return DefWindowProcW(hwnd,msg,w,l);
 }
@@ -548,7 +597,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR cmd,int show) {
     while(*cmd==L' ') cmd++;
     size_t command_length=wcslen(cmd);
     while(command_length && cmd[command_length-1]==L' ') cmd[--command_length]=0;
-    const wchar_t *mode_commands[]={L"--mode-stereo",L"--mode-5.1",L"--mode-7.1",L"--mode-atmos",L"--mode-dts"};
+    const wchar_t *mode_commands[]={L"--mode-stereo",L"--mode-5.1",L"--mode-7.1",L"--mode-atmos",L"--mode-dts",L"--mode-sonic"};
     for(unsigned mode=0;mode<sizeof(mode_commands)/sizeof(mode_commands[0]);mode++)if(!wcscmp(cmd,mode_commands[mode])){
         HWND existing=FindWindowW(L"FinalSpatialAudioWindow",L"Final Spatial Audio");
         return existing && PostMessageW(existing,WM_MODE_COMMAND,mode,0)?0:1;
@@ -558,7 +607,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR cmd,int show) {
         HWND existing=FindWindowW(L"FinalSpatialAudioWindow",L"Final Spatial Audio");
         if(existing)return PostMessageW(existing,WM_NSP_COMMAND,nsp_command,0)?0:1;
         if(nsp_command!=1)return 0;
-        InterlockedExchange(&nsp_requested,1);InterlockedExchange(&nsp_ui_locked,1);
+        nsp_queue_request(1);InterlockedExchange(&nsp_ui_locked,1);
         InterlockedExchange(&nsp_starting,1);
     }
     if(!wcscmp(cmd,L"--stop")) {
@@ -609,6 +658,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR cmd,int show) {
     MSG msg; while(GetMessageW(&msg,NULL,0,0)>0) { TranslateMessage(&msg); DispatchMessageW(&msg); }
     if(hook) UnhookWinEvent(hook); SetEvent(stop); WaitForSingleObject(thread,INFINITE);
     CloseHandle(thread); CloseHandle(wake); CloseHandle(stop); CloseHandle(mutex);
+    if(nsp_emergency_process)CloseHandle(nsp_emergency_process);
     release_icons();
     return !wcscmp(cmd,L"--smoke") && !worker_read_ok ? 1 : 0;
 }

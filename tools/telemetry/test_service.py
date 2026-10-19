@@ -1,5 +1,6 @@
 import base64
 import ctypes as C
+from contextlib import ExitStack
 import importlib.util
 import json
 import os
@@ -34,7 +35,103 @@ def audio_packet(seq):
     return dict(block='test',sequence=seq,count=12,frames=[480]*12),props+struct.pack('<5760f',*([.5]*5760))
 
 
+def websocket(svc, subscribe=True, receive_buffer=None):
+    port=int(svc.info['url'].rsplit(':',1)[1])
+    sock=socket.create_connection(('127.0.0.1',port),timeout=2)
+    try:
+        if receive_buffer: sock.setsockopt(socket.SOL_SOCKET,socket.SO_RCVBUF,receive_buffer)
+        key=base64.b64encode(os.urandom(16)).decode()
+        sock.sendall((f'GET /v1/telemetry HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nOrigin: http://127.0.0.1:8765\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: {key}\r\n\r\n').encode())
+        response=b''
+        while not response.endswith(b'\r\n\r\n'):
+            chunk=sock.recv(1)
+            if not chunk: raise AssertionError('Upgrade closed')
+            response+=chunk
+        if not response.startswith(b'HTTP/1.1 101 '): raise AssertionError(response)
+        if subscribe:
+            body=json.dumps(dict(schemaVersion='0.2.0',messageType='subscribe',routeId='native-route',mode='both',publishRateHz=10,bands=['all'])).encode()
+            mask=b'abcd'
+            sock.sendall(b'\x81\xfe'+struct.pack('!H',len(body))+mask+bytes(v^mask[i%4] for i,v in enumerate(body)))
+            if ws_message(sock)['messageType']!='negotiated': raise AssertionError('Negotiation failed')
+        return sock
+    except BaseException:
+        sock.close(); raise
+
+
+def ws_message(sock):
+    def exact(n):
+        data=b''
+        while len(data)<n:
+            chunk=sock.recv(n-len(data))
+            if not chunk: raise AssertionError('WebSocket closed')
+            data+=chunk
+        return data
+    opcode,size=exact(2)
+    if opcode!=0x81: raise AssertionError(f'Unexpected opcode: {opcode}')
+    size=size if size<126 else struct.unpack('!H',exact(2))[0] if size==126 else struct.unpack('!Q',exact(8))[0]
+    return json.loads(exact(size))
+
+
 class ServiceTests(unittest.TestCase):
+    def test_abandoned_frontend_handshakes_release_all_connection_slots(self):
+        # Browser preconnect, incomplete headers and upgrade-without-subscribe.
+        # Fill the real eight-slot server, retain sockets, and verify timeout
+        # reclamation rather than making recovery depend on browser cleanup.
+        with TelemetryService() as svc:
+            port=int(svc.info['url'].rsplit(':',1)[1])
+            for kind in ('preconnect','headers','subscribe'):
+                with self.subTest(kind=kind), ExitStack() as stack:
+                    for _ in range(8):
+                        sock=websocket(svc,False) if kind=='subscribe' else socket.create_connection(('127.0.0.1',port),timeout=2)
+                        stack.enter_context(sock)
+                        if kind=='headers': sock.sendall(b'GET /v1/capabilities HTTP/1.1\r\n')
+                    svc.socket.sendto(svc.secret+block(seq={'preconnect':0,'headers':1,'subscribe':2}[kind]),svc.info['udp'])
+                    deadline=time.monotonic()+1
+                    before={'preconnect':1,'headers':2,'subscribe':3}[kind]
+                    while svc.query('status')['receivedBlocks']<before and time.monotonic()<deadline:time.sleep(.01)
+                    self.assertEqual(svc.query('status')['receivedBlocks'],before)
+                    time.sleep(2.2)
+                    with urlopen(svc.info['url']+'/v1/capabilities',timeout=2) as reply:
+                        contract.validate(json.load(reply))
+                    # A new subscription must negotiate even after every slot
+                    # was occupied; stale audio need not publish a snapshot.
+                    with websocket(svc): pass
+
+    def test_frontend_slow_reader_refresh_and_reconnect_preserve_native_output(self):
+        with tempfile.TemporaryDirectory(dir=ROOT/'build') as temp, TelemetryService() as svc, ExitStack() as stack:
+            offdir=Path(temp)/'off'; offdir.mkdir()
+            off=native.NativePipeline(offdir,DLL); on=native.NativePipeline(Path(temp),DLL)
+            off.prepare(480); on.prepare(480)
+            try:
+                svc.attach(on)
+                # One viewer never reads again, another leaves a partial frame.
+                stack.enter_context(websocket(svc,receive_buffer=1024))
+                partial=stack.enter_context(websocket(svc))
+                partial.sendall(b'\x89\x85a')
+                healthy=stack.enter_context(websocket(svc))
+                latest=-1
+                for seq in range(80):
+                    off.submit(*audio_packet(seq)); on.submit(*audio_packet(seq))
+                    time.sleep(.01); svc.pump(on)
+                    if seq%8==7:
+                        # Actual HTTP fetches and abrupt WebSocket page reloads.
+                        with urlopen(svc.info['url']+'/v1/routes/native-route/layout',timeout=2) as reply:
+                            contract.validate(json.load(reply))
+                        with websocket(svc): pass
+                        snapshot=ws_message(healthy); contract.validate(snapshot)
+                        self.assertGreater(snapshot['telemetrySeq'],latest)
+                        latest=snapshot['telemetrySeq']
+                        self.assertGreater(svc.query('status')['receivedBlocks'],0)
+                deadline=time.monotonic()+2
+                while svc.query('status')['receivedBlocks']<80 and time.monotonic()<deadline:
+                    svc.pump(on);time.sleep(.01)
+                self.assertEqual(svc.query('status')['receivedBlocks'],80)
+                self.assertEqual(svc.query('status')['objectBlocks'],80)
+                self.assertTrue(off.finish()['passed']);self.assertTrue(on.finish(tap_drain=svc.pump)['passed'])
+                self.assertEqual((offdir/'roar-714.f32').read_bytes(),(Path(temp)/'roar-714.f32').read_bytes())
+            finally:
+                off.finish(); on.finish()
+
     def test_fixed_port_and_conflict(self):
         with TelemetryService() as svc:
             port=int(svc.info['url'].rsplit(':',1)[1])

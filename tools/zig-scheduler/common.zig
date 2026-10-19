@@ -175,18 +175,32 @@ pub fn run(args: []const []const u8) ![]u8 {
     return read(path);
 }
 pub fn processIdentity(pid: u32) !?u64 {
-    const h = c.OpenProcess(c.PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+    const h = c.OpenProcess(c.PROCESS_QUERY_LIMITED_INFORMATION | c.SYNCHRONIZE, 0, pid);
     if (h == null) {
         if (c.GetLastError() == c.ERROR_INVALID_PARAMETER) return null;
         return error.ProcessAccessDenied;
     }
     defer _ = c.CloseHandle(h);
+    // A reaped process object can retain its PID while another handle is open.
+    // It is not a running owner/Hook target merely because OpenProcess works.
+    const wait = c.WaitForSingleObject(h, 0);
+    if (wait == c.WAIT_OBJECT_0) return null;
+    if (wait != c.WAIT_TIMEOUT) return error.ProcessIdentityFailed;
     var created: c.FILETIME = undefined;
     var exited: c.FILETIME = undefined;
     var kernel: c.FILETIME = undefined;
     var user: c.FILETIME = undefined;
     if (c.GetProcessTimes(h, &created, &exited, &kernel, &user) == 0) return error.ProcessIdentityFailed;
     return (@as(u64, created.dwHighDateTime) << 32) | created.dwLowDateTime;
+}
+pub fn inspectProcessIdentity(pid: u32) !?u64 {
+    return processIdentity(pid) catch |err| {
+        if (err != error.ProcessAccessDenied) return err;
+        // Explorer-launched elevated programs normally inherit SeDebugPrivilege
+        // disabled. Enable it before retrying audiodg access, not afterwards.
+        try debugPrivilege();
+        return processIdentity(pid);
+    };
 }
 pub fn debugPrivilege() !void {
     var token: c.HANDLE = null;

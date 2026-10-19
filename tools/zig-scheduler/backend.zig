@@ -1,4 +1,5 @@
 const std = @import("std");
+const SocketIO = @import("socket_io.zig").SocketIO;
 const u = @import("common.zig");
 const n = @import("native.zig");
 const a = u.a;
@@ -51,6 +52,7 @@ pub const Controller = struct {
             const v = parsed.value;
             const prior = try u.string(u.field(v, "state"));
             self.session = .{ .id = try a.dupe(u8, try u.string(u.field(v, "id"))), .outputDirectory = try a.dupe(u8, try u.string(u.field(v, "outputDirectory"))), .config = self.config, .ownerPid = @intCast(u.number(u.field(v, "ownerPid")) catch 0), .endpoint = try a.dupe(u8, u.string(u.field(v, "endpoint")) catch "") };
+            self.session.?.orchestratorPid = std.math.cast(u32, u.number(u.field(v, "orchestratorPid")) catch 0) orelse 0;
             if (!std.mem.eql(u8, prior, "stopped") and !std.mem.eql(u8, prior, "idle")) {
                 self.state = "recovery-required";
                 self.err = "Previous session requires confirmed stop and endpoint restore";
@@ -61,6 +63,7 @@ pub const Controller = struct {
     }
     fn reportClean(self: *Controller, recovery: bool) bool {
         const session = self.session orelse return false;
+        if (session.orchestratorPid != 0 and (u.processIdentity(session.orchestratorPid) catch return false) != null) return false;
         const path = u.join(&.{ session.outputDirectory, "endpoint.json" }) catch return false;
         defer a.free(path);
         var parsed = u.load(path) catch return false;
@@ -75,8 +78,8 @@ pub const Controller = struct {
         defer marker.deinit();
         const pid = std.math.cast(u32, u.number(u.field(marker.value, "pid")) catch return false) orelse return false;
         const created = u.number(u.field(marker.value, "created")) catch return false;
+        if ((u.inspectProcessIdentity(pid) catch return false) != created) return true;
         u.debugPrivilege() catch return false;
-        if ((u.processIdentity(pid) catch return false) != created) return true;
         if ((u.number(u.field(marker.value, "hookGeneration")) catch 0) != 2) return false;
         var hook = n.Hook.init(self.root, self.home, pid, 0, created, false) catch return false;
         defer {
@@ -212,24 +215,18 @@ fn telemetryLive(port: u16) bool {
     const address = std.net.Address.parseIp4("127.0.0.1", port) catch return false;
     const stream = std.net.tcpConnectToAddress(address) catch return false;
     defer stream.close();
-    const ms: u32 = 300;
-    _ = c.setsockopt(@intFromPtr(stream.handle), c.SOL_SOCKET, c.SO_RCVTIMEO, @ptrCast(&ms), 4);
-    _ = c.setsockopt(@intFromPtr(stream.handle), c.SOL_SOCKET, c.SO_SNDTIMEO, @ptrCast(&ms), 4);
-    stream.writeAll("GET /v1/routes/native-route/snapshot HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n") catch return false;
+    var io = SocketIO.init(stream, 300) catch return false;
+    io.writer().writeAll("GET /v1/routes/native-route/snapshot HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n") catch return false;
     var prefix: [12]u8 = undefined;
-    stream.reader().readNoEof(&prefix) catch return false;
+    io.reader().readNoEof(&prefix) catch return false;
     return std.mem.eql(u8, &prefix, "HTTP/1.1 200") or std.mem.eql(u8, &prefix, "HTTP/1.0 200");
 }
-fn timeout(stream: std.net.Stream) void {
-    const ms: u32 = 2000;
-    _ = c.setsockopt(@intFromPtr(stream.handle), c.SOL_SOCKET, c.SO_RCVTIMEO, @ptrCast(&ms), 4);
-    _ = c.setsockopt(@intFromPtr(stream.handle), c.SOL_SOCKET, c.SO_SNDTIMEO, @ptrCast(&ms), 4);
-}
 fn sendResponse(stream: std.net.Stream, code: u16, mime: []const u8, body: []const u8) !void {
+    var io = try SocketIO.init(stream, 2000);
     const headers = try u.fmt("HTTP/1.1 {d} Result\r\nContent-Type: {s}\r\nContent-Length: {d}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n", .{ code, mime, body.len });
     defer a.free(headers);
-    try stream.writeAll(headers);
-    try stream.writeAll(body);
+    try io.writer().writeAll(headers);
+    try io.writer().writeAll(body);
 }
 fn staticFile(root: []const u8, path: []const u8) !struct { body: []u8, mime: []const u8 } {
     if (std.mem.indexOfAny(u8, path, "\\%?#") != null or std.mem.indexOf(u8, path, "..") != null) return error.InvalidPath;
@@ -249,12 +246,12 @@ fn staticFile(root: []const u8, path: []const u8) !struct { body: []u8, mime: []
     return .{ .body = try u.read(file), .mime = mime };
 }
 fn handle(controller: *Controller, stream: std.net.Stream, token: []const u8) !bool {
-    timeout(stream);
+    var io = try SocketIO.init(stream, 2000);
     var buffer: [12288]u8 = undefined;
     var used: usize = 0;
     var end: usize = 0;
     while (used < 8192) {
-        const count = try stream.read(buffer[used..8192]);
+        const count = try io.read(buffer[used..8192]);
         if (count == 0) return error.TruncatedRequest;
         used += count;
         if (std.mem.indexOf(u8, buffer[0..used], "\r\n\r\n")) |i| {
@@ -301,7 +298,7 @@ fn handle(controller: *Controller, stream: std.net.Stream, token: []const u8) !b
     }
     if (!std.mem.startsWith(u8, path, "/api/backend/") or size == 0 or size > 4096) return error.BadRequest;
     while (used < end + size) {
-        const count = try stream.read(buffer[used .. end + size]);
+        const count = try io.read(buffer[used .. end + size]);
         if (count == 0) return error.TruncatedRequest;
         used += count;
     }
@@ -366,11 +363,11 @@ pub fn request(home: []const u8, action: []const u8, value: anytype) ![]u8 {
     defer a.free(body);
     const stream = try std.net.tcpConnectToAddress(try std.net.Address.parseIp4("127.0.0.1", port));
     defer stream.close();
-    timeout(stream);
+    var io = try SocketIO.init(stream, 2000);
     const message = try u.fmt("POST /api/backend/{s} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {s}\r\nContent-Type: application/json\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n{s}", .{ action, token, body.len, body });
     defer a.free(message);
-    try stream.writeAll(message);
-    const reply = try stream.reader().readAllAlloc(a, 1024 * 1024);
+    try io.writer().writeAll(message);
+    const reply = try io.reader().readAllAlloc(a, 1024 * 1024);
     defer a.free(reply);
     if (!std.mem.startsWith(u8, reply, "HTTP/1.1 200 ")) return error.BackendRejected;
     const start = (std.mem.indexOf(u8, reply, "\r\n\r\n") orelse return error.BadResponse) + 4;

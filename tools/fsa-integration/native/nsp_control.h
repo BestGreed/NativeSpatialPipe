@@ -2,6 +2,16 @@
 static LONG nsp_requested;
 static LONG nsp_ui_locked;
 static LONG nsp_next_mode=-1;
+static HANDLE nsp_emergency_process;
+static HANDLE nsp_pending_control;
+static void nsp_queue_request(LONG request) {
+    LONG previous=InterlockedCompareExchange(&nsp_requested,0,0);
+    while(previous<request){
+        LONG observed=InterlockedCompareExchange(&nsp_requested,request,previous);
+        if(observed==previous)return;
+        previous=observed;
+    }
+}
 /* Zig is the default. Python orchestration requires Scheduler=Python; a
    missing native executable must never silently select the legacy host. */
 static int nsp_program(wchar_t *program,wchar_t *prefix,size_t capacity) {
@@ -28,18 +38,28 @@ static int nsp_program(wchar_t *program,wchar_t *prefix,size_t capacity) {
 /* Emergency dispatch bypasses the potentially blocked arbitration worker. The
    short-lived adapter verifies the target instance before calling native stop. */
 static int nsp_emergency_dispatch(void) {
+    if(nsp_emergency_process){
+        if(WaitForSingleObject(nsp_emergency_process,0)==WAIT_TIMEOUT)return 1;
+        CloseHandle(nsp_emergency_process);nsp_emergency_process=NULL;
+    }
     wchar_t python[MAX_PATH],prefix[2*MAX_PATH],command[2048];
     if(!nsp_program(python,prefix,2*MAX_PATH))return 0;
     swprintf(command,2048,L"\"%ls\" %lsemergency-stop",python,prefix);
     STARTUPINFOW startup={.cb=sizeof(startup)};PROCESS_INFORMATION child={0};
     if(!CreateProcessW(python,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&startup,&child))return 0;
-    CloseHandle(child.hThread);CloseHandle(child.hProcess);return 1;
+    CloseHandle(child.hThread);nsp_emergency_process=child.hProcess;return 1;
 }
 static int nsp_configured(void) {
     wchar_t program[MAX_PATH],prefix[2*MAX_PATH];
     return nsp_program(program,prefix,2*MAX_PATH) && GetFileAttributesW(program)!=INVALID_FILE_ATTRIBUTES;
 }
-static int nsp_control(const wchar_t *action) {
+static int nsp_control_process(const wchar_t *action) {
+    /* A timed-out adapter may still be unwinding native teardown. Keep its
+       handle and refuse duplicate children instead of accumulating processes. */
+    if(nsp_pending_control){
+        if(WaitForSingleObject(nsp_pending_control,0)==WAIT_TIMEOUT)return NSP_UNKNOWN;
+        CloseHandle(nsp_pending_control);nsp_pending_control=NULL;
+    }
     wchar_t python[MAX_PATH],prefix[2*MAX_PATH],command[4096],local[MAX_PATH],marker[MAX_PATH],request_id[80],reply_id[80];
     if(!nsp_program(python,prefix,2*MAX_PATH))return 20;
     if(!GetEnvironmentVariableW(L"LOCALAPPDATA",local,MAX_PATH))return 20;
@@ -58,8 +78,9 @@ static int nsp_control(const wchar_t *action) {
     if(!CreateProcessW(python,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&startup,&child))return 20;
     DWORD wait=WaitForSingleObject(child.hProcess,45000),code=20;
     if(wait==WAIT_OBJECT_0)GetExitCodeProcess(child.hProcess,&code);
-    CloseHandle(child.hThread);CloseHandle(child.hProcess);
-    if(wait!=WAIT_OBJECT_0)return 20;
+    CloseHandle(child.hThread);
+    if(wait!=WAIT_OBJECT_0){nsp_pending_control=child.hProcess;return 20;}
+    CloseHandle(child.hProcess);
     int disk=(int)GetPrivateProfileIntW(L"NSP",L"Code",20,marker);
     GetPrivateProfileStringW(L"NSP",L"RequestId",L"",reply_id,80,marker);
     if(wcscmp(request_id,reply_id))return 20;
@@ -69,4 +90,16 @@ static int nsp_control(const wchar_t *action) {
     if(seconds<checked || seconds-checked>5 || disk!=(int)code)return 20;
     if(wcscmp(action,L"status")){wchar_t message[128];swprintf(message,128,L"Sonic NSp %ls result=%lu",action,code);log_line(message,code==20?E_FAIL:S_OK);}
     return (int)code;
+}
+#ifdef FSA_CONTROL_TEST
+static int (*nsp_control)(const wchar_t *)=nsp_control_process;
+#else
+#define nsp_control nsp_control_process
+#endif
+static int nsp_shutdown(void) {
+    wchar_t program[MAX_PATH],prefix[2*MAX_PATH];
+    if(!nsp_program(program,prefix,2*MAX_PATH))return NSP_UNKNOWN;
+    /* The explicit legacy adapter predates the shutdown action. Its stop
+       still performs the same live Hook-off verification. */
+    return nsp_control(prefix[0]?L"stop":L"shutdown");
 }

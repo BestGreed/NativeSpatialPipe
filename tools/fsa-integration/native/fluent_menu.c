@@ -4,8 +4,9 @@
 #include <uxtheme.h>
 #include <stdio.h>
 #include <stdlib.h>
-static const FSA_Text main_labels[]={TXT_STEREO,TXT_51,TXT_71,TXT_ATMOS,TXT_DTS,TXT_NSP,TXT_AUTO,TXT_ADVANCED,TXT_EXIT};
-static const UINT main_commands[]={100,101,102,103,104,106,200,300,205};
+static const FSA_Text main_labels[]={TXT_STEREO,TXT_51,TXT_71,TXT_ATMOS,TXT_DTS,TXT_SONIC,TXT_NSP,TXT_AUTO,TXT_ADVANCED,TXT_EXIT};
+static const UINT main_commands[]={100,101,102,103,104,105,106,200,300,205};
+enum { MAIN_NSP_ROW=6, MAIN_ADVANCED_ROW=8 };
 static const FSA_Text advanced_labels[]={TXT_CAPTURE,TXT_EDIT,TXT_RELOAD,TXT_LOG,TXT_STARTUP,TXT_NSP_STOP,TXT_NSP_EMERGENCY};
 static const UINT advanced_commands[]={206,202,203,204,207,208,209};
 typedef struct {HMONITOR monitor;RECT rect;HWND hwnd;} Taskbar;
@@ -26,10 +27,10 @@ typedef struct Popup {
     UINT command; BOOL done;
 } Popup;
 static int px(Popup *p,int value) { return MulDiv(value,p->dpi,96); }
-static int count(Popup *p) { return p->advanced?7:9; }
-static int top(Popup *p,int i) { return 8+i*34+(!p->advanced && i>=6?9:0); }
+static int count(Popup *p) { return p->advanced?7:(int)(sizeof(main_commands)/sizeof(*main_commands)); }
+static int top(Popup *p,int i) { return 8+i*34+(!p->advanced && i>=MAIN_NSP_ROW?9:0); }
 static UINT command_at(Popup *p,int i) { return p->advanced?advanced_commands[i]:main_commands[i]; }
-static int enabled(Popup *p,int i) { UINT c=command_at(p,i);if(p->state.nsp_locked && (c==106 || c==200 || c==206))return 0;return c<100 || c>=107 || (p->state.available&(1u<<(c-100))); }
+static int enabled(Popup *p,int i) { UINT c=command_at(p,i);if(p->state.nsp_locked && ((c==106 && p->state.selected!=6) || c==200 || c==206))return 0;return c<100 || c>=107 || (p->state.available&(1u<<(c-100))); }
 static void position(Popup *p) {
     int height=px(p,top(p,count(p)-1)+40),width=px(p,200);
     int x=p->anchor_x-width,y=p->anchor_bottom-height;
@@ -80,14 +81,14 @@ static void open_advanced(Popup *p) {
     Popup *child=calloc(1,sizeof(*child));if(!child)return;
     child->parent=p;child->advanced=1;child->hover=-1;child->dpi=p->dpi;child->font=p->font;child->icon_font=p->icon_font;child->state=p->state;child->work=p->work;
     child->anchor_x=p->final.left-px(p,4);
-    child->anchor_bottom=p->final.top+px(p,top(p,7)+32);
+    child->anchor_bottom=p->final.top+px(p,top(p,MAIN_ADVANCED_ROW)+32);
     /* Only flip to the other side when there is insufficient space on the left. */
     if(child->anchor_x-px(p,200)<p->work.left)child->anchor_x=p->final.right+px(p,204);
     HINSTANCE instance=(HINSTANCE)GetWindowLongPtrW(p->hwnd,GWLP_HINSTANCE);
     HWND hwnd=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_TOPMOST|WS_EX_NOACTIVATE,L"FSAFluentPopup",L"Final Spatial Audio Advanced",WS_POPUP,0,0,0,0,p->hwnd,NULL,instance,child);
     if(!hwnd){free(child);return;}
     GetCursorPos(&p->aim_origin);
-    RECT entry={p->final.left,p->final.top+px(p,top(p,7)),p->final.right,p->final.top+px(p,top(p,7)+32)};
+    RECT entry={p->final.left,p->final.top+px(p,top(p,MAIN_ADVANCED_ROW)),p->final.right,p->final.top+px(p,top(p,MAIN_ADVANCED_ROW)+32)};
     if(!PtInRect(&entry,p->aim_origin))p->aim_origin=(POINT){(entry.left+entry.right)/2,(entry.top+entry.bottom)/2};
     p->child=child;position(child);appearance(child);reveal(child);SetFocus(p->hwnd);
 }
@@ -177,7 +178,7 @@ static void paint(Popup *p,HDC supplied) {
             }
         }
         UINT c=command_at(p,i);
-        int checked=(c>=100 && c<107 && (int)c-100==p->state.selected)||(c==200 && p->state.automatic)||(c==207 && p->state.startup);
+        int checked=fsa_menu_checked(&p->state,c);
         COLORREF color=enabled(p,i)?foreground:p->dark?RGB(135,135,135):RGB(145,145,145);
         RECT check=row;check.left=px(p,16);check.right=px(p,40);
         if(checked) text(p,dc,L"\xE73E",check,foreground,p->icon_font); /* CheckMark */
@@ -233,14 +234,14 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
         if(w==2) {
             KillTimer(hwnd,2);
             POINT cursor;GetCursorPos(&cursor);ScreenToClient(hwnd,&cursor);
-            if(!p->advanced && p->hover==7 && hit(p,cursor.x,cursor.y)==7)open_advanced(p);
+            if(!p->advanced && p->hover==MAIN_ADVANCED_ROW && hit(p,cursor.x,cursor.y)==MAIN_ADVANCED_ROW)open_advanced(p);
         }
         if(w==3) {
             KillTimer(hwnd,3);
             if(p->child) {
                 POINT cursor,local;RECT child;GetCursorPos(&cursor);local=cursor;ScreenToClient(hwnd,&local);
                 GetWindowRect(p->child->hwnd,&child);
-                if(hit(p,local.x,local.y)!=7 && !PtInRect(&child,cursor))close_advanced(p);
+                if(hit(p,local.x,local.y)!=MAIN_ADVANCED_ROW && !PtInRect(&child,cursor))close_advanced(p);
             }
         }
         return 0;
@@ -251,13 +252,13 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
         int hover=hit(p,GET_X_LPARAM(l),GET_Y_LPARAM(l));
         if(!p->advanced && p->child) {
             POINT cursor={GET_X_LPARAM(l),GET_Y_LPARAM(l)};ClientToScreen(hwnd,&cursor);
-            if(hover==7)p->aim_origin=cursor;
+            if(hover==MAIN_ADVANCED_ROW)p->aim_origin=cursor;
             else if(hover<0 || moving_to_submenu(p,cursor))SetTimer(hwnd,3,600,NULL);
             else close_advanced(p);
         }
         if(hover!=p->hover) {
             KillTimer(hwnd,2);p->hover=hover;InvalidateRect(hwnd,NULL,FALSE);
-            if(!p->advanced && hover==7 && !p->child) {
+            if(!p->advanced && hover==MAIN_ADVANCED_ROW && !p->child) {
                 UINT delay=400;SystemParametersInfoW(SPI_GETMENUSHOWDELAY,0,&delay,0);
                 if(delay<300)delay=300;if(delay>1000)delay=1000;
                 SetTimer(hwnd,2,delay,NULL);
@@ -277,7 +278,7 @@ static LRESULT CALLBACK procedure(HWND hwnd,UINT message,WPARAM w,LPARAM l) {
     case WM_KEYDOWN:
         if(p->child)return SendMessageW(p->child->hwnd,message,w,l);
         if(w==VK_ESCAPE || (p->advanced && (w==VK_LEFT || w==VK_RIGHT))) {if(p->parent){HWND parent=p->parent->hwnd;DestroyWindow(hwnd);SetFocus(parent);}else DestroyWindow(hwnd);}
-        else if((w==VK_LEFT || w==VK_RIGHT) && !p->advanced) choose(p,7);
+        else if((w==VK_LEFT || w==VK_RIGHT) && !p->advanced) choose(p,MAIN_ADVANCED_ROW);
         else if(w==VK_RETURN || w==VK_SPACE) choose(p,p->hover);
         else {
             int n=count(p),step=w==VK_UP?-1:1;
@@ -311,12 +312,12 @@ UINT fsa_popup(HWND owner,const FSA_MenuState *state) {
     if((contrast.dwFlags&HCF_HIGHCONTRASTON) || reader) {
         HMENU menu=CreatePopupMenu(),advanced=CreatePopupMenu();
         for(int i=0;i<7;i++)AppendMenuW(advanced,MF_STRING|(i==4 && state->startup?MF_CHECKED:0),advanced_commands[i],fsa_text(state->language,advanced_labels[i]));
-        for(int i=0;i<9;i++) {
-            if(i==6)AppendMenuW(menu,MF_SEPARATOR,0,NULL);
-            if(i==7){AppendMenuW(menu,MF_POPUP,(UINT_PTR)advanced,fsa_text(state->language,TXT_ADVANCED));continue;}
+        for(unsigned i=0;i<sizeof(main_commands)/sizeof(*main_commands);i++) {
+            if(i==MAIN_NSP_ROW)AppendMenuW(menu,MF_SEPARATOR,0,NULL);
+            if(i==MAIN_ADVANCED_ROW){AppendMenuW(menu,MF_POPUP,(UINT_PTR)advanced,fsa_text(state->language,TXT_ADVANCED));continue;}
             UINT c=main_commands[i];
-            int checked=(c>=100 && c<107 && (int)c-100==state->selected)||(c==200 && state->automatic);
-            int disabled=(c>=100 && c<107 && !(state->available&(1u<<(c-100)))) || (state->nsp_locked && ((c>=100 && c<107)||c==200));
+            int checked=fsa_menu_checked(state,c);
+            int disabled=(c>=100 && c<107 && !(state->available&(1u<<(c-100)))) || (state->nsp_locked && ((c==106 && state->selected!=6) || c==200));
             AppendMenuW(menu,MF_STRING|(checked?MF_CHECKED:0)|(disabled?MF_GRAYED:0),main_commands[i],fsa_text(state->language,main_labels[i]));
         }
         POINT pt;GetCursorPos(&pt);MONITORINFO mi={.cbSize=sizeof(mi)};GetMonitorInfoW(MonitorFromPoint(pt,MONITOR_DEFAULTTONEAREST),&mi);

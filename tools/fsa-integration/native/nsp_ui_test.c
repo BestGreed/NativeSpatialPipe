@@ -2,8 +2,17 @@
 #include <assert.h>
 int wmain(int argc,wchar_t **argv) {
     assert(!wcscmp(names[MODE_NSP],L"Sonic NSp"));
-    assert(!wcscmp(fsa_text(FSA_EN,TXT_NSP),L"Sonic NSp"));
-    assert(!wcscmp(fsa_text(FSA_ZH,TXT_NSP),L"Sonic NSp"));
+    assert(!wcscmp(fsa_text(FSA_EN,TXT_NSP),L"NSp"));
+    assert(!wcscmp(fsa_text(FSA_ZH,TXT_NSP),L"NSp"));
+    FSA_MenuState menu_state={0};menu_state.selected=MODE_SONIC;
+    assert(fsa_menu_checked(&menu_state,105) && !fsa_menu_checked(&menu_state,106));
+    assert(fsa_nsp_toggle_request(&menu_state)==1);
+    menu_state.selected=MODE_NSP;
+    assert(fsa_menu_checked(&menu_state,105) && fsa_menu_checked(&menu_state,106));
+    assert(fsa_nsp_toggle_request(&menu_state)==2);
+    menu_state.selected=-1;
+    for(UINT command=100;command<=106;command++)assert(!fsa_menu_checked(&menu_state,command));
+    puts("PASS independent Sonic endpoint and NSp feature checks, stop/start toggle, unknown state unselected");
     assert(mode_icon_ids[MODE_NSP]==IDI_FSA_APP);
     {
         wchar_t directory[MAX_PATH],temporary[MAX_PATH],program[MAX_PATH],prefix[2*MAX_PATH];
