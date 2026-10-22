@@ -1,18 +1,20 @@
 # NSp Zig 调度层
 
+**当前状态（2026-10-22，alpha-dev）：** N03–N12 已完成限定开发集成，FSA 参数已接通，ROAR／OLR 与 LIRA 共用公共输出和 ASIO；DVS 12 路数字回送及两组 Wwise HT 实测已完成。池内 DSP／bypass 和池块租借已接通，临时 WPF 已弃用。D15、OutputTimeout 收尾、FSA 等待反馈和 Web API 仍待推进。以下按轮次排列的“尚未接线／未做真实播放”描述仅对应当时阶段，不能覆盖当前状态。
+
 公共 DSP 已前移到 Rust 输出池块，并支持 `outputProcessing.bypass` 及中性配置自动跳过。设备 owner 通过池块租借提交，移除 Zig PCM 队列和 scratch 复制；ASIO 内部算法不变。成套候选及验证见 [输出池记录](../../docs/core/output-pool-processing-20261022.md)。
 
-DEV16 N11 曾增加独立桌面客户端和可选会话 `playback` 配置；旧 FSA 请求保持兼容，其新参数在 N12 接线。**临时 WPF 桌面已于 2026-10-22 弃用**，会话与端点管理以 FSA 为准；公共播放配置和控制接口继续保留。原因与历史边界见 已弃用临时桌面?????????????? 和 N11交付记录??????????????。
+DEV16 N11 曾增加独立桌面客户端和可选会话 `playback` 配置；旧 FSA 请求保持兼容，其新参数在 N12 接线。**临时 WPF 桌面已于 2026-10-22 弃用**，会话与端点管理以 FSA 为准；公共播放配置和控制接口继续保留。原因与历史边界见 已弃用临时桌面（开发参考未随公开源码提供） 和 N11交付记录（开发参考未随公开源码提供）。
 
-DEV16 N10 已接入 LIRA（Lazy Immersive Rendering Architecture）：`--renderer lira --lira-renderer-dll <绝对DLL路径> --render-bridge-dll <本轮bridge路径>`。旧 `spatial` 参数保留兼容。默认仍为 OLR；LIRA 拒绝 OLR 专属 position 参数。共享公共输入、可靠输出与 ASIO 路径，保留 512 帧固有延迟及完整尾部；接口、构建与限定验证??????????????。本轮独立产物位于 `build/dev16-n10-renderer/`，未替换运行目录。
+DEV16 N10 已接入 LIRA（Lazy Immersive Rendering Architecture）：`--renderer lira --lira-renderer-dll <绝对DLL路径> --render-bridge-dll <本轮bridge路径>`。旧 `spatial` 参数保留兼容。默认仍为 OLR；LIRA 拒绝 OLR 专属 position 参数。共享公共输入、可靠输出与 ASIO 路径，保留 512 帧固有延迟及完整尾部；接口、构建与限定验证（开发参考未随公开源码提供）。本轮独立产物位于 `build/dev16-n10-renderer/`，未替换运行目录。
 
-DEV16 N05 新增 `output_control.zig` 专用后端worker和 `asio_control.zig` 生命周期适配；不自动挂入当前会话。调用/代次/退出合同见 N05交付??????????????。独立完整检查：`python tools/asio-output/Test-ControlWorker.py`，仅模拟后端与假ASIO DLL；实时输出接线在N07。
+DEV16 N05 新增 `output_control.zig` 专用后端worker和 `asio_control.zig` 生命周期适配；不自动挂入当前会话。调用/代次/退出合同见 N05交付（开发参考未随公开源码提供）。独立完整检查：`python tools/asio-output/Test-ControlWorker.py`，仅模拟后端与假ASIO DLL；实时输出接线在N07。
 
-N06新增 `output_processing.zig` 公共PCM处理器，配置与尾部合同见 N06交付??????????????。离线检查：`python tools/zig-scheduler/Test-OutputProcessing.py`。默认位一致直通，limiter默认关闭；实际播放调用留N07。
+N06新增 `output_processing.zig` 公共PCM处理器，配置与尾部合同见 N06交付（开发参考未随公开源码提供）。离线检查：`python tools/zig-scheduler/Test-OutputProcessing.py`。默认位一致直通，limiter默认关闭；实际播放调用留N07。
 
-N07已通过 `output_stream.zig` / `output_playback.zig` 接入可靠PCM和owner服务循环，正式host提供显式ASIO启用参数；见 接线、参数与测试??????????????。`python tools/asio-output/Test-Playback.py`验证实际OLR到假ASIO回调的软件闭环；现阶段未部署、未做真实驱动播放。
+N07已通过 `output_stream.zig` / `output_playback.zig` 接入可靠PCM和owner服务循环，正式host提供显式ASIO启用参数；见 接线、参数与测试（开发参考未随公开源码提供）。`python tools/asio-output/Test-Playback.py`验证实际OLR到假ASIO回调的软件闭环；现阶段未部署、未做真实驱动播放。
 
-N09：新DEV16 host默认 `--position-mode scaled --position-reference 1`，保持完整源半径数值，仅换轴、不额外缩放。`--position-mode direction` 保留旧方向基线；reference仅允许正有限值，direction下仅接受1。scaled需要配套新桥接DLL的增量导出，缺失时明确失败，不静默回退。详情与声音变化见N09记录??????????????。这不是物理房间标定；现用二进制未部署替换。N08实机与网络回送证据见对应记录。
+N09：新DEV16 host默认 `--position-mode scaled --position-reference 1`，保持完整源半径数值，仅换轴、不额外缩放。`--position-mode direction` 保留旧方向基线；reference仅允许正有限值，direction下仅接受1。scaled需要配套新桥接DLL的增量导出，缺失时明确失败，不静默回退。详情与声音变化见N09记录（开发参考未随公开源码提供）。这不是物理房间标定；现用二进制未部署替换。N08实机与网络回送证据见对应记录。
 
 迁移对象是原 Python 管理与编排层，现有 C Hook、C 捕获/共享内存和 Rust 接收/渲染 DLL 均保持不变。遥测仍按原顺序先启动，计算与 HTTP/WebSocket 服务继续使用原 Python 实现。本阶段没有把遥测从启动链中拆开。
 

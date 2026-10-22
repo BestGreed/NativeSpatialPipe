@@ -7,7 +7,7 @@
 
 ## 构建与运行
 
-DEV16 N12增加可选 `[NSP] PlaybackConfig=<绝对JSON路径>`，使用与桌面相同的单会话播放合同。`renderer=roar, mode=olr` 或 `renderer=lira, mode=null`，并显式指定渲染桥、ASIO模块、驱动等；留空沿用捕获/落盘。`Configure-Scheduler.ps1 -PlaybackConfig <路径> -ControlExecutable <开发host>` 可写入指定INI；未提供PlaybackConfig参数时保留既有值，显式空值清除。只在启动时传递，停止/急停不依赖该文件。此能力要求Zig，不能静默转给旧Python调度。N12构建与测试使用隔离目录，执行本页旧的正式构建/配置命令仍应按部署时机安排。详见N12范围、证据及剩余实机步骤??????????????。
+DEV16 N12增加可选 `[NSP] PlaybackConfig=<绝对JSON路径>`，使用与桌面相同的单会话播放合同。`renderer=roar, mode=olr` 或 `renderer=lira, mode=null`，并显式指定渲染桥、ASIO模块、驱动等；留空沿用捕获/落盘。`Configure-Scheduler.ps1 -PlaybackConfig <路径> -ControlExecutable <开发host>` 可写入指定INI；未提供PlaybackConfig参数时保留既有值，显式空值清除。只在启动时传递，停止/急停不依赖该文件。此能力要求Zig，不能静默转给旧Python调度。N12构建与测试使用隔离目录，执行本页旧的正式构建/配置命令仍应按部署时机安排。详见N12范围、证据及剩余实机步骤（开发参考未随公开源码提供）。
 
 2026-10-19：本目录为 NSp 专用集成源码，尚未回传 FSA 独立仓库主线。默认 `[NSP] Scheduler=Zig`，直接调用 Zig 调度程序，`Python` 仅传给遥测；`ControlExecutable` 留空时按正式构建布局解析，缺少 Zig 不隐式回退。集成构建会更新调度配置并保留规则、快照，但不会重启服务；旧路径须显式 `Scheduler=Python` 或构建参数 `-LegacyPythonScheduler`。部署、启动顺序与验证见[Zig 调度说明](../zig-scheduler/README.md)。
 

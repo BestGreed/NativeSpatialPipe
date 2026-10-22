@@ -1,5 +1,9 @@
 # Native scheduling and Sonic NSp integration
 
+<!-- alpha-dev-status -->
+**2026-10-22 alpha-dev:** N03-N12 integration and pool-side DSP/bypass with leased output are connected. DVS/Wwise validation is limited; temporary WPF is retired. D15, OutputTimeout closeout, FSA startup feedback and Web API remain pending. See [current progress](alpha-dev.md) and [source README](../README.md). Older validation below keeps its original scope.
+<!-- /alpha-dev-status -->
+
 The default Zig 0.13.0 managed scheduler replaces Python orchestration: backend HTTP control, persistent session/configuration files, FSA commands, process ownership, four-stream prewarming, receiver startup, telemetry forwarding, snapshots and orderly shutdown. Capture, transport and rendering remain C/Rust. Python 3.12 still runs telemetry and development tests; this update does not remove that dependency.
 
 The first pipeline is prepared before the Python telemetry handshake. The remaining pipelines and receiver are then prepared before enabling Hook. Telemetry routing checks file growth every 100 ms outside the real-time audio path; two updates qualify a new candidate, with a one-second stale timeout. It does not change receiver routing or add checks to audio submission.

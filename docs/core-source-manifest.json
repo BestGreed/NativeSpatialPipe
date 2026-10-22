@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "85c95a028025fb86763ed3c68c275480ee563a83",
+  "sourceRevision": "fb88e4cf1ee542162a6934217d792aecbed7d7de",
   "hashNormalization": "CRLF to LF; all other bytes preserved",
   "files": [
     {
@@ -9,8 +9,8 @@
     },
     {
       "path": "LICENSING.md",
-      "sha256": "3f00cdc4a44ab215cc5dec38b666b56a6cfac3b55249f25fb673042deef6cb53",
-      "sourceSha256": "3f00cdc4a44ab215cc5dec38b666b56a6cfac3b55249f25fb673042deef6cb53"
+      "sha256": "20dec3a64996e133c62af6e6e99d5bd08d82082d1c282aacc246be846fe0a4c0",
+      "sourceSha256": "20dec3a64996e133c62af6e6e99d5bd08d82082d1c282aacc246be846fe0a4c0"
     },
     {
       "path": "NOTICE",
@@ -118,14 +118,19 @@
       "sourceSha256": "0f5334b6e7b9855611ad704d0ee64d46e67af3721307de45247dd4d5ec3476e9"
     },
     {
+      "path": "docs/build.md",
+      "sha256": "36e7a744c8d06e96acb5836ddd41c2a4500a2e16786a228495161e63f75bb7dc",
+      "sourceSha256": "36e7a744c8d06e96acb5836ddd41c2a4500a2e16786a228495161e63f75bb7dc"
+    },
+    {
       "path": "docs/core/output-pool-processing-20261022.md",
-      "sha256": "9ab37c4936b16f9928ca66468a52de195a1b7e11f82924d2146ef854ea1c9119",
+      "sha256": "47a2716195f2f3cdd41f92865ad1a662123c8809fa3e46c3b322daf79d545986",
       "sourceSha256": "6a68f1e9febe905589885fb3d59aa468b0f22924c89c5f4dde0936356227382e",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
       "path": "docs/core/playback-json-configuration-20261022.md",
-      "sha256": "abfdf9609233cba88c3a2d3ec67f5f520b755b9b2ea58ba4a0f5cd4954b194fe",
+      "sha256": "6c267754930cd57642f35d4e222f30effb7bd70e85af5b471495294275b479bb",
       "sourceSha256": "d298233b2b742b7f25dc22789ac84992a0fa74ed69ef9b5c2cf9d41e0a5aa2bc",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
@@ -133,6 +138,11 @@
       "path": "docs/core/renderer-backend-boundary-20261021.md",
       "sha256": "1342c9c14df2eab00d4e45c34af526b93e17b79f483f802ac222ffd6354c9c19",
       "sourceSha256": "1342c9c14df2eab00d4e45c34af526b93e17b79f483f802ac222ffd6354c9c19"
+    },
+    {
+      "path": "docs/scheduler.md",
+      "sha256": "e4edb9e3dc5520f65eb062122ba7ca623cedf1332fda493a78360138ed657522",
+      "sourceSha256": "e4edb9e3dc5520f65eb062122ba7ca623cedf1332fda493a78360138ed657522"
     },
     {
       "path": "modules/audio-backends/CMakeLists.txt",
@@ -161,7 +171,7 @@
     },
     {
       "path": "modules/audio-backends/UPSTREAM-LICENSING.md",
-      "sha256": "68ee01f54de6b8b7caebf4c7b366b3af75f14c43a8b06f0dede3cced264730be",
+      "sha256": "25a894a372dd11e99c5c8f991835e25dc6e8a1892fe5365113d9a420ec07de05",
       "sourceSha256": "e90e82963b79d97809c1ef21d070d2ce38e92de0407b9a9b1df46da4e51fff4c",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
@@ -406,6 +416,11 @@
       "sourceSha256": "ae76d5c316f91275bde51d1448f27cab8c110f8873b9ec6d3f48c91b4fc2a05c"
     },
     {
+      "path": "tools/Check-MarkdownEncoding.py",
+      "sha256": "6893df5cd9dfe2e891a9db9497115f4f92075f65f22c14cc66eb4e3ec725d34f",
+      "sourceSha256": "6893df5cd9dfe2e891a9db9497115f4f92075f65f22c14cc66eb4e3ec725d34f"
+    },
+    {
       "path": "tools/asio-output/Analyze-NetworkReturn.py",
       "sha256": "605413cd81b8280b27d15bbc876c7170d94c81c8efb8c4aa3dc136df6ae114c5",
       "sourceSha256": "605413cd81b8280b27d15bbc876c7170d94c81c8efb8c4aa3dc136df6ae114c5"
@@ -417,7 +432,7 @@
     },
     {
       "path": "tools/asio-output/README.md",
-      "sha256": "e95c38cf5ffa7118162b8f1b48eb8a5c8d63c8285f36970794e10cd2dbe01c2f",
+      "sha256": "5888fa5e54e698bc1c544ae3c4833ba1b88d2ddc4831612c3a3a92611c686fa0",
       "sourceSha256": "4ea8bf591530a1b15da9437cf80a479e86c9eaf9c2995876325c2080f9384b1c",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
@@ -651,7 +666,7 @@
     },
     {
       "path": "tools/fsa-integration/README.md",
-      "sha256": "bfa9971531925628504212e4217b3cd04633adebed39c9a17794adb8024a1395",
+      "sha256": "49c8c73ec780ff4c3f4e6e35cd935172bb499564b4de289afc6f0044e756039d",
       "sourceSha256": "a471a60ba61fa5a6f775b961c65014007602a6be322034d0bc06ea2e6b9ec899",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
@@ -1366,8 +1381,8 @@
     },
     {
       "path": "tools/zig-scheduler/README.md",
-      "sha256": "218c6f1b3bc46e93285fa48f6eb5669be760f7243033b4687d60d54157d2502d",
-      "sourceSha256": "b73723c28701a5afc684cab21dce9721b77a477a23bcf73462c0cde878a1efb1",
+      "sha256": "5351ff8749a860052cab6884cb4733e74238e2c77f2458af4d5093482e6ecbdc",
+      "sourceSha256": "601a03882182e34948d3321405175714b4664dbf6be3bb508dbc21b47357aec3",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
@@ -1512,14 +1527,14 @@
     },
     {
       "path": "README.md",
-      "sha256": "14b85a53c24f50aadb6030aeed8a8f78f0f0d31c073b4617e4e6f92f399ff7a1",
-      "sourceSha256": "14b85a53c24f50aadb6030aeed8a8f78f0f0d31c073b4617e4e6f92f399ff7a1",
+      "sha256": "555f081be5688d722738b2516c57621cbd0bc469bf8f1680337d8e789b2b174d",
+      "sourceSha256": "555f081be5688d722738b2516c57621cbd0bc469bf8f1680337d8e789b2b174d",
       "sourcePath": "tools/public-source/README-alpha.md"
     },
     {
       "path": "docs/alpha-dev.md",
-      "sha256": "54f201c604f07d711d8cf6e0912d06811f071a368717d6870a58ebba0a9c7edb",
-      "sourceSha256": "54f201c604f07d711d8cf6e0912d06811f071a368717d6870a58ebba0a9c7edb",
+      "sha256": "a3fdf45d18e2ab319703346a55a1ff47c3d956532934ec781507a4c71259de2b",
+      "sourceSha256": "a3fdf45d18e2ab319703346a55a1ff47c3d956532934ec781507a4c71259de2b",
       "sourcePath": "tools/public-source/alpha-dev.md"
     },
     {

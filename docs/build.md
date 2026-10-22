@@ -1,5 +1,9 @@
 # Building the source export
 
+<!-- alpha-dev-status -->
+**2026-10-22 alpha-dev:** N03-N12 integration and pool-side DSP/bypass with leased output are connected. DVS/Wwise validation is limited; temporary WPF is retired. D15, OutputTimeout closeout, FSA startup feedback and Web API remain pending. See [current progress](alpha-dev.md) and [source README](../README.md). Older validation below keeps its original scope.
+<!-- /alpha-dev-status -->
+
 Run commands from the repository root on Windows x64. Required tools: Git, Python 3.12, PowerShell, Rust `1.97.1-x86_64-pc-windows-gnullvm`, and an LLVM/MinGW distribution providing clang.exe and libunwind.dll. The baseline used llvm-mingw `20261006-ucrt-x86_64`. Toolchains and dependency sources are installed separately.
 
 The default managed control host additionally needs Zig 0.13.0 at build time. See [scheduler setup and validation](scheduler.md). Python remains required for telemetry.

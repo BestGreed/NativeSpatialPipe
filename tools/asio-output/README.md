@@ -1,8 +1,8 @@
 # ASIO 输出模块接入检查
 
-DEV16 N07已接通可选NSP软件输出路径并通过假驱动回调录音测试。接口现位于 `modules/audio-backends/src/asio_output_c.h`，Windows x64、ABI v1（新增hold导出）；独立 CMake 目标为 `NSP.AsioOutput`。完整 SpatialASIO 工程已移出主线；最新状态及验证见 目录抽离记录??????????????，下文早期未实测描述仅为历史。
+DEV16 N07已接通可选NSP软件输出路径并通过假驱动回调录音测试。接口现位于 `modules/audio-backends/src/asio_output_c.h`，Windows x64、ABI v1（新增hold导出）；独立 CMake 目标为 `NSP.AsioOutput`。完整 SpatialASIO 工程已移出主线；最新状态及验证见 目录抽离记录（开发参考未随公开源码提供），下文早期未实测描述仅为历史。
 
-N04 宿主边界核对见 调用合同??????????????。N05/N07 已由专用控制/输出工作线程独占句柄，渲染线程通过可靠PCM交接，不直接调用设备 ABI。N07增加hold导出，原配置/状态结构不变。
+N04 宿主边界核对见 调用合同（开发参考未随公开源码提供）。N05/N07 已由专用控制/输出工作线程独占句柄，渲染线程通过可靠PCM交接，不直接调用设备 ABI。N07增加hold导出，原配置/状态结构不变。
 
 ## 离线检查
 
@@ -28,9 +28,9 @@ N04 增补检查：`python tools/asio-output/Test-DeviceModule.py --output build
 
 新 C 入口禁用自动 reset 重开：驱动重置/采样率变化等请求在 service 中返回故障，由宿主停止并由用户重新启动。旧 C++ 构造路径保留原有 reset 行为供兼容回归；不要把旧行为当作 NSP 设备策略。N06 已取消新 C 入口的生产PCM硬截断与浮点设备格式硬截断；整数设备格式仍做必要范围饱和。新入口不导出设备音量/trim/delay，值保持中性，公共处理器在renderer后、设备提交前执行。旧入口保留校准及clamp兼容行为。
 
-当前不提供设备枚举/控制面板或重复公共调音的设备C API。软件PCM/公共处理/owner接线和有界重缓冲见 N07交付??????????????：`nsp_asio_hold`保持驱动打开并暂停源消费，恢复前先填充ring；生产入口的缺样本不再隐式跳过源帧。最小宿主参数、EOF和报告见N07记录。验证：`python tools/asio-output/Test-Playback.py`，仅自有OLR/假驱动，不依赖DVS内部订阅。真实设备与时钟测量仍在N08。
+当前不提供设备枚举/控制面板或重复公共调音的设备C API。软件PCM/公共处理/owner接线和有界重缓冲见 N07交付（开发参考未随公开源码提供）：`nsp_asio_hold`保持驱动打开并暂停源消费，恢复前先填充ring；生产入口的缺样本不再隐式跳过源帧。最小宿主参数、EOF和报告见N07记录。验证：`python tools/asio-output/Test-Playback.py`，仅自有OLR/假驱动，不依赖DVS内部订阅。真实设备与时钟测量仍在N08。
 
-N08 真实驱动工具：`Test-RealDevice.py --driver 'asio:{CLSID}'` 仅查询；加 `--play-silence` 后才执行实际 OLR→公共处理→owner→设备的静音正常/受控欠载用例。`--build-only` 只构建。先读取能力，再按设备当前率播放，不修改 Dante 路由；详见 N08记录??????????????。静音成功不代表物理通道或长期漂移已验证。
+N08 真实驱动工具：`Test-RealDevice.py --driver 'asio:{CLSID}'` 仅查询；加 `--play-silence` 后才执行实际 OLR→公共处理→owner→设备的静音正常/受控欠载用例。`--build-only` 只构建。先读取能力，再按设备当前率播放，不修改 Dante 路由；详见 N08记录（开发参考未随公开源码提供）。静音成功不代表物理通道或长期漂移已验证。
 
 N08 实测修正：设备start/stop期间在owner线程持有下游既有 `AudioScheduling` 请求（音频调度与1ms定时，按原能力尽力申请、成对释放）。流式适配的默认预缓冲目标为设备minimum加一个480帧源交付周期；显式配置仍不低于minimum。缓冲门槛与新增等待会反映在报告，不等于固定端到端延迟；重复欠载、超时和设备故障的退出策略不变。
 
