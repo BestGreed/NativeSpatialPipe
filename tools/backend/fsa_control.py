@@ -77,6 +77,7 @@ def main():
     parser.add_argument('--owner-pid', type=int)
     parser.add_argument('--endpoint')
     parser.add_argument('--request-id', default='manual')
+    parser.add_argument('--spatial-format', default='WindowsSonic',choices=('WindowsSonic','DTSXForHomeTheater','DolbyAtmosForHomeTheater','DolbyAtmosForHeadphones','DolbyAtmosForSpeakers','DTSHeadphoneX','DTSXUltra'))
     args = parser.parse_args()
     home = args.home.resolve()
     code, value = 20, {'state': 'unknown'}
@@ -87,7 +88,7 @@ def main():
             if not args.owner_pid or not args.endpoint:
                 raise ValueError('FSA owner PID and endpoint required')
             ensure_backend(home)
-            request(home, 'start-session', dict(ownerPid=args.owner_pid, endpoint=args.endpoint))
+            request(home, 'start-session', dict(ownerPid=args.owner_pid, endpoint=args.endpoint,spatialFormat=args.spatial_format))
             code, value = 11, {'state': 'starting'}
         elif args.action in ('stop', 'emergency-stop'):
             session_file = home / 'session.json'

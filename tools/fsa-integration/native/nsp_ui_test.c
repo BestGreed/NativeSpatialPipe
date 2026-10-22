@@ -1,7 +1,7 @@
 #include "final_spatial_audio.c"
 #include <assert.h>
 int wmain(int argc,wchar_t **argv) {
-    assert(!wcscmp(names[MODE_NSP],L"Sonic NSp"));
+    assert(!wcscmp(names[MODE_NSP],L"NSp"));
     assert(!wcscmp(fsa_text(FSA_EN,TXT_NSP),L"NSp"));
     assert(!wcscmp(fsa_text(FSA_ZH,TXT_NSP),L"NSp"));
     FSA_MenuState menu_state={0};menu_state.selected=MODE_SONIC;
@@ -9,6 +9,7 @@ int wmain(int argc,wchar_t **argv) {
     assert(fsa_nsp_toggle_request(&menu_state)==1);
     menu_state.selected=MODE_NSP;
     assert(fsa_menu_checked(&menu_state,105) && fsa_menu_checked(&menu_state,106));
+    menu_state.frontend=5;assert(fsa_menu_checked(&menu_state,110) && !fsa_menu_checked(&menu_state,105));
     assert(fsa_nsp_toggle_request(&menu_state)==2);
     menu_state.selected=-1;
     for(UINT command=100;command<=106;command++)assert(!fsa_menu_checked(&menu_state,command));
@@ -38,6 +39,12 @@ int wmain(int argc,wchar_t **argv) {
     memcpy(&sonic.words[3],&encoders[2],16);
     assert(classify(&state,&sonic)==MODE_SONIC);
     assert(classify(&state,&sonic)!=MODE_NSP);
+    for(int i=0;i<7;i++){
+        GUID g;assert(SUCCEEDED(CLSIDFromString(pipeline_guids[i],&g)));memcpy(&sonic.words[3],&g,16);
+        assert(classify(&state,&sonic)==pipeline_modes[i]);
+        assert(pipeline_format_for_mode(pipeline_modes[i])==i);
+        menu_state.selected=pipeline_modes[i];assert(fsa_menu_checked(&menu_state,100+pipeline_modes[i]));
+    }
     wake=CreateEventW(NULL,FALSE,FALSE,NULL);
     available_modes=1u<<MODE_STEREO;
     nsp_ui_locked=1;manual=-1;
@@ -57,6 +64,6 @@ int wmain(int argc,wchar_t **argv) {
         assert(nsp_control(L"emergency-stop")==NSP_STOPPED);
         puts("PASS native FSA -> selected scheduler -> correlated user-state disk read (idle/stop/emergency)");
     }
-    puts("PASS Sonic NSp display, FSA application icon, Sonic snapshot slot and separate Hook qualification");
+    puts("PASS seven spatial identities, active checkmarks, NSp frontend mapping and separate Hook qualification");
     return 0;
 }

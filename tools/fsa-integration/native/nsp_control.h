@@ -1,4 +1,5 @@
 /* Worker-only bridge. Files are observations, never proof that Hook is off. */
+#include "nsp_playback.h"
 static LONG nsp_requested;
 static LONG nsp_ui_locked;
 static LONG nsp_next_mode=-1;
@@ -66,6 +67,12 @@ static int nsp_control_process(const wchar_t *action) {
     swprintf(marker,MAX_PATH,L"%ls\\NativeSpatialPipe\\hook-status.ini",local);
     swprintf(request_id,80,L"%lu-%llu",GetCurrentProcessId(),GetTickCount64());
     swprintf(command,4096,L"\"%ls\" %ls%ls --owner-pid %lu --endpoint \"%ls\" --request-id %ls",python,prefix,action,GetCurrentProcessId(),profiles[0].endpoint,request_id);
+    if(!wcscmp(action,L"start")){
+        wchar_t format[80];GetPrivateProfileStringW(L"NSP",L"FrontendFormat",L"WindowsSonic",format,80,ini);
+        if(wcschr(format,L'"') || wcschr(format,L' '))return NSP_UNKNOWN;
+        size_t used=wcslen(command);swprintf(command+used,4096-used,L" --spatial-format %ls",format);
+        if(!nsp_append_playback(command,4096,ini,prefix[0]!=0))return NSP_UNKNOWN;
+    }
     if(!prefix[0]){
         wchar_t telemetry_python[MAX_PATH];
         GetPrivateProfileStringW(L"NSP",L"Python",L"",telemetry_python,MAX_PATH,ini);

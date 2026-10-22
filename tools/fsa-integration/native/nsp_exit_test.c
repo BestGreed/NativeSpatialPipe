@@ -32,7 +32,8 @@ int wmain(void) {
     assert(RegisterClassW(&wc));
     int observations[]={NSP_RUNNING,NSP_STOPPED,NSP_BUSY,NSP_PREFLIGHT,NSP_UNKNOWN};
     unsigned combinations=0;
-    for(int locked=0;locked<=1;locked++)for(int target=MODE_STEREO;target<=MODE_SONIC;target++){
+    for(int locked=0;locked<=1;locked++)for(int target=MODE_STEREO;target<MODE_COUNT;target++){
+        if(target==MODE_NSP)continue;
         for(unsigned i=0;i<sizeof(observations)/sizeof(*observations);i++){
             exit_requested=exit_verified=0;nsp_ui_locked=locked;nsp_next_mode=-1;nsp_requested=0;
             automatic=1;manual=-1;available_modes=(1u<<MODE_COUNT)-1;

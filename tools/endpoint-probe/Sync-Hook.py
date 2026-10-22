@@ -14,7 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 _retained_native_resources=[]
 if '--native-hook' not in sys.argv:
     if not (ROOT / 'work/frida/package/frida').is_dir():
-        raise RuntimeError('Legacy Frida dependency is retired. Use Run-Native.py for the current C/Rust pipeline; see docs/dependencies.md to restore historical experiments.')
+        raise RuntimeError('Legacy Frida dependency is retired. Use Run-Native.py for the current C/Rust pipeline; see docs/core/dependencies.md to restore historical experiments.')
     sys.path.insert(0, str(ROOT / 'work/frida/package'))
     import frida
 
@@ -48,6 +48,9 @@ def main():
     if managed and not native_hook:raise ValueError('Managed sessions require native hook')
     stop_file=pathlib.Path(sys.argv[sys.argv.index('--stop-file')+1]) if '--stop-file' in sys.argv else None
     split_streams='--split-streams' in sys.argv
+    archive_only='--archive-only' in sys.argv
+    if archive_only and ('--archive-dir' not in sys.argv or not native_hook or not native_send or not streaming or not unmarked or rust_receiver or multi_stream or '--native-roar-dll' in sys.argv or '--roar-map' in sys.argv or '--roar-dll' in sys.argv):
+        raise ValueError('Archive-only requires native diagnostic capture and raw archive without renderers')
     pack_mode=sys.argv[sys.argv.index('--capture-pack')+1] if '--capture-pack' in sys.argv else 'js'
     if pack_mode not in ('js','native'):raise ValueError('Invalid capture pack mode')
     event_drain='--event-drain' in sys.argv
@@ -164,7 +167,7 @@ def main():
                 recorder=recorder_module.PacketRecorder(sys.argv[sys.argv.index('--archive-dir')+1],sys.argv[sys.argv.index('--archive-trigger')+1],seconds=archive_seconds)
                 recorder.trace=tail
             if not unmarked:raise ValueError('Streaming requires unmarked mode')
-            if not native_enabled:
+            if not native_enabled and not archive_only:
                 spec=importlib.util.spec_from_file_location('stream_consumer',ROOT/'tools/endpoint-probe/Stream-Consumer.py')
                 module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
                 if not split_streams:consumer=module.StreamConsumer(out,capacity=consumer_capacity,render_mode=render_mode)
@@ -262,6 +265,11 @@ def main():
                             recorder_begin=time.perf_counter_ns() if tail else 0
                             if recorder:recorder.submit(r,data)
                             recorder_end=time.perf_counter_ns() if tail else 0
+                            if archive_only:
+                                report['streamPacketsReceived']=report.get('streamPacketsReceived',0)+1
+                                report['lastCaptureQpcNs']=r['captureQpcNs']
+                                report['lastPacketSlots']=r['count']
+                                return
                             target=consumer
                             if multi_stream:
                                 target=dispatcher.get(r)
@@ -369,6 +377,7 @@ def main():
         cpu_start=cpu_snapshot()
         deadline=float('inf') if managed else time.monotonic()+(duration+1 if unmarked else 13)
         next_hook_check=0
+        next_archive_progress=0
         while time.monotonic()<deadline:
             if managed and time.monotonic()>=next_hook_check:
                 next_hook_check=time.monotonic()+1
@@ -376,6 +385,9 @@ def main():
                     report['stopReason']='hook-protection-stop';break
             if rust_receiver:report['streamPacketsReceived']=native_receiver.received
             if recorder:recorder.tick()
+            if archive_only and time.monotonic()>=next_archive_progress:
+                next_archive_progress=time.monotonic()+1
+                (out/'archive-progress.json').write_text(json.dumps({key:report.get(key) for key in ('streamPacketsReceived','lastCaptureQpcNs','lastPacketSlots')}),encoding='utf-8')
             if stop_file and stop_file.exists():
                 report['stopReason']='external-stop-file';break
             if report.get('agentErrors') or (native_receiver and native_receiver.errors):break
@@ -440,11 +452,13 @@ def main():
         if split_streams:
             summaries={}
             for block,target in consumers.items():
-                try:summaries[block]=target.finish(tap_drain=drain_telemetry if telemetry_service is not None else None)
+                try:summaries[block]=target.finish(tap_drain=drain_telemetry if telemetry_service is not None else None) if native_enabled else target.finish()
                 except Exception as exc:report.setdefault('consumerFinishErrors',[]).append(repr(exc))
             report['streamSummaries']=summaries
             report['streamSummary']={'passed':bool(summaries) and all(s['passed'] for s in summaries.values()) and not report.get('consumerFinishErrors')}
             if native_enabled:report['nativeSummaries']=summaries
+        if archive_only:
+            report['streamSummary']={'passed':bool(report.get('streamPacketsReceived')),'receiver':'archive-only; per-object analysis deferred to offline processing'}
         if roar_enabled:
             report['roarSummaries']={}
             for block,pipeline in roar_pipelines.items():

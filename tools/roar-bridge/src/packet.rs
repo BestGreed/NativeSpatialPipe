@@ -1,6 +1,8 @@
 //! Owned native packet consumption; the caller remains responsible for stream routing.
 use aom_roar::*;
 use crate::raw_tap as telemetry;
+use crate::capture_input::{CaptureInput, Property, MAX_OBJECTS};
+use crate::olr_input::{State, coordinates};
 use std::{
     ffi::{CStr, c_char, c_void},
     fs::File,
@@ -16,7 +18,7 @@ use std::{
     time::Instant,
 };
 
-const SLOTS: usize = 160;
+const SLOTS: usize = MAX_OBJECTS;
 #[link(name = "avrt")]
 unsafe extern "system" {
     fn AvSetMmThreadCharacteristicsW(name: *const u16, index: *mut u32) -> *mut c_void;
@@ -43,14 +45,6 @@ fn qpc_ns() -> u64 {
 const BED_ID: u32 = 10000;
 // ROAR Layout714: FL, FR, C, LFE, SL, SR, BL, BR, TFL, TFR, TBL, TBR.
 const BED_TYPES: [u32; 12] = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096];
-#[derive(Clone, Copy, Default)]
-struct State {
-    present: bool,
-    ident: u32,
-    typ: u32,
-    generation: u64,
-    position: Option<[f64; 3]>,
-}
 #[derive(Default)]
 struct Mapping {
     packets: u64,
@@ -62,6 +56,7 @@ struct Mapping {
     max_dynamic: usize,
     max_static: usize,
 }
+/// ROAR's OLR mode and its dedicated adapter; not a generic ROAR engine.
 pub struct Engine {
     rdr: RoarRenderer,
     group: GroupId,
@@ -141,9 +136,7 @@ impl Engine {
     }
     fn process_tapped(&mut self, seq: u64, count: usize, data: &[u8], object_tap: Option<&mut telemetry::Producer>) -> Result<&[f32], String> {
         let begin = Instant::now();
-        if count == 0 || count > SLOTS || data.len() != count * (32 + self.n * 4) {
-            return err("Invalid packet length/count");
-        }
+        let input = CaptureInput::new(data, count, self.n).map_err(str::to_string)?;
         if self
             .last
             .is_some_and(|last| last.checked_add(1) != Some(seq))
@@ -151,31 +144,21 @@ impl Engine {
             return err("Sequence discontinuity: rebuild native pipeline");
         }
         // Decode/validate all bytes before changing any metadata or renderer state.
-        let mut props = [(0u32, 0u32, 0u32, [0f64; 3], 0f32); SLOTS];
+        let mut props = [Property::default(); SLOTS];
         for (slot, prop) in props.iter_mut().enumerate().take(count) {
-            let p = &data[slot * 32..slot * 32 + 32];
-            let u = |i| u32::from_le_bytes(p[i..i + 4].try_into().unwrap());
-            let f = |i| f32::from_le_bytes(p[i..i + 4].try_into().unwrap());
-            let typ = u(8);
-            let xyz = [f(16) as f64, f(20) as f64, f(24) as f64];
-            let gain = f(28);
-            if u(4) != self.n as u32 || !xyz.iter().all(|v| v.is_finite()) || !gain.is_finite() {
-                return err("Invalid native property");
-            }
-            if typ != 1 && !BED_TYPES.contains(&typ) {
+            *prop = input.property(slot).map_err(str::to_string)?;
+            if prop.typ != 1 && !BED_TYPES.contains(&prop.typ) {
                 return err("Unsupported static type");
             }
-            *prop = (u(0), typ, u(12), xyz, gain);
-            let at = count * 32 + slot * self.n * 4;
             for (dst, b) in self.pcm[slot * self.n..(slot + 1) * self.n]
                 .iter_mut()
-                .zip(data[at..at + self.n * 4].chunks_exact(4))
+                .zip(input.pcm_bytes(slot).chunks_exact(4))
             {
                 let v = f32::from_le_bytes(b.try_into().unwrap());
                 if !v.is_finite() {
                     return err("Nonfinite PCM");
                 }
-                *dst = if self.apply_gain { v * gain } else { v };
+                *dst = if self.apply_gain { v * prop.gain } else { v };
                 if !dst.is_finite() {
                     return err("Nonfinite gain-adjusted PCM");
                 }
@@ -192,42 +175,20 @@ impl Engine {
         if let ObjectPosition::Cartesian(p) = &mut self.positions {
             p.clear();
         }
-        for (slot, &(ident, typ, flags, xyz, _gain)) in props.iter().enumerate().take(count) {
+        // Effective state and source->OLR mapping below remain backend policy.
+        for (slot, &prop) in props.iter().enumerate().take(count) {
+            let Property { typ, flags, .. } = prop;
             let s = &mut self.states[slot];
-            if !s.present || s.ident != ident || s.typ != typ || flags & 1 != 0 {
-                if s.present {
-                    self.mapping.retires += 1;
-                }
-                *s = State {
-                    present: true,
-                    ident,
-                    typ,
-                    generation: s.generation + 1,
-                    position: None,
-                };
-                self.mapping.creates += 1;
-            }
-            if typ == 1 && flags & 4 != 0 {
-                s.position = Some(xyz);
-                self.mapping.updates += 1;
-            }
+            let (created, retired, updated) = s.observe(prop);
+            self.mapping.creates += u64::from(created);
+            self.mapping.retires += u64::from(retired);
+            self.mapping.updates += u64::from(updated);
             retire[slot] = flags & 8 != 0;
             if typ == 1 {
-                if let Some([x, y, z]) = s.position {
-                    let radius = (x * x + y * y + z * z).sqrt();
-                    let scale = if self.scaled {
-                        1. / self.reference
-                    } else if radius > 0. {
-                        1. / radius
-                    } else {
-                        1.
-                    };
+                if let Some(position) = s.position {
+                    let [x, y, z] = coordinates(position, self.scaled, self.reference);
                     if let ObjectPosition::Cartesian(p) = &mut self.positions {
-                        p.push(CartesianCoordinate {
-                            x: (x * scale) as f32,
-                            y: (-z * scale) as f32,
-                            z: (y * scale) as f32,
-                        });
+                        p.push(CartesianCoordinate { x, y, z });
                     }
                     dynamic[num_dynamic] = slot;
                     desired[slot] = true;
@@ -400,7 +361,7 @@ impl Engine {
                 for slot in 0..count {
                     let s = self.states[slot]; let at = 32 + slot * (48 + 480 * 4);
                     let meta = &mut wire[at..at+48];
-                    for (index, value) in [slot as u32, s.ident, s.typ, props[slot].2].iter().enumerate() {
+                    for (index, value) in [slot as u32, s.ident, s.typ, props[slot].flags].iter().enumerate() {
                         meta[index*4..index*4+4].copy_from_slice(&value.to_le_bytes());
                     }
                     meta[16..24].copy_from_slice(&s.generation.to_le_bytes());
@@ -408,7 +369,7 @@ impl Engine {
                         meta[24+i*4..28+i*4].copy_from_slice(&(*value as f32).to_le_bytes());
                     }
                     meta[36..40].copy_from_slice(&(s.position.is_some() as u32).to_le_bytes());
-                    meta[40..44].copy_from_slice(&(props[slot].4 as f32).to_le_bytes());
+                    meta[40..44].copy_from_slice(&props[slot].gain.to_le_bytes());
                     meta[44..48].copy_from_slice(&(self.apply_gain as u32).to_le_bytes());
                     let pcm = &self.pcm[slot*480..(slot+1)*480];
                     let bytes = unsafe { slice::from_raw_parts(pcm.as_ptr() as *const u8, 480*4) };
@@ -501,7 +462,7 @@ struct Packet {
     received: Instant,
     capture_ns: u64,
 }
-struct OutputPacket { data: Vec<f32>, sequence: u64, capture_ns: u64, render_ns: u64, queued: Instant }
+struct OutputPacket { data: Box<crate::output_pool::Block>, sequence: u64, capture_ns: u64, render_ns: u64, queued: Instant }
 struct Timing {
     hist: Vec<u64>,
     count: u64,
@@ -550,6 +511,8 @@ impl Timing {
 struct Stats {
     processed: u64,
     written: u64,
+    tail_packets: u64,
+    tail_frames: u64,
     error: Option<String>,
     mapping: Mapping,
     work: Timing,
@@ -567,15 +530,16 @@ struct Stats {
     mmcss_reverted: bool,
     thread_id: u32,
 }
-struct WriterStats { written: u64, queue: Timing, write: Timing, capture_write: Timing, flush_ns: u64, tails: Vec<String>, overflow: u64 }
+struct WriterStats { written: u64, frames: u64, queue: Timing, write: Timing, capture_write: Timing, flush_ns: u64, tails: Vec<String>, overflow: u64, thread_id: u32, mmcss_requested: bool, mmcss_registered: bool, mmcss_priority: bool, mmcss_reverted: bool }
 impl WriterStats {
-    fn new() -> Self { Self { written: 0, queue: Timing::new(), write: Timing::new(), capture_write: Timing::new(), flush_ns: 0, tails: Vec::with_capacity(256), overflow: 0 } }
+    fn new() -> Self { Self { written: 0, frames: 0, queue: Timing::new(), write: Timing::new(), capture_write: Timing::new(), flush_ns: 0, tails: Vec::with_capacity(256), overflow: 0, thread_id: 0, mmcss_requested: false, mmcss_registered: false, mmcss_priority: false, mmcss_reverted: false } }
 }
 impl Stats {
     fn new() -> Self {
         Self {
             processed: 0,
             written: 0,
+            tail_packets: 0, tail_frames: 0,
             error: None,
             mapping: Mapping::default(),
             work: Timing::new(),
@@ -591,7 +555,34 @@ impl Stats {
         }
     }
 }
+// ROAR is the backend; this integration currently exposes only its OLR mode.
+enum RoarMode { Olr(Engine) }
+enum Backend { Roar(RoarMode), Lira(crate::spatial_input::Spatial, Mapping) }
+impl Backend {
+    fn process_into<'a>(&'a mut self,seq:u64,count:usize,data:&[u8],object_tap:&mut telemetry::Producer,out:&mut [f32])->Result<Option<&'a [f32]>,String>{
+        match self {
+            Self::Roar(RoarMode::Olr(e))=>{
+                let pcm=e.process_tapped(seq,count,data,Some(object_tap))?;
+                for i in 0..out.len()/12 { for c in 0..12 { out[i*12+c]=pcm[c*(out.len()/12)+i]; } }
+                Ok(Some(pcm))
+            },
+            Self::Lira(e,m)=>{
+                e.process_into(seq,count,data,out)?;
+                m.packets+=1;m.frames+=(out.len()/12) as u64;
+                Ok(None)
+            }
+        }
+    }
+    fn timing(&self)->(u64,u64,u64){match self{Self::Roar(RoarMode::Olr(e))=>(e.decode_ns,e.metadata_ns,e.dsp_ns),_ =>(0,0,0)}}
+    fn finish(&mut self)->Result<Vec<f32>,String>{match self{Self::Roar(RoarMode::Olr(_))=>Ok(Vec::new()),Self::Lira(e,_)=>e.finish()}}
+    fn mapping(self)->Mapping{match self{Self::Roar(RoarMode::Olr(mut e))=>{e.mapping.retires+=e.states.iter().filter(|s|s.present).count() as u64;e.mapping},Self::Lira(_,m)=>m}}
+}
 struct Pipeline {
+    lira: bool,
+    scaled: bool,
+    reference: f64,
+    sink: Arc<Mutex<Option<OutputSink>>>,
+    pool_sink: Arc<Mutex<Option<crate::output_pool::Sink>>>,
     telemetry: Arc<telemetry::Control>,
     object_telemetry: Arc<telemetry::Control>,
     tx: Option<SyncSender<Packet>>,
@@ -605,12 +596,20 @@ struct Pipeline {
     n: usize,
     report: String,
 }
+type SinkCallback = unsafe extern "C" fn(*mut c_void, u64, *const f32, u32, u32) -> i32;
+#[derive(Clone, Copy)]
+struct OutputSink { callback: SinkCallback, context: usize }
 impl Pipeline {
     fn new(n: u32, capacity: usize, grouped: bool, gain: bool, path: &str) -> Result<Self, String> {
-        if !(1..=256).contains(&capacity) {
-            return err("Queue capacity");
-        }
-        let mut engine = Engine::new(n, 48000, grouped, gain, false, 1.)?;
+        Self::with_position_mapping(n, capacity, grouped, gain, false, 1., path)
+    }
+    fn with_position_mapping(n: u32, capacity: usize, grouped: bool, gain: bool, scaled: bool, reference: f64, path: &str) -> Result<Self, String> {
+        let engine=Backend::Roar(RoarMode::Olr(Engine::new(n,48000,grouped,gain,scaled,reference)?));
+        Self::with_backend(n,capacity,scaled,reference,path,engine)
+    }
+    fn with_backend(n:u32,capacity:usize,scaled:bool,reference:f64,path:&str,mut engine:Backend)->Result<Self,String>{
+        if !(1..=256).contains(&capacity) {return err("Queue capacity");}
+        let lira=matches!(engine,Backend::Lira(..));
         let _ = qpc_ns(); // Initialize frequency before either worker starts.
         let output = File::create_new(path).map_err(|e| e.to_string())?;
         let (tx, rx) = mpsc::sync_channel::<Packet>(capacity);
@@ -623,13 +622,19 @@ impl Pipeline {
         let (out_tx, out_rx) = mpsc::sync_channel::<OutputPacket>(capacity);
         let (out_free_tx, out_free_rx) = mpsc::sync_channel(capacity + 1);
         for _ in 0..capacity + 1 {
-            out_free_tx.send(vec![0f32; n as usize * 12]).unwrap();
+            out_free_tx.send(Box::new(crate::output_pool::Block { data: vec![0f32; n as usize * 12], recycle: out_free_tx.clone() })).unwrap();
         }
+        let out_free_rx = Arc::new(Mutex::new(out_free_rx));
+        let writer_free_rx = Arc::clone(&out_free_rx);
         let enqueued = Arc::new(AtomicU64::new(0));
         let dropped = Arc::new(AtomicU64::new(0));
         let failed = Arc::new(AtomicU64::new(0));
         let worker_failed = Arc::clone(&failed);
         let worker_free = free_tx.clone();
+        let sink = Arc::new(Mutex::new(None::<OutputSink>));
+        let writer_sink = Arc::clone(&sink);
+        let pool_sink = Arc::new(Mutex::new(None::<crate::output_pool::Sink>));
+        let writer_pool_sink = Arc::clone(&pool_sink);
         let telemetry = telemetry::Control::new(n == 480);
         let mut tap = telemetry.producer();
         let object_telemetry = telemetry::Control::objects(n == 480);
@@ -639,15 +644,42 @@ impl Pipeline {
         let writer = thread::spawn(move || -> Result<WriterStats, String> {
             let mut output = BufWriter::with_capacity(1024 * 1024, output);
             let mut stats = WriterStats::new();
+            stats.thread_id = unsafe { GetCurrentThreadId() };
+            let mut task = RenderTask { handle: std::ptr::null_mut() };
             while let Ok(packet) = out_rx.recv() {
                 let begin = Instant::now();
                 if packet.capture_ns != 0 { stats.queue.add(packet.queued.elapsed().as_nanos() as u64); }
-                let buf = packet.data;
+                let mut block = packet.data;
+                let buf = &block.data;
+                // Reliable output boundary, not a diagnostic tap. Legacy sinks
+                // borrow synchronously; pool sinks transfer a releasable lease.
+                let legacy_sink = *writer_sink.lock().unwrap();
+                let pool_sink = *writer_pool_sink.lock().unwrap();
+                if legacy_sink.is_some() || pool_sink.is_some() {
+                    // This writer is also the reliable realtime PCM handoff.
+                    // Register on its own thread only for live output, not for
+                    // file-only rendering. The same writer owns pool-side DSP.
+                    if !stats.mmcss_requested {
+                        stats.mmcss_requested = true;
+                        let name: Vec<u16> = "Pro Audio\0".encode_utf16().collect();
+                        let mut index = 0;
+                        task.handle = unsafe { AvSetMmThreadCharacteristicsW(name.as_ptr(), &mut index) };
+                        stats.mmcss_registered = !task.handle.is_null();
+                        stats.mmcss_priority = stats.mmcss_registered && unsafe { AvSetMmThreadPriority(task.handle, 0) } != 0;
+                        if !stats.mmcss_priority { return Err("Output handoff MMCSS registration/priority failed".into()); }
+                    }
+                    if let Some(sink) = legacy_sink {
+                        let rc = unsafe { (sink.callback)(sink.context as *mut c_void,
+                            stats.frames, buf.as_ptr(), (buf.len()/12) as u32, 12) };
+                        if rc != 0 { return Err(format!("Output sink rejected PCM: {rc}")); }
+                    }
+                }
                 // All supported targets for this Windows bridge are little endian.
                 let bytes =
                     unsafe { slice::from_raw_parts(buf.as_ptr() as *const u8, buf.len() * 4) };
                 output.write_all(bytes).map_err(|e| e.to_string())?;
                 stats.written += 1;
+                stats.frames += (buf.len()/12) as u64;
                 if packet.capture_ns != 0 {
                     let end = qpc_ns();
                     stats.write.add(begin.elapsed().as_nanos() as u64);
@@ -658,7 +690,33 @@ impl Pipeline {
                         } else { stats.overflow += 1; }
                     }
                 }
-                let _ = out_free_tx.send(buf);
+                // Keep raw renderer recording/telemetry semantics unchanged.
+                // DSP then mutates the exclusive pool block before publication.
+                if let Some(sink) = pool_sink {
+                    let frames = sink.process(&mut block, false)?;
+                    sink.publish(block, stats.frames - frames as u64, frames, false)?;
+                } else {
+                    let _ = out_free_tx.send(block);
+                }
+            }
+            if let Some(sink) = *writer_pool_sink.lock().unwrap() {
+                let mut first = stats.frames;
+                loop {
+                    // EOF only: bounded pool, no new tail allocation. A failed
+                    // output consumer returns outstanding leases before joining.
+                    let mut block = writer_free_rx.lock().unwrap().recv().map_err(|_| "Output pool closed during DSP tail".to_string())?;
+                    block.data.resize(n as usize * 12, 0.);
+                    let frames = sink.process(&mut block, true)?;
+                    if frames == 0 { let _ = out_free_tx.send(block); break; }
+                    sink.publish(block, first, frames, true)?;
+                    first += frames as u64;
+                }
+            }
+            // Final disk flush is outside the realtime handoff lifetime.
+            if !task.handle.is_null() {
+                stats.mmcss_reverted = unsafe { AvRevertMmThreadCharacteristics(task.handle) } != 0;
+                if !stats.mmcss_reverted { return Err("Output handoff MMCSS revert failed".into()); }
+                task.handle = std::ptr::null_mut();
             }
             let flush = Instant::now();
             output.flush().map_err(|e| e.to_string())?;
@@ -684,22 +742,18 @@ impl Pipeline {
                 let begin = Instant::now();
                 stats.queue.add(packet.received.elapsed().as_nanos() as u64);
                 let result = (|| -> Result<(), String> {
-                    let mut out = out_free_rx
+                    let mut out = out_free_rx.lock().unwrap()
                         .try_recv()
                         .map_err(|_| "Writer buffer pool exhausted".to_string())?;
-                    let pcm = engine.process_tapped(packet.seq, packet.count, &packet.data, Some(&mut object_tap))?;
-                    for i in 0..n as usize {
-                        for c in 0..12 {
-                            out[i * 12 + c] = pcm[c * n as usize + i];
-                        }
-                    }
+                    out.data.resize(n as usize*12,0.);
+                    let planar = engine.process_into(packet.seq, packet.count, &packet.data, &mut object_tap, &mut out.data)?;
                     let render_ns = if packet.capture_ns != 0 { qpc_ns() } else { 0 };
                     if packet.capture_ns != 0 { stats.capture_render.add(render_ns.saturating_sub(packet.capture_ns)); }
-                    // PCM is still borrowed from Engine here. Copy into an independent
-                    // bounded pool; telemetry failure must never fail the audio submit.
+                    // Telemetry is a separate bounded diagnostic copy. LIRA's
+                    // reliable PCM already lives in the writer's output pool.
                     if tap.active() {
                         let publish_begin = Instant::now();
-                        tap.publish(packet.seq, pcm);
+                        if let Some(pcm)=planar {tap.publish(packet.seq,pcm);} else {tap.publish_interleaved(packet.seq,&out.data);}
                         stats.telemetry_publish.add(publish_begin.elapsed().as_nanos() as u64);
                         if packet.capture_ns != 0 { stats.capture_publish.add(qpc_ns().saturating_sub(packet.capture_ns)); }
                     }
@@ -717,9 +771,24 @@ impl Pipeline {
                 }
                 stats.processed += 1;
                 stats.work.add(begin.elapsed().as_nanos() as u64);
-                stats.decode.add(engine.decode_ns);
-                stats.metadata.add(engine.metadata_ns);
-                stats.dsp.add(engine.dsp_ns);
+                let (decode,metadata,dsp)=engine.timing();
+                stats.decode.add(decode);stats.metadata.add(metadata);stats.dsp.add(dsp);
+            }
+            if stats.error.is_none() {
+                let result=(||->Result<(),String>{
+                    let tail=engine.finish()?;
+                    for chunk in tail.chunks(n as usize*12){
+                        // EOS is non-realtime. Bound memory as before and let the
+                        // writer drain; never truncate the renderer's 512-frame tail.
+                        let mut out=out_free_rx.lock().unwrap().recv().map_err(|_|"Writer failed during tail".to_string())?;
+                        out.data.resize(chunk.len(),0.);out.data.copy_from_slice(chunk);
+                        let frames=(chunk.len()/12) as u64;
+                        out_tx.send(OutputPacket{data:out,sequence:0,capture_ns:0,render_ns:0,queued:Instant::now()}).map_err(|_|"Writer failed during tail".to_string())?;
+                        stats.tail_packets+=1;stats.tail_frames+=frames;
+                    }
+                    Ok(())
+                })();
+                if let Err(e)=result{stats.error=Some(e);worker_failed.store(1,Ordering::Release);}
             }
             if !task.handle.is_null() {
                 stats.mmcss_reverted = unsafe { AvRevertMmThreadCharacteristics(task.handle) } != 0;
@@ -727,17 +796,21 @@ impl Pipeline {
                 else { stats.error = Some("Renderer MMCSS revert failed".into()); worker_failed.store(1, Ordering::Release); }
             }
             drop(out_tx);
-            drop(out_free_rx);
             match writer.join() {
                 Ok(Ok(w)) => { stats.written = w.written; stats.writer = w; },
                 Ok(Err(e)) => stats.error = Some(e),
                 Err(_) => stats.error = Some("Writer panic".to_string()),
             }
-            engine.mapping.retires += engine.states.iter().filter(|s| s.present).count() as u64;
-            stats.mapping = engine.mapping;
+            drop(out_free_rx);
+            stats.mapping = engine.mapping();
             stats
         });
         Ok(Self {
+            lira,
+            scaled,
+            reference,
+            sink,
+            pool_sink,
             telemetry,
             object_telemetry,
             tx: Some(tx),
@@ -766,7 +839,7 @@ impl Pipeline {
         let dropped = self.dropped.load(Ordering::Acquire);
         let passed = enqueued > 0
             && enqueued == stats.processed
-            && stats.processed == stats.written
+            && stats.processed + stats.tail_packets == stats.written
             && dropped == 0
             && stats.error.is_none();
         let error = stats
@@ -782,30 +855,71 @@ impl Pipeline {
                 )
             })
             .unwrap_or("null".into());
+        let mapping_json=if self.lira {"null".into()} else {format!("{{\"creates\":{},\"retires\":{},\"positionUpdates\":{},\"unknownPositionBlocks\":{},\"maxDynamic\":{},\"maxStatic\":{}}}",stats.mapping.creates,stats.mapping.retires,stats.mapping.updates,stats.mapping.unknown,stats.mapping.max_dynamic,stats.mapping.max_static)};
         self.report = format!(
-            "{{\"passed\":{passed},\"enqueued\":{enqueued},\"consumed\":{},\"written\":{},\"queueDropped\":{dropped},\"queueCapacity\":{},\"error\":{error},\"threadStopped\":true,\"processedFrames\":{},\"mapping\":{{\"creates\":{},\"retires\":{},\"positionUpdates\":{},\"unknownPositionBlocks\":{},\"maxDynamic\":{},\"maxStatic\":{}}},\"workMs\":{},\"decodeMs\":{},\"metadataMs\":{},\"dspMs\":{},\"queueWaitMs\":{},\"scope\":\"Native packet worker; output serialization/enqueue included, disk write on independent bounded writer; histogram 1us, percentile ceiling 50ms; no device playback\"}}",
+            "{{\"passed\":{passed},\"enqueued\":{enqueued},\"consumed\":{},\"written\":{},\"queueDropped\":{dropped},\"queueCapacity\":{},\"error\":{error},\"threadStopped\":true,\"processedFrames\":{},\"mapping\":{},\"workMs\":{},\"decodeMs\":{},\"metadataMs\":{},\"dspMs\":{},\"queueWaitMs\":{},\"scope\":\"Native packet worker; output serialization/enqueue included, disk write on independent bounded writer; histogram 1us, percentile ceiling 50ms; optional reliable output sink, device status reported by host\"}}",
             stats.processed,
             stats.written,
             self.capacity,
             stats.mapping.frames,
-            stats.mapping.creates,
-            stats.mapping.retires,
-            stats.mapping.updates,
-            stats.mapping.unknown,
-            stats.mapping.max_dynamic,
-            stats.mapping.max_static,
+            mapping_json,
             stats.work.json(),
-            stats.decode.json(),
-            stats.metadata.json(),
-            stats.dsp.json(),
+            if self.lira {"null".into()} else {stats.decode.json()},
+            if self.lira {"null".into()} else {stats.metadata.json()},
+            if self.lira {"null".into()} else {stats.dsp.json()},
             stats.queue.json()
         );
         self.report.pop();
+        self.report.push_str(&format!(",\"renderer\":\"{}\",\"rendererMode\":{},\"rendererDelayFrames\":{},\"rendererTailFrames\":{},\"outputFrames\":{}",if self.lira {"lira"} else {"roar"},if self.lira {"null"} else {"\"olr\""},if self.lira {512} else {0},stats.tail_frames,stats.writer.frames));
+        if self.lira {
+            self.report.push_str(",\"positionMapping\":{\"mode\":\"backend-room-projection\",\"negativeHeight\":\"floor\",\"outsideRoom\":\"uniform-extent-projection\"}");
+        } else {
+        self.report.push_str(&format!(",\"positionMapping\":{{\"mode\":\"{}\",\"reference\":{},\"units\":\"source-coordinate-units-per-OLR-unit\",\"physicalCalibration\":false}}", if self.scaled { "scaled" } else { "direction" }, self.reference));
+        }
         self.report.push_str(&format!(",\"rendererScheduling\":{{\"threadId\":{},\"requested\":{},\"registered\":{},\"prioritySet\":{},\"reverted\":{}}}", stats.thread_id, stats.mmcss_requested, stats.mmcss_registered, stats.mmcss_priority, stats.mmcss_reverted));
+        self.report.push_str(&format!(",\"outputHandoffScheduling\":{{\"threadId\":{},\"requested\":{},\"registered\":{},\"prioritySet\":{},\"reverted\":{}}}", stats.writer.thread_id, stats.writer.mmcss_requested, stats.writer.mmcss_registered, stats.writer.mmcss_priority, stats.writer.mmcss_reverted));
         self.report.push_str(&format!(",\"fullTiming\":{{\"captureToRenderMs\":{},\"writerQueueMs\":{},\"bufferedWriteMs\":{},\"captureToBufferedWriteMs\":{},\"finalFlushSyncMs\":{},\"tails\":[{}],\"tailOverflow\":{},\"scope\":\"QPC capture through render-ready and buffered file write return; not per-packet durable disk completion or device playback\"}}}}", stats.capture_render.json(), stats.writer.queue.json(), stats.writer.write.json(), stats.writer.capture_write.json(), stats.writer.flush_ns as f64 / 1e6, stats.writer.tails.join(","), stats.writer.overflow));
         self.report.pop();
         self.report.push_str(&format!(",\"telemetry\":{},\"objectTelemetry\":{},\"telemetryPublishMs\":{},\"captureThroughTelemetryMs\":{}}}", self.telemetry.json(), self.object_telemetry.json(), stats.telemetry_publish.json(), stats.capture_publish.json()));
     }
+}
+
+/// Control caller only, before any submit; immutable until pipeline destruction.
+/// Callback PCM is borrowed only until return. Nonzero fails the output writer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nsp_pipeline_set_output_sink(
+    p: *mut c_void, callback: Option<SinkCallback>, context: *mut c_void,
+) -> i32 {
+    status(|| {
+        if p.is_null() { return err("Null pipeline"); }
+        let p = unsafe { &*(p as *const Pipeline) };
+        if p.tx.is_none() || p.enqueued.load(Ordering::Acquire) != 0 { return err("Set sink before submitting PCM"); }
+        let mut sink = p.sink.lock().unwrap();
+        if sink.is_some() || callback.is_none() || p.pool_sink.lock().unwrap().is_some() { return err("Output sink already set or null"); }
+        *sink = Some(OutputSink { callback: callback.unwrap(), context: context as usize });
+        Ok(())
+    })
+}
+/// Additive lease ABI. process runs on the writer's exclusively owned PCM.
+/// publish success transfers one preallocated token; consumer calls release
+/// exactly once after its synchronous device submit (or on abort).
+/// process op 0 transforms capacity frames; op 1 drains up to capacity at EOF.
+/// Rejected publish retains ownership here. Configure before any input submit.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nsp_pipeline_set_pool_output(
+    p: *mut c_void, process: Option<crate::output_pool::Process>,
+    publish: Option<crate::output_pool::Publish>, context: *mut c_void,
+) -> i32 {
+    status(|| {
+        if p.is_null() { return err("Null pipeline"); }
+        let p = unsafe { &*(p as *const Pipeline) };
+        if p.tx.is_none() || p.enqueued.load(Ordering::Acquire) != 0 { return err("Set pool before submitting PCM"); }
+        let legacy = p.sink.lock().unwrap();
+        let mut pool = p.pool_sink.lock().unwrap();
+        if legacy.is_some() || pool.is_some() || process.is_none() || publish.is_none() { return err("Pool output already set or null"); }
+        *pool = Some(crate::output_pool::Sink { process: process.unwrap(), publish: publish.unwrap(), context: context as usize });
+        Ok(())
+    })
 }
 #[unsafe(no_mangle)]
 /// Control caller only; do not race finish/destroy. Returns -1 if unsupported/failed.
@@ -869,6 +983,30 @@ pub unsafe extern "C" fn nsp_pipeline_create(
     .ok()
     .and_then(Result::ok)
     .unwrap_or(std::ptr::null_mut())
+}
+#[unsafe(no_mangle)]
+/// ROAR/OLR additive entry. scaled=1 preserves radius with a uniform reference divisor;
+/// the legacy create entry retains direction semantics. No physical room model.
+pub unsafe extern "C" fn nsp_pipeline_create_with_position_mapping(
+    n: u32, capacity: u32, grouped: u32, gain: u32,
+    scaled: u32, reference: f64, path: *const c_char,
+) -> *mut c_void {
+    if path.is_null() || scaled > 1 || (scaled == 0 && reference != 1.) { return std::ptr::null_mut(); }
+    catch_unwind(|| {
+        let path = unsafe { CStr::from_ptr(path) }.to_str().map_err(|e| e.to_string())?;
+        Pipeline::with_position_mapping(n, capacity as usize, grouped != 0, gain != 0, scaled != 0, reference, path)
+            .map(|p| Box::into_raw(Box::new(p)) as *mut c_void)
+    }).ok().and_then(Result::ok).unwrap_or(std::ptr::null_mut())
+}
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nsp_pipeline_create_spatial(n:u32,capacity:u32,dll:*const c_char,path:*const c_char)->*mut c_void{
+    if dll.is_null()||path.is_null(){return std::ptr::null_mut();}
+    catch_unwind(||{
+        let dll=unsafe{CStr::from_ptr(dll)}.to_str().map_err(|e|e.to_string())?;
+        let path=unsafe{CStr::from_ptr(path)}.to_str().map_err(|e|e.to_string())?;
+        let engine=Backend::Lira(crate::spatial_input::Spatial::new(n,dll)?,Mapping::default());
+        Pipeline::with_backend(n,capacity as usize,false,1.,path,engine).map(|p|Box::into_raw(Box::new(p)) as *mut c_void)
+    }).ok().and_then(Result::ok).unwrap_or(std::ptr::null_mut())
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nsp_pipeline_submit(

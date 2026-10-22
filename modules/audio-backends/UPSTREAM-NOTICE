@@ -1,0 +1,20 @@
+Spatial ASIO
+Copyright 2026 Spatial ASIO contributors
+
+Original project-owned contributions are licensed under Apache License 2.0,
+except the four ASIO integration files explicitly designated GPL-3.0-only
+in LICENSING.md. The complete combined application is distributed under
+GPL-3.0-only; this does not remove the Apache-2.0 grant for separable original
+contributions. See LICENSE, LICENSE-APACHE-2.0 and LICENSING.md.
+
+The Spatial Pip capture component was supplied by the project author.
+Windows endpoint preparation incorporates material from
+BestGreed/Native_Spatial_pipe, commit a62cf460386d8f9890c8ce1b194a22f140096fe9,
+including pipeline-init and edid-probe. Original upstream attribution and
+authorization are retained; this notice does not relicense upstream material.
+
+Steinberg ASIO SDK, Python, Frida, iced-x86, .NET, Inno Setup,
+Source Han Sans and libsamplerate retain their respective authorship and
+license terms. See THIRD-PARTY-NOTICES.md and the accompanying license files.
+
+This file is for attribution and does not modify the license terms.

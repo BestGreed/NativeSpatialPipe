@@ -1,4 +1,4 @@
-﻿# Telemetry and visualization
+# Telemetry and visualization
 
 This source export includes the native bounded output/object taps, Python telemetry service, JSON contracts, browser frontend, managed Zig/Python orchestration and synthetic tests. It excludes private captures, Wwise projects, private game-specific test launchers, memory investigation scripts, experiment archives and local toolchains. The included managed orchestration requires an explicitly verified endpoint; see [scheduler setup](scheduler.md).
 

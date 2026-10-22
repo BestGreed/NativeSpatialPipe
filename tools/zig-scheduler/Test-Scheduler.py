@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 EXE = Path(os.environ.get('NSP_SCHEDULER_TEST_EXE', ROOT / 'build/zig-scheduler/nsp-scheduler.exe'))
+BRIDGE = Path(os.environ.get('NSP_RENDER_BRIDGE_TEST_DLL', ROOT / 'build/telemetry-objects/release/nsp_roar_bridge.dll'))
 FLAGS = {'creationflags': subprocess.CREATE_NO_WINDOW}
 
 
@@ -309,7 +310,8 @@ class SchedulerTests(unittest.TestCase):
                     result = subprocess.run([str(EXE), 'host', '--root', str(ROOT), '--out', str(output),
                                              '--pid', str(source.pid), '--owner-pid', str(os.getpid()),
                                              '--stop-file', str(base / 'stop'), '--fixture', '--python', sys.executable,
-                                             '--telemetry-port', str(occupied.getsockname()[1])],
+                                             '--telemetry-port', str(occupied.getsockname()[1]),
+                                             '--render-bridge-dll', str(BRIDGE), '--position-mode', 'direction'],
                                             capture_output=True, text=True, timeout=15, **FLAGS)
                 self.assertEqual(result.returncode, 20)
                 self.assertIn('TelemetryStart', result.stderr)
@@ -345,7 +347,8 @@ class SchedulerTests(unittest.TestCase):
                 command = [str(EXE), 'host', '--root', str(ROOT), '--out', str(output),
                                          '--pid', str(source.pid), '--owner-pid', str(os.getpid()),
                                          '--stop-file', str(stop), '--fixture', '--python', sys.executable,
-                                         '--telemetry-port', str(port)]
+                                         '--telemetry-port', str(port),
+                                         '--render-bridge-dll', str(BRIDGE), '--position-mode', 'direction']
                 if full_timing:
                     command.append('--full-timing')
                 host = subprocess.Popen(command, stdout=log, stderr=log, **FLAGS)
@@ -390,7 +393,7 @@ class SchedulerTests(unittest.TestCase):
                     spec = importlib.util.spec_from_file_location('zig_reference', ROOT / 'tools/endpoint-probe/Native-Roar.py')
                     native = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(native)
-                    reference = native.NativePipeline(reference_dir, ROOT / 'build/telemetry-objects/release/nsp_roar_bridge.dll')
+                    reference = native.NativePipeline(reference_dir, BRIDGE)
                     for seq in range(8):
                         reference.submit(dict(block='reference', sequence=seq, count=140, frames=[480] * 140), sample.read_bytes())
                     self.assertTrue(reference.finish()['passed'])
@@ -400,7 +403,7 @@ class SchedulerTests(unittest.TestCase):
                     evidence = dict(passed=True, fullTiming=full_timing, inputObjects=140,
                                     dynamicObjects=128, outputChannels=12, packets=250,
                                     pcmReferenceBlocks=8, pcmByteIdentical=True,
-                                    scope='Owned fixture only; no game, audiodg or endpoint changes',
+                                    scope='Owned fixture; explicit historical direction mapping, same bridge as Python reference; no game, audiodg or endpoint changes',
                                     observer=report)
                     evidence_path = ROOT / 'build/zig-scheduler' / ('full-timing-validation.json' if full_timing else 'fixture-validation.json')
                     evidence_path.write_text(json.dumps(evidence, indent=2), encoding='utf-8')

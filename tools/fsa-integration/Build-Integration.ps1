@@ -42,6 +42,10 @@ if($LASTEXITCODE){throw 'Icon tests failed'}
 if($LASTEXITCODE){throw 'NSp UI contract build failed'}
 & "$bin/nsp-ui-test.exe"
 if($LASTEXITCODE){throw 'NSp UI contract failed'}
+& $clang @flags "$src/nsp_lock_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/nsp-lock-test.exe"
+if($LASTEXITCODE){throw 'NSp Lock contract build failed'}
+& "$bin/nsp-lock-test.exe"
+if($LASTEXITCODE){throw 'NSp Lock contract failed'}
 & $clang @flags "$src/nsp_exit_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/nsp-exit-test.exe"
 if($LASTEXITCODE){throw 'NSp exit regression build failed'}
 1..2 | ForEach-Object {
@@ -66,4 +70,4 @@ $scheduler=if($LegacyPythonScheduler){'Python'}else{'Zig'}
 & "$PSScriptRoot/Configure-Scheduler.ps1" -Configuration "$destination/final-spatial-audio.ini" -Scheduler $scheduler
 # Build directly into the official output. If it is in use, fail without
 # closing FSA or creating another runnable copy.
-Write-Output "Built and verified Sonic NSp: $candidate"
+Write-Output "Built and verified NSp: $candidate"

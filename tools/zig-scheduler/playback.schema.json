@@ -1,0 +1,345 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "renderer": {
+      "enum": [
+        "roar",
+        "olr",
+        "lira"
+      ],
+      "default": "roar"
+    },
+    "mode": {
+      "enum": [
+        "olr",
+        null
+      ],
+      "default": null
+    },
+    "bridgeDll": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Absolute path; runtime additionally validates Windows path syntax and NUL exclusion."
+    },
+    "rendererDll": {
+      "type": "string",
+      "default": ""
+    },
+    "asioDll": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Absolute path; runtime additionally validates Windows path syntax and NUL exclusion."
+    },
+    "driver": {
+      "type": "string",
+      "pattern": "^asio:",
+      "maxLength": 4095
+    },
+    "sourceStream": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3,
+      "default": 0
+    },
+    "channelOrder": {
+      "enum": [
+        "olr",
+        "dvs-speakers",
+        "custom"
+      ],
+      "default": "olr"
+    },
+    "sampleRate": {
+      "type": "number",
+      "minimum": 8000,
+      "maximum": 384000,
+      "default": 48000
+    },
+    "bufferFrames": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65536,
+      "default": 0
+    },
+    "master": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 16,
+      "default": 1
+    },
+    "outputProcessing": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "trim": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 16,
+            "default": 1
+          }
+        },
+        "delayFrames": {
+          "type": "array",
+          "minItems": 12,
+          "maxItems": 12,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 48000,
+            "default": 0
+          }
+        },
+        "limiter": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "ceiling": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "default": 1
+            },
+            "releaseMs": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 50
+            },
+            "lookaheadFrames": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4800,
+              "default": 0
+            }
+          }
+        },
+        "bypass": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "positionMapping": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "scaled",
+            "direction"
+          ],
+          "default": "scaled"
+        },
+        "reference": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "direction"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reference": {
+                "const": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "routing": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sourceChannelIndices": {
+          "anyOf": [
+            {
+              "type": "array",
+              "minItems": 12,
+              "maxItems": 12,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 11
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "physicalChannels": {
+          "anyOf": [
+            {
+              "type": "array",
+              "minItems": 12,
+              "maxItems": 12,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "clockSync": {
+      "type": "boolean",
+      "default": true
+    },
+    "prebufferFrames": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 48000,
+      "default": 0
+    },
+    "startupTimeoutMs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "default": 5000
+    },
+    "rebufferTimeoutMs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "default": 1000
+    },
+    "maxRebuffers": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "default": 3
+    },
+    "drainTimeoutMs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "default": 5000
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NSP per-session playback configuration",
+  "required": [
+    "bridgeDll",
+    "asioDll",
+    "driver"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "renderer": {
+            "const": "lira"
+          }
+        },
+        "required": [
+          "renderer"
+        ]
+      },
+      "then": {
+        "required": [
+          "rendererDll"
+        ],
+        "properties": {
+          "rendererDll": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "description": "Absolute path; runtime additionally validates Windows path syntax and NUL exclusion."
+          },
+          "mode": {
+            "type": "null"
+          },
+          "positionMapping": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "channelOrder": {
+            "const": "custom"
+          }
+        },
+        "required": [
+          "channelOrder"
+        ]
+      },
+      "then": {
+        "required": [
+          "routing"
+        ],
+        "properties": {
+          "routing": {
+            "type": "object",
+            "required": [
+              "sourceChannelIndices"
+            ],
+            "properties": {
+              "sourceChannelIndices": {
+                "type": "array",
+                "minItems": 12,
+                "maxItems": 12,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 11
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "routing": {
+            "properties": {
+              "sourceChannelIndices": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

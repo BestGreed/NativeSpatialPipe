@@ -2,6 +2,8 @@ const std = @import("std");
 const u = @import("common.zig");
 const n = @import("native.zig");
 const routing = @import("routing.zig");
+const playback = @import("output_playback.zig");
+const asio = @import("asio_control.zig");
 const a = u.a;
 const c = u.c;
 const Telemetry = struct {
@@ -249,16 +251,41 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     if (u.exists(out)) return error.OutputExists;
     try std.fs.cwd().makePath(out);
     // The scheduler owns setup only; all audio submission stays inside native DLLs.
-    _ = c.SetEnvironmentVariableW((try u.wide("NSP_RENDER_MMCSS")).ptr, (try u.wide("1")).ptr);
-    const dll = try u.join(&.{ root, "build/telemetry-objects/release/nsp_roar_bridge.dll" });
+    if (c.SetEnvironmentVariableW((try u.wide("NSP_RENDER_MMCSS")).ptr, (try u.wide("1")).ptr) == 0) return error.RendererMmcssEnvironment;
+    const Playback = @import("desktop_playback.zig").Config;
+    var desktop: ?std.json.Parsed(Playback) = null;
+    defer if(desktop) |*parsed| parsed.deinit();
+    if(u.option(args,"--playback-config")) |path| {
+        const bytes=try u.read(path);defer a.free(bytes);
+        desktop=try @import("desktop_playback.zig").parse(a,bytes);
+        for([_][]const u8{"--renderer","--renderer-mode","--render-bridge-dll","--lira-renderer-dll","--spatial-renderer-dll","--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
+            if(u.option(args,key)!=null) return error.DuplicatePlaybackConfiguration;
+        }
+    }
+    const dll = if(desktop) |settings| try a.dupe(u8,settings.value.bridgeDll) else if (u.option(args,"--render-bridge-dll")) |path| try a.dupe(u8,path) else try u.join(&.{ root, "build/telemetry-objects/release/nsp_roar_bridge.dll" });
     defer a.free(dll);
     var pipelines: [4]n.Pipeline = undefined;
+    const requested_renderer = if(desktop) |settings| settings.value.renderer else u.option(args,"--renderer") orelse "roar";
+    const selection = try @import("desktop_playback.zig").select(
+        if (std.mem.eql(u8,requested_renderer,"spatial")) "lira" else requested_renderer,
+        if(desktop) |settings| settings.value.mode else u.option(args,"--renderer-mode"));
+    const renderer = selection.backend;
+    const lira_dll = if(desktop != null and std.mem.eql(u8,renderer,"lira")) desktop.?.value.rendererDll else if (std.mem.eql(u8,renderer,"lira")) u.option(args,"--lira-renderer-dll") orelse u.option(args,"--spatial-renderer-dll") orelse return error.LiraRendererDllRequired else null;
+    if (lira_dll != null and (u.option(args,"--position-mode") != null or u.option(args,"--position-reference") != null)) return error.OlrOptionsWithLiraBackend;
+    const mapping = if(desktop) |settings| settings.value.positionMapping else null;
+    if(mapping!=null and (u.option(args,"--position-mode")!=null or u.option(args,"--position-reference")!=null)) return error.DuplicatePositionConfiguration;
+    const position_mode = if(mapping) |value| value.mode else u.option(args, "--position-mode") orelse "scaled";
+    if (!std.mem.eql(u8, position_mode, "direction") and !std.mem.eql(u8, position_mode, "scaled")) return error.InvalidPositionMode;
+    const radius_scaled = std.mem.eql(u8, position_mode, "scaled");
+    const radius_reference = if(mapping) |value| value.reference else if (u.option(args, "--position-reference")) |v| try std.fmt.parseFloat(f64, v) else 1.0;
+    if (!std.math.isFinite(radius_reference) or radius_reference <= 0) return error.InvalidPositionReference;
+    if (!radius_scaled and radius_reference != 1.0) return error.ReferenceRequiresScaledMode;
     const first = try u.fmt("{s}/stream-0", .{out});
     defer a.free(first);
     try std.fs.cwd().makePath(first);
     const firstPath = try u.join(&.{ first, "roar-714.f32" });
     defer a.free(firstPath);
-    pipelines[0] = try n.Pipeline.init(dll, firstPath, 64);
+    pipelines[0] = try n.Pipeline.initBackend(dll, firstPath, 64, radius_scaled, radius_reference, lira_dll);
     var telemetry = try Telemetry.start(root, u.option(args, "--python") orelse "python.exe", u.option(args, "--telemetry-port") orelse "8766", u.option(args, "--origin") orelse "http://127.0.0.1:8765");
     defer telemetry.close();
     const infoPath = try u.join(&.{ out, "telemetry-service.json" });
@@ -270,8 +297,75 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         try std.fs.cwd().makePath(directory);
         const path = try u.join(&.{ directory, "roar-714.f32" });
         defer a.free(path);
-        pipelines[i] = try n.Pipeline.init(dll, path, 8);
+        pipelines[i] = try n.Pipeline.initBackend(dll, path, 8, radius_scaled, radius_reference, lira_dll);
     }
+    // Explicit opt-in, fixed selected source; no automatic switching/merging.
+    var audio: ?*playback.Session = null;
+    var audio_source: usize = 0;
+    var audio_order: []const u8 = "olr";
+    var audio_sources = try @import("output_layout.zig").sources("olr");
+    var audio_physical = audio_sources;
+    var audio_labels = try @import("output_layout.zig").labels("olr");
+    var audio_config: ?asio.Backend.Config = null;
+    var capture_may_have_started = false;
+    if (if(desktop) |settings| @as(?[]const u8,settings.value.driver) else u.option(args, "--asio-driver")) |driver| {
+        const device_dll = if(desktop) |settings| settings.value.asioDll else u.option(args, "--asio-dll") orelse return error.AsioDllRequired;
+        var config = try asio.Backend.Config.init(device_dll, driver);
+        audio_order = if(desktop) |settings| settings.value.channelOrder else u.option(args, "--asio-channel-order") orelse "olr";
+        if(desktop) |settings| {
+            try settings.value.applyOutput(&config);
+            audio_sources=try settings.value.sources();audio_physical=try settings.value.physical();audio_labels=try settings.value.labels();
+        } else {
+            try config.setOutputOrder(audio_order);
+            audio_sources=try @import("output_layout.zig").sources(audio_order);
+            audio_labels=try @import("output_layout.zig").labels(audio_order);
+        }
+        if(u.flag(args, "--asio-fixed-clock")) config.clock_sync=false;
+        if (u.option(args, "--asio-startup-timeout-ms")) |v| config.startup_timeout_ms = try std.fmt.parseInt(u32, v, 10);
+        const source = if(desktop) |settings| @as(usize,settings.value.sourceStream) else if (u.option(args, "--asio-stream")) |v| try std.fmt.parseInt(usize, v, 10) else 0;
+        if (source >= pipelines.len) return error.InvalidAsioStream;
+        audio_source = source;
+        audio_config=config;
+        audio = try playback.Session.create(a, config);
+        pipelines[source].bindOutput(audio.?.stream) catch |err| {
+            audio.?.finish(); audio.?.destroy(); audio = null; return err;
+        };
+    }
+    defer if (audio) |session| {
+        if (!pipelines[audio_source].finished and !capture_may_have_started) {
+            var unused = pipelines[audio_source].finish() catch null;
+            if (unused) |*value| value.deinit();
+        }
+        // A failed upstream teardown cannot free a context still borrowed by
+        // its writer. Retain the host/resources until that proof is available.
+        while (!pipelines[audio_source].finished) c.Sleep(1000);
+        session.finish();
+        const status = session.stream.snapshot();
+        const path = u.join(&.{ out, "asio-output.json" }) catch null;
+        if (path) |p| {
+            defer a.free(p);
+            u.writeJson(p, .{ .renderer = renderer, .rendererMode = selection.mode, .rendererDelayFrames = @as(u32, if (lira_dll != null) 512 else 0), .state = @tagName(status.state), .receivedFrames = status.received_frames,
+                .outputOrder = audio_order,
+                .outputChannelLabels = audio_labels,
+                .sourceChannelIndices = audio_sources,
+                .physicalChannelIndices = audio_physical,
+                .outputHandoff = .{.mode="rust-pool-lease",.pcmCopiesBeforeAsioSubmit=@as(u32,0),.poolBlocksReceived=status.pool_blocks_received,.poolBlocksReleased=status.pool_blocks_released,.dspTailFrames=status.dsp_tail_frames},
+                .outputProcessing = .{.bypass=audio_config.?.processing.bypass,.effectiveBypass=status.dsp_bypassed,.placement="rust-output-pool",.master=audio_config.?.processing.master,.trim=audio_config.?.processing.trim[0..12],.delayFrames=audio_config.?.processing.delay_frames[0..12],
+                    .limiter=.{.enabled=audio_config.?.processing.limiter,.ceiling=audio_config.?.processing.ceiling,.releaseMs=audio_config.?.processing.release_ms,.lookaheadFrames=audio_config.?.processing.lookahead_frames}},
+                .playbackPolicy = .{.clockSync=audio_config.?.clock_sync,.prebufferFrames=audio_config.?.prebuffer_frames,.startupTimeoutMs=audio_config.?.startup_timeout_ms,
+                    .rebufferTimeoutMs=audio_config.?.rebuffer_timeout_ms,.maxRebuffers=audio_config.?.max_rebuffers,.drainTimeoutMs=audio_config.?.drain_timeout_ms},
+                .submittedFrames = status.submitted_frames, .callbacks = status.callbacks,
+                .starvationFrames = status.starvation_frames, .rebuffers = status.rebuffers,
+                .deviceSampleRate = status.device_sample_rate, .deviceBufferFrames = status.device_buffer_frames,
+                .bufferedSourceFrames = status.buffered_source_frames, .sourceFrame = status.source_frame,
+                .calibrationMaxFrames = status.calibration_max_frames, .lookaheadFrames = status.lookahead_frames,
+                .prebufferFrames = status.prebuffer_frames,
+                .rebufferWaitNs = status.rebuffer_wait_ns,
+                .errorDetail = std.mem.sliceTo(&session.detail, 0),
+                .failure = if (status.failure) |err| @errorName(err) else @as(?[]const u8, null) }) catch {};
+        }
+        session.destroy();
+    };
     var receiver = try n.Receiver.init(root, pid, &pipelines, u.flag(args, "--full-timing"));
     var hook = try n.Hook.init(root, out, pid, owner, created, fixture);
     defer {
@@ -301,6 +395,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     var recorder = Recorder{ .telemetry = &telemetry, .out = out };
     var recordThread = try std.Thread.spawn(.{}, Recorder.run, .{&recorder});
     // Establish cleanup before the first Hook activation attempt, including timeouts.
+    capture_may_have_started = true;
     var activation = hook.call("start") catch |err| {
         const failure = u.join(&.{ out, "start-error.json" }) catch null;
         if (failure) |path| {
@@ -320,6 +415,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     const deadline = if (u.option(args, "--duration-ms")) |v| c.GetTickCount64() + try std.fmt.parseInt(u64, v, 10) else std.math.maxInt(u64);
     var nextCheck: u64 = 0;
     while (c.GetTickCount64() < deadline and !u.exists(stopFile)) {
+        if (audio) |session| { if (session.stream.snapshot().failure != null) break; }
         if (receiver.failed(receiver.handle) != 0) break;
         if (c.GetTickCount64() >= nextCheck) {
             nextCheck = c.GetTickCount64() + 1000;
@@ -333,6 +429,10 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         c.Sleep(100);
     }
     try shutdown(&hook, &receiver, &pipelines, &bridge, &thread, &recorder, &recordThread, out);
+    if (audio) |session| {
+        session.finish();
+        if (session.stream.snapshot().failure != null) return error.AsioOutputFailed;
+    }
 }
 fn shutdown(hook: *n.Hook, receiver: *n.Receiver, pipelines: *[4]n.Pipeline, bridge: *Bridge, thread: *std.Thread, recorder: *Recorder, recordThread: *std.Thread, out: []const u8) !void {
     // Never free a mapping/renderer until Hook stop and receiver join are proven.

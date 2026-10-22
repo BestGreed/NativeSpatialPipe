@@ -1,7 +1,8 @@
 #ifndef FSA_RESOLVER_H
 #define FSA_RESOLVER_H
 #include <stdint.h>
-enum { MODE_STEREO, MODE_51, MODE_71, MODE_ATMOS, MODE_DTS, MODE_SONIC, MODE_NSP, MODE_COUNT };
+enum { MODE_STEREO, MODE_51, MODE_71, MODE_ATMOS, MODE_DTS, MODE_SONIC, MODE_NSP,
+       MODE_DOLBY_HP, MODE_DOLBY_SP, MODE_DTS_HP, MODE_DTS_SP, MODE_COUNT };
 enum { SCOPE_FOREGROUND, SCOPE_RUNNING, SCOPE_AUDIO_ACTIVE };
 typedef struct { int enabled, scope, profile, priority; } Rule;
 /* Inputs are a complete observation, never an individual event's desired mode.

@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$OutputDirectory,[switch]$FullTiming,[ValidateSet('WindowsSonic','DTSXForHomeTheater')][string]$SpatialFormat='WindowsSonic',[switch]$Managed,[int]$OwnerPid=0,[string]$Endpoint='',[string]$SchedulerExecutable='',[string]$TelemetryPython='python.exe',[int]$TelemetryPort=8766,[string]$FrontendOrigin='http://127.0.0.1:8765',[switch]$LegacyPythonScheduler)
+param([Parameter(Mandatory=$true)][string]$OutputDirectory,[switch]$FullTiming,[ValidateSet('WindowsSonic','DTSXForHomeTheater','DolbyAtmosForHomeTheater','DolbyAtmosForHeadphones','DolbyAtmosForSpeakers','DTSHeadphoneX','DTSXUltra')][string]$SpatialFormat='WindowsSonic',[switch]$Managed,[int]$OwnerPid=0,[string]$Endpoint='',[string]$SchedulerExecutable='',[string]$TelemetryPython='python.exe',[int]$TelemetryPort=8766,[string]$FrontendOrigin='http://127.0.0.1:8765',[switch]$LegacyPythonScheduler,[string]$PlaybackConfig='')
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Set-Location -LiteralPath $root
@@ -24,7 +24,8 @@ if($Endpoint -match '^\{0\.0\.0\.00000000\}\.\{[0-9a-fA-F-]+\}$'){
 $endpoint=$Endpoint
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $formatType=[Windows.Media.Audio.SpatialAudioFormatSubtype,Windows.Media.Audio,ContentType=WindowsRuntime]
-$targetFormat=([guid]$formatType::$SpatialFormat).ToString('B')
+$frontendIds=@{WindowsSonic='{B53D940C-B846-4831-9F76-D102B9B725A0}';DolbyAtmosForHeadphones='{1459AC38-3875-49BF-BB59-0FE80F4D395D}';DolbyAtmosForSpeakers='{4C81E564-C8EF-4AD9-9F2C-9EF995533790}';DolbyAtmosForHomeTheater='{A289735D-FA3E-4E35-9D7D-B6F896ACB2E7}';DTSHeadphoneX='{4444ACB0-8DC0-4C2C-A0D8-2C76DB470F86}';DTSXUltra='{ADAFD3C6-AC4C-404A-836A-9615E9060564}';DTSXForHomeTheater='{10201B4A-3322-4967-BF40-2CAA9BAFCA44}'}
+$targetFormat=$frontendIds[$SpatialFormat]
 $resultType=[Windows.Media.Audio.SetDefaultSpatialAudioFormatResult,Windows.Media.Audio,ContentType=WindowsRuntime]
 function Await-Format($op){
  $m=[System.WindowsRuntimeSystemExtensions].GetMethods()|Where-Object {$_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1}|Select-Object -First 1
@@ -36,7 +37,14 @@ $record|ConvertTo-Json|Set-Content -LiteralPath "$out/endpoint-before.json" -Enc
 $hook=$null
 try {
  if(Test-Path -LiteralPath $stopFile){throw 'Session cancelled before activation'}
- if(-not $cfg.IsSpatialAudioFormatSupported($targetFormat)){throw "$SpatialFormat unsupported"}
+ if(-not $cfg.IsSpatialAudioFormatSupported($targetFormat)){
+  # Only a matching, fresh memory tag can waive this extra support precheck.
+  # Selection and active readback below remain mandatory and unmodified.
+  $initPython=if($TelemetryPython){$TelemetryPython}else{(Get-Command python.exe).Source}
+  $legacy=[regex]::Match($endpoint,'\{0\.0\.0\.00000000\}\.\{[0-9a-fA-F-]+\}').Value
+  & $initPython "$root/tools/pipeline-init/pipeline.py" verify-hook --endpoint $legacy --format $SpatialFormat | Set-Content "$out/frontend-hook-verification.json" -Encoding UTF8
+  if($LASTEXITCODE){throw "$SpatialFormat unsupported and no matching live enumeration hook"}
+ }
  if([guid]$cfg.DefaultSpatialAudioFormat -eq $targetFormat -and [guid]$cfg.ActiveSpatialAudioFormat -eq $targetFormat){$record.setStatus='AlreadyActive'}
  else{$record.setStatus="$( (Await-Format ($cfg.SetDefaultSpatialAudioFormatAsync($targetFormat))).Status )"}
  if($record.setStatus -notin @('Succeeded','AlreadyActive')){throw "$SpatialFormat activation failed"}
@@ -58,6 +66,10 @@ try {
  if($SchedulerExecutable){
   $arguments='host --root "'+$root+'" --out "'+$out+'/observed" --pid '+$hosts[0].Id+' --owner-pid '+$OwnerPid+' --stop-file "'+$stopFile+'" --python "'+$TelemetryPython+'" --telemetry-port '+$TelemetryPort+' --origin "'+$FrontendOrigin+'"'
   if($FullTiming){$arguments+=' --full-timing'}
+  if($PlaybackConfig){
+   if(-not [IO.Path]::IsPathRooted($PlaybackConfig) -or $PlaybackConfig.Contains('"')){throw 'Invalid playback config path'}
+   $arguments+=' --playback-config "'+$PlaybackConfig+'"'
+  }
   $hostExecutable=$SchedulerExecutable
  }else{$hostExecutable=$python}
  $hook=Start-Process -FilePath $hostExecutable -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -PassThru -RedirectStandardOutput "$out/host-stdout.txt" -RedirectStandardError "$out/host-stderr.txt"

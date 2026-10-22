@@ -1,4 +1,4 @@
-﻿# NSp frontend
+# NSp frontend
 
 Run `python tools/visualization-frontend/serve.py` from the repository root and open the printed localhost URL. Synthetic fixtures work without private assets. Connect to a controlled ROAR telemetry demonstration as described in [telemetry and visualization](../../docs/telemetry-visualization.md).
 

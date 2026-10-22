@@ -77,6 +77,20 @@ impl Producer {
             wire[32..WIRE_SIZE].copy_from_slice(bytes); WIRE_SIZE
         })
     }
+    /// Preserve the planar wire contract without a planar audio workspace.
+    pub(crate) fn publish_interleaved(&mut self, sequence: u64, pcm: &[f32]) -> bool {
+        if pcm.len() != SAMPLES { return false; }
+        self.publish_custom(|epoch, wire| {
+            header(wire, b"NSPT", 12, epoch, sequence);
+            for channel in 0..12 {
+                for frame in 0..480 {
+                    let at = 32 + (channel*480+frame)*4;
+                    wire[at..at+4].copy_from_slice(&pcm[frame*12+channel].to_le_bytes());
+                }
+            }
+            WIRE_SIZE
+        })
+    }
     pub(crate) fn publish_custom(&mut self, fill: impl FnOnce(u64, &mut [u8]) -> usize) -> bool {
         let epoch = self.control.state.load(Ordering::Acquire);
         if epoch & 1 == 0 { return false; }

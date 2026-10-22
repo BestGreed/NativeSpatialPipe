@@ -42,7 +42,9 @@ pub const Hook = struct {
     }
 };
 pub const Pipeline = struct {
+    finished: bool,
     lib: std.DynLib,
+    dll_path: []const u8,
     handle: ?*anyopaque,
     create: *const fn (u32, u32, u32, u32, [*:0]const u8) callconv(.C) ?*anyopaque,
     finishFn: *const fn (?*anyopaque, ?[*]u8, usize) callconv(.C) usize,
@@ -52,9 +54,23 @@ pub const Pipeline = struct {
     objects: *const fn (?*anyopaque, [*]u8, usize) callconv(.C) usize,
     submit: *const fn (?*anyopaque, u64, u32, [*]const u8, usize) callconv(.C) c_int,
     pub fn init(dll: []const u8, path: []const u8, capacity: u32) !Pipeline {
+        return initMapping(dll, path, capacity, false, 1.0);
+    }
+    /// ROAR/OLR-only entry. Explicit radius mode requires the additive DLL entry; never silently
+    /// fall back to direction when an older library is selected.
+    pub fn initMapping(dll: []const u8, path: []const u8, capacity: u32, scaled: bool, reference: f64) !Pipeline {
+        return initBackend(dll,path,capacity,scaled,reference,null);
+    }
+    pub fn initBackend(dll: []const u8, path: []const u8, capacity: u32, scaled: bool, reference: f64, lira_dll: ?[]const u8) !Pipeline {
+        // scaled/reference belong to ROAR's OLR adapter, not shared input or LIRA.
+        if (lira_dll == null) {
+            if (!std.math.isFinite(reference) or reference <= 0) return error.InvalidPositionReference;
+            if (!scaled and reference != 1.0) return error.ReferenceRequiresScaledMode;
+        }
         var lib = try u.library(dll);
         errdefer lib.close();
         var p: Pipeline = undefined;
+        p.finished = false;
         p.create = try u.symbol(@TypeOf(p.create), &lib, "nsp_pipeline_create");
         p.finishFn = try u.symbol(@TypeOf(p.finishFn), &lib, "nsp_pipeline_finish");
         p.destroy = try u.symbol(@TypeOf(p.destroy), &lib, "nsp_pipeline_destroy");
@@ -64,17 +80,41 @@ pub const Pipeline = struct {
         p.submit = try u.symbol(@TypeOf(p.submit), &lib, "nsp_pipeline_submit");
         const z = try a.dupeZ(u8, path);
         defer a.free(z);
-        p.handle = p.create(480, capacity, 0, 0, z.ptr);
+        if (lira_dll) |renderer_dll| {
+            const CreateSpatial = *const fn(u32,u32,[*:0]const u8,[*:0]const u8) callconv(.C) ?*anyopaque;
+            const create_spatial = try u.symbol(CreateSpatial,&lib,"nsp_pipeline_create_spatial");
+            const renderer_z = try a.dupeZ(u8,renderer_dll);
+            defer a.free(renderer_z);
+            p.handle = create_spatial(480,capacity,renderer_z.ptr,z.ptr);
+        } else if (scaled) {
+            const CreateMapping = *const fn (u32, u32, u32, u32, u32, f64, [*:0]const u8) callconv(.C) ?*anyopaque;
+            const create_mapping = try u.symbol(CreateMapping, &lib, "nsp_pipeline_create_with_position_mapping");
+            p.handle = create_mapping(480, capacity, 0, 0, 1, reference, z.ptr);
+        } else {
+            p.handle = p.create(480, capacity, 0, 0, z.ptr);
+        }
         if (p.handle == null) return error.PipelineCreate;
+        errdefer p.destroy(p.handle);
         p.lib = lib;
+        p.dll_path = try a.dupe(u8, dll);
         return p;
     }
     pub fn enable(self: *Pipeline, value: bool) !void {
         if (self.enableFn(self.handle, @intFromBool(value)) != 0) return error.TelemetryEnable;
     }
+    pub fn bindOutput(self: *Pipeline, stream: *@import("output_stream.zig").Stream) !void {
+        const pool = @import("output_stream.zig");
+        const Process = *const @TypeOf(pool.processPool);
+        const Publish = *const @TypeOf(pool.publishPool);
+        const Bind = *const fn (?*anyopaque, Process, Publish, ?*anyopaque) callconv(.C) c_int;
+        const bind = try u.symbol(Bind, &self.lib, "nsp_pipeline_set_pool_output");
+        try stream.holdLibrary(self.dll_path);
+        if (bind(self.handle, pool.processPool, pool.publishPool, stream) != 0) return error.OutputPoolBind;
+    }
     pub fn finish(self: *Pipeline) !std.json.Parsed(u.Value) {
         const size = self.finishFn(self.handle, null, 0);
         if (size == 0 or size > 1024 * 1024) return error.PipelineFinish;
+        self.finished = true; // native finish has joined renderer and sink/writer
         const bytes = try a.alloc(u8, size);
         defer a.free(bytes);
         if (self.finishFn(self.handle, bytes.ptr, size) != size) return error.PipelineFinish;
@@ -84,6 +124,7 @@ pub const Pipeline = struct {
         self.destroy(self.handle);
         self.handle = null;
         self.lib.close();
+        a.free(self.dll_path);
     }
 };
 pub const Receiver = struct {

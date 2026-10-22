@@ -7,6 +7,8 @@
 
 ## 构建与运行
 
+DEV16 N12增加可选 `[NSP] PlaybackConfig=<绝对JSON路径>`，使用与桌面相同的单会话播放合同。`renderer=roar, mode=olr` 或 `renderer=lira, mode=null`，并显式指定渲染桥、ASIO模块、驱动等；留空沿用捕获/落盘。`Configure-Scheduler.ps1 -PlaybackConfig <路径> -ControlExecutable <开发host>` 可写入指定INI；未提供PlaybackConfig参数时保留既有值，显式空值清除。只在启动时传递，停止/急停不依赖该文件。此能力要求Zig，不能静默转给旧Python调度。N12构建与测试使用隔离目录，执行本页旧的正式构建/配置命令仍应按部署时机安排。详见N12范围、证据及剩余实机步骤??????????????。
+
 2026-10-19：本目录为 NSp 专用集成源码，尚未回传 FSA 独立仓库主线。默认 `[NSP] Scheduler=Zig`，直接调用 Zig 调度程序，`Python` 仅传给遥测；`ControlExecutable` 留空时按正式构建布局解析，缺少 Zig 不隐式回退。集成构建会更新调度配置并保留规则、快照，但不会重启服务；旧路径须显式 `Scheduler=Python` 或构建参数 `-LegacyPythonScheduler`。部署、启动顺序与验证见[Zig 调度说明](../zig-scheduler/README.md)。
 
 集成版 EXE 现嵌入 `requireAdministrator` 启动清单，双击时由 Windows 请求管理员授权；已经在管理员上下文中启动时无需再次提权。测试用 EXE 不携带这份提权清单。
@@ -88,3 +90,5 @@ python tools/backend/backend.py exit
 新 Hook 单独输出到 `build/native-hook-managed-v2/nsp_managed_hook_v2.dll`，避免覆盖已驻留的旧构建。
 目标内已有旧 `nsp_native_hook.dll` 时，必须经原控制器核实停止、原指令恢复与资源释放，才允许复用；旧 Hook 活动或无法核验时拒绝混用。目标中不同构建也拒绝按错误导出偏移调用。
 遇到此情况保持未知/故障状态，不能通过删除状态文件假装完成停止。
+
+DEV16 的 `[NSP] PlaybackConfig` 文件可统一设置公共 DSP、ROAR/OLR 半径、物理路由与既有 ASIO 输出策略。修改后在下一次启动生效，端点互验继续归 FSA。详见 [播放 JSON 配置及示例](../../docs/core/playback-json-configuration-20261022.md)。旧 host 不识别新增字段，应使用对应的新构建；本轮未替换现有 FSA 实例。

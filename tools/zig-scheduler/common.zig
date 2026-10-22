@@ -120,8 +120,9 @@ pub fn spawnLog(args: []const []const u8, log: ?[]const u8) !Process {
     defer a.free(command);
     const w = try wide(command);
     defer a.free(w);
-    var startup = std.mem.zeroes(c.STARTUPINFOW);
-    startup.cb = @sizeOf(c.STARTUPINFOW);
+    var extended = std.mem.zeroes(c.STARTUPINFOEXW);
+    extended.StartupInfo.cb = @sizeOf(c.STARTUPINFOEXW);
+    const startup = &extended.StartupInfo;
     var info = std.mem.zeroes(c.PROCESS_INFORMATION);
     var attrs = std.mem.zeroes(c.SECURITY_ATTRIBUTES);
     attrs.nLength = @sizeOf(c.SECURITY_ATTRIBUTES);
@@ -136,11 +137,23 @@ pub fn spawnLog(args: []const []const u8, log: ?[]const u8) !Process {
     const input = c.CreateFileW(nul.ptr, c.GENERIC_READ, c.FILE_SHARE_READ | c.FILE_SHARE_WRITE, &attrs, c.OPEN_EXISTING, 0, null);
     if (input == c.INVALID_HANDLE_VALUE) return error.ChildInput;
     defer _ = c.CloseHandle(input);
+    // Only these two handles belong to this child. Inheriting a caller's
+    // redirected pipe keeps a short-lived desktop control request open for
+    // the entire detached backend lifetime.
+    var attribute_bytes: usize = 0;
+    _ = c.InitializeProcThreadAttributeList(null,1,0,&attribute_bytes);
+    const attribute_storage = try a.alignedAlloc(u8,@alignOf(usize),attribute_bytes);
+    defer a.free(attribute_storage);
+    extended.lpAttributeList = @ptrCast(attribute_storage.ptr);
+    if(c.InitializeProcThreadAttributeList(extended.lpAttributeList,1,0,&attribute_bytes)==0) return error.ChildAttributes;
+    defer c.DeleteProcThreadAttributeList(extended.lpAttributeList);
+    var handles = [_]c.HANDLE{input,file};
+    if(c.UpdateProcThreadAttribute(extended.lpAttributeList,0,c.PROC_THREAD_ATTRIBUTE_HANDLE_LIST,@ptrCast(&handles),@sizeOf(@TypeOf(handles)),null,null)==0) return error.ChildAttributes;
     startup.dwFlags = c.STARTF_USESTDHANDLES;
     startup.hStdInput = input;
     startup.hStdOutput = file;
     startup.hStdError = file;
-    if (c.CreateProcessW(null, w.ptr, null, null, 1, c.CREATE_NO_WINDOW, null, null, &startup, &info) == 0) return error.ChildSpawn;
+    if (c.CreateProcessW(null, w.ptr, null, null, 1, c.CREATE_NO_WINDOW | c.EXTENDED_STARTUPINFO_PRESENT, null, null, startup, &info) == 0) return error.ChildSpawn;
     _ = c.CloseHandle(info.hThread);
     return .{ .handle = info.hProcess, .pid = info.dwProcessId };
 }

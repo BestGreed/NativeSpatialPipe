@@ -5,7 +5,14 @@ const n = @import("native.zig");
 const a = u.a;
 const c = u.c;
 pub const Config = struct { version: u32 = 1, spatialFormat: []const u8 = "WindowsSonic", fullTiming: bool = false };
-const Session = struct { id: []const u8, outputDirectory: []const u8, config: Config, ownerPid: u32, endpoint: []const u8, orchestratorPid: u32 = 0, state: []const u8 = "starting", @"error": ?[]const u8 = null };
+pub fn validFormat(format: []const u8) bool {
+    for ([_][]const u8{ "WindowsSonic", "DTSXForHomeTheater", "DolbyAtmosForHomeTheater", "DolbyAtmosForHeadphones", "DolbyAtmosForSpeakers", "DTSHeadphoneX", "DTSXUltra" }) |name| {
+        if (std.mem.eql(u8, format, name)) return true;
+    }
+    return false;
+}
+const Playback = @import("desktop_playback.zig").Config;
+const Session = struct { playback: ?Playback = null, id: []const u8, outputDirectory: []const u8, config: Config, ownerPid: u32, endpoint: []const u8, orchestratorPid: u32 = 0, state: []const u8 = "starting", @"error": ?[]const u8 = null };
 pub const Controller = struct {
     root: []const u8,
     home: []const u8,
@@ -13,6 +20,7 @@ pub const Controller = struct {
     port: u16,
     telemetryPort: u16,
     config: Config = .{},
+    playback_owner: ?std.json.Parsed(Playback) = null,
     session: ?Session = null,
     process: ?u.Process = null,
     state: []const u8 = "idle",
@@ -40,7 +48,7 @@ pub const Controller = struct {
             defer parsed.deinit();
             if ((try u.number(u.field(parsed.value, "version"))) != 1 or u.field(parsed.value, "fullTiming") != .bool) return error.InvalidConfig;
             const format = try u.string(u.field(parsed.value, "spatialFormat"));
-            if (!std.mem.eql(u8, format, "WindowsSonic") and !std.mem.eql(u8, format, "DTSXForHomeTheater")) return error.InvalidConfig;
+            if (!validFormat(format)) return error.InvalidConfig;
             self.config.spatialFormat = try a.dupe(u8, format);
             self.config.fullTiming = u.yes(u.field(parsed.value, "fullTiming"));
         }
@@ -121,7 +129,7 @@ pub const Controller = struct {
     }
     pub fn status(self: *Controller) ![]u8 {
         try self.tick();
-        return u.json(.{ .backend = "ready", .scheduler = "zig", .pid = c.GetCurrentProcessId(), .sessionState = self.state, .dataState = if (std.mem.eql(u8, self.state, "running")) (if (telemetryLive(self.telemetryPort)) "live" else "waiting-or-stale") else "disconnected", .@"error" = self.err, .session = self.session, .config = self.config });
+        return u.json(.{ .backend = "ready", .scheduler = "zig", .root = self.root, .capabilities = .{ .desktopPlayback = true, .guardedStop = true }, .pid = c.GetCurrentProcessId(), .sessionState = self.state, .dataState = if (std.mem.eql(u8, self.state, "running")) (if (telemetryLive(self.telemetryPort)) "live" else "waiting-or-stale") else "disconnected", .@"error" = self.err, .session = self.session, .config = self.config });
     }
     pub fn command(self: *Controller, action: []const u8, value: u.Value) ![]u8 {
         try self.tick();
@@ -132,12 +140,25 @@ pub const Controller = struct {
             if (owner == 0) return error.OwnerRequired;
             var fields = value.object.iterator();
             while (fields.next()) |entry| {
-                if (!std.mem.eql(u8, entry.key_ptr.*, "ownerPid") and !std.mem.eql(u8, entry.key_ptr.*, "endpoint")) return error.UnsupportedSessionField;
+                if (!std.mem.eql(u8, entry.key_ptr.*, "ownerPid") and !std.mem.eql(u8, entry.key_ptr.*, "endpoint") and !std.mem.eql(u8, entry.key_ptr.*, "spatialFormat") and !std.mem.eql(u8,entry.key_ptr.*,"playback")) return error.UnsupportedSessionField;
+            }
+            var playback: ?Playback = null;
+            var playback_owner: ?std.json.Parsed(Playback) = null;
+            defer if(playback_owner) |*parsed| parsed.deinit();
+            if (u.field(value,"playback") != .null) {
+                playback_owner = try std.json.parseFromValue(Playback,a,u.field(value,"playback"),.{.allocate=.alloc_always});
+                playback=playback_owner.?.value;
+                try playback.?.validate();
             }
             const endpoint = try u.string(u.field(value, "endpoint"));
+            const frontend = if (u.field(value,"spatialFormat") == .null) "WindowsSonic" else try u.string(u.field(value,"spatialFormat"));
+            if (!validFormat(frontend)) return error.InvalidConfig;
             if (endpoint.len == 0) return error.EndpointRequired;
             if (std.mem.eql(u8, self.state, "running") or std.mem.eql(u8, self.state, "starting")) {
-                if (self.session.?.ownerPid != owner or !std.mem.eql(u8, self.session.?.endpoint, endpoint)) return error.OwnerConflict;
+                if (self.session.?.ownerPid != owner or !std.mem.eql(u8, self.session.?.endpoint, endpoint) or !std.mem.eql(u8,self.session.?.config.spatialFormat,frontend)) return error.OwnerConflict;
+                const prior=try u.json(self.session.?.playback);defer a.free(prior);
+                const requested=try u.json(playback);defer a.free(requested);
+                if(!std.mem.eql(u8,prior,requested)) return error.ActivePlaybackConfiguration;
                 return self.status();
             }
             if (self.process != null or (!std.mem.eql(u8, self.state, "idle") and !std.mem.eql(u8, self.state, "stopped"))) return error.RecoveryRequired;
@@ -147,7 +168,11 @@ pub const Controller = struct {
             const output = try u.join(&.{ self.home, "sessions", ident });
             self.state = "starting";
             self.err = null;
-            self.session = .{ .id = ident, .outputDirectory = output, .config = self.config, .ownerPid = owner, .endpoint = try a.dupe(u8, endpoint) };
+            self.session = .{ .playback = playback, .id = ident, .outputDirectory = output, .config = self.config, .ownerPid = owner, .endpoint = try a.dupe(u8, endpoint) };
+            if(self.playback_owner) |*prior| prior.deinit();
+            self.playback_owner=playback_owner;
+            playback_owner=null;
+            self.session.?.config.spatialFormat = try a.dupe(u8,frontend);
             try self.save(); // Durable intent precedes endpoint and Hook effects.
             errdefer {
                 self.state = "faulted";
@@ -168,12 +193,26 @@ pub const Controller = struct {
             defer a.free(log);
             var launchArgs = std.ArrayList([]const u8).init(a);
             defer launchArgs.deinit();
-            try launchArgs.appendSlice(&.{ "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-OutputDirectory", output, "-SpatialFormat", "WindowsSonic", "-Managed", "-OwnerPid", ownerText, "-Endpoint", endpoint, "-SchedulerExecutable", exe, "-TelemetryPython", self.python, "-TelemetryPort", tport, "-FrontendOrigin", origin });
+            try launchArgs.appendSlice(&.{ "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-OutputDirectory", output, "-SpatialFormat", frontend, "-Managed", "-OwnerPid", ownerText, "-Endpoint", endpoint, "-SchedulerExecutable", exe, "-TelemetryPython", self.python, "-TelemetryPort", tport, "-FrontendOrigin", origin });
+            if (playback) |settings| {
+                // The existing orchestrator requires a new output directory.
+                // Keep launch settings beside it until the orchestrator creates it.
+                const path=try u.fmt("{s}.playback.json",.{output});
+                try u.writeJson(path,settings);
+                try launchArgs.appendSlice(&.{"-PlaybackConfig",path});
+            }
             if (self.config.fullTiming) try launchArgs.append("-FullTiming");
             self.process = try u.spawnLog(launchArgs.items, log);
             self.session.?.orchestratorPid = self.process.?.pid;
             try self.save();
         } else if (std.mem.eql(u8, action, "stop-session")) {
+            // Additive guarded stop for clients. Existing FSA requests retain
+            // their original contract; clients must provide both owner and id.
+            if (u.field(value,"ownerPid") != .null or u.field(value,"sessionId") != .null) {
+                const session=self.session orelse return error.NoOwnedSession;
+                if ((try u.number(u.field(value,"ownerPid"))) != session.ownerPid or
+                    !std.mem.eql(u8,try u.string(u.field(value,"sessionId")),session.id)) return error.OwnerConflict;
+            }
             if (self.process != null) {
                 const stop = try u.fmt("{s}.stop", .{self.session.?.outputDirectory});
                 defer a.free(stop);
@@ -185,6 +224,13 @@ pub const Controller = struct {
                 }
             } else if (!std.mem.eql(u8, self.state, "idle") and !std.mem.eql(u8, self.state, "stopped")) return error.OwnershipUnknown;
         } else if (std.mem.eql(u8, action, "recover")) {
+            // Desktop recovery must not race into a different owner's session.
+            // Existing FSA/CLI recovery without identity fields stays compatible.
+            if (u.field(value,"ownerPid") != .null or u.field(value,"sessionId") != .null) {
+                const session=self.session orelse return error.NoOwnedSession;
+                if ((try u.number(u.field(value,"ownerPid"))) != session.ownerPid or
+                    !std.mem.eql(u8,try u.string(u.field(value,"sessionId")),session.id)) return error.OwnerConflict;
+            }
             if (self.process != null or !self.reportClean(true)) return error.StopEvidenceRequired;
             self.state = "stopped";
             self.err = null;
@@ -196,7 +242,7 @@ pub const Controller = struct {
             while (it.next()) |entry| {
                 if (std.mem.eql(u8, entry.key_ptr.*, "spatialFormat")) {
                     const text = try u.string(entry.value_ptr.*);
-                    if (!std.mem.eql(u8, text, "WindowsSonic") and !std.mem.eql(u8, text, "DTSXForHomeTheater")) return error.InvalidConfig;
+                    if (!validFormat(text)) return error.InvalidConfig;
                     candidate.spatialFormat = try a.dupe(u8, text);
                 } else if (std.mem.eql(u8, entry.key_ptr.*, "fullTiming")) {
                     if (entry.value_ptr.* != .bool) return error.InvalidConfig;

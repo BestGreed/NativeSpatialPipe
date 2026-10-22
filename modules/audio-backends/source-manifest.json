@@ -1,0 +1,201 @@
+{
+  "origin": "SpatialASIO 0.2.7-preview.14 + DEV16 extracted modifications",
+  "files": [
+    {
+      "path": "src\\asio_backend.cpp",
+      "sha256": "fcc58ff5ec187043c090c07ecb5726b0dafa268d81716cf9804c234172f2117c"
+    },
+    {
+      "path": "src\\asio_backend.h",
+      "sha256": "f80a414e64892311347a6688e898b9bb4da4eeed9cdf1099ac1cd652cacb3bfb"
+    },
+    {
+      "path": "src\\asio_device_config.h",
+      "sha256": "4f91c26212f0bdd8975432f3bd4fe97b2d28809fd2ec6e39c39584838706f31e"
+    },
+    {
+      "path": "src\\asio_format.cpp",
+      "sha256": "924cce039827dc92bf027f051ac1214b34b0870e58ec15cb32b376b548d4e51c"
+    },
+    {
+      "path": "src\\asio_format.h",
+      "sha256": "fe6def2c207c408eaf4e274e9f3fa735e8c645956e9770ff414a4a2b187873c5"
+    },
+    {
+      "path": "src\\asio_layout_adapter.cpp",
+      "sha256": "c520e539c25594614c29e48930acd7f8f324a714010666ad499e4c5cde082b7e"
+    },
+    {
+      "path": "src\\asio_output_c.cpp",
+      "sha256": "ac7827a4bc4048042dce99f43c93becf35554a9becfe825861841857fd444052"
+    },
+    {
+      "path": "src\\asio_output_c.h",
+      "sha256": "8f50c0d8ff96e8b66537975bfda3c1bb25329678144e41f60babc5c68b080b73"
+    },
+    {
+      "path": "src\\audio_gap_ramp.h",
+      "sha256": "8860e92322fc15958ffaddc3074a28afa9987fecbf21de6968b550323c3cbcfa"
+    },
+    {
+      "path": "src\\audio_platform.h",
+      "sha256": "27b28a62df307b5afea67658c79e86be9a4fc9eba75e8c30b6dc42b1343fe14a"
+    },
+    {
+      "path": "src\\audio_queue.h",
+      "sha256": "cab2fd38eee9349dd809c53b44f1a9c298802b814f8d7a0d3269e295d20b66a1"
+    },
+    {
+      "path": "src\\audio_scheduling.h",
+      "sha256": "42287910c8892ad369f5002e2d98c84750af20cfe950cfb080bc0e670a1cae97"
+    },
+    {
+      "path": "src\\clock_sync.h",
+      "sha256": "1ab4469bdc83a34e7e787ded7e35f807b492ff7694d304684f8cfeb6587d7e06"
+    },
+    {
+      "path": "src\\diagnostic_file.h",
+      "sha256": "836b985fd2f9f2e926b035b92e927e64e9f6b09614f0263789fac467bf7a1ac9"
+    },
+    {
+      "path": "src\\diagnostics.cpp",
+      "sha256": "e6ee5befe42703a7ec75015f07c0f8cfd1da91d0cbd8ca48645493a3e77e020e"
+    },
+    {
+      "path": "src\\diagnostics.h",
+      "sha256": "a36d1b064d4afe7aaa59fce9d86c906ae2f4900d21670cae9b15ed35464d50e1"
+    },
+    {
+      "path": "src\\json_text.h",
+      "sha256": "7291ad7e386b1c3900fe6e9b10e908102fefab0771f56ce6921df8ee60da67ed"
+    },
+    {
+      "path": "src\\metadata_renderer.cpp",
+      "sha256": "7d9ec2b6f481d297ac2ec8756d20d0a070d6449c8e7b0b7c226d2ffb9c54007a"
+    },
+    {
+      "path": "src\\metadata_renderer.h",
+      "sha256": "2aa81c1f054408b99be1b12f0299257665f599ec22f01ef7c701921ccfa28858"
+    },
+    {
+      "path": "src\\native_scene.cpp",
+      "sha256": "7dc19c9069e48397d81479248ec4be778f972b06916ad402453237ddca536370"
+    },
+    {
+      "path": "src\\native_scene.h",
+      "sha256": "9d8880fd459357758c42c5c80f7f7fa46eb3b810d5e419096d5d4b53fa44b082"
+    },
+    {
+      "path": "src\\output_deadline.h",
+      "sha256": "001096de8d28edfd51c0e2932d39051b6ded5146e132aea74d061a733f707d78"
+    },
+    {
+      "path": "src\\point_geometry.cpp",
+      "sha256": "e659e787973ceff47cc6ee7ec92f44955c72c99ea67ca2c7351078678c8e63ad"
+    },
+    {
+      "path": "src\\sinc_resampler.cpp",
+      "sha256": "3b48875f8aefc28fac8d275e7a8237576184740e676e5b655b800dec9fc1c123"
+    },
+    {
+      "path": "src\\sinc_resampler.h",
+      "sha256": "d9b29ba2a85ef2b366af3964b1ea30a9e2f924a91a9b1e4a1b694a1830b24392"
+    },
+    {
+      "path": "src\\spatial_renderer_c.cpp",
+      "sha256": "23882198a04825695a3e59a7ad53f80747ea4bf5a5d18490d7207df87935b89a"
+    },
+    {
+      "path": "src\\spatial_renderer_c.h",
+      "sha256": "fc18e5f60e7eba473b11a3164b078f664bc73d77077e23ac6cd18d70fd208b66"
+    },
+    {
+      "path": "src\\speaker_identity.cpp",
+      "sha256": "4661fb100afc14bd41f797b51b0dca1de9544e2ecb11e2c57b2e7a1a2fd1e508"
+    },
+    {
+      "path": "src\\speaker_layout.cpp",
+      "sha256": "5474b8c8e9a6779e86041808630f36002719dbe6594f321c575c04687340914d"
+    },
+    {
+      "path": "src\\speaker_layout.h",
+      "sha256": "98025e8fcab1e89c9e49b860062c17e24a0b1da57b6ce4f03f25b550b430764f"
+    },
+    {
+      "path": "tests\\asio_c_api_tests.cpp",
+      "sha256": "579e849ba33a4864b206b1c2c21c68838a725e9579114cd3de90e4e629015696"
+    },
+    {
+      "path": "tests\\asio_c_header_test.c",
+      "sha256": "a805eb1dbade337eca0113972b4e2cf837277723fb2113254646f40ce4ff518d"
+    },
+    {
+      "path": "tests\\asio_device_tests.cpp",
+      "sha256": "245234fb1c1c9980a569d6c273af25610d2261b491d46c1eb508376b26d23869"
+    },
+    {
+      "path": "tests\\asio_network_return.cpp",
+      "sha256": "81b223ead6591480d20ad721fc4e80ec0f1d8f5993aa04d5b878a138c8c44e90"
+    },
+    {
+      "path": "tests\\asio_playback_fixture.cpp",
+      "sha256": "7a009716ed4511e3166f5090f9d00ea189856c802220786bef978dfe896a9ad3"
+    },
+    {
+      "path": "tests\\asio_runtime_tests.cpp",
+      "sha256": "55961a7d424aa69943ace8613d6b2466511590f3f3de02eca11036b6449340e0"
+    },
+    {
+      "path": "tests\\asio_test_driver.h",
+      "sha256": "3238a1e56215649de9fb74436114d232b8178a7c51fe3a8ceb810fc226e8677b"
+    },
+    {
+      "path": "third_party\\asio\\common\\asio.h",
+      "sha256": "6d83d9b6815d21c002b055c628860e8b0a1ca94c5ae1d9d18f137e308ba98096"
+    },
+    {
+      "path": "third_party\\asio\\common\\asiosys.h",
+      "sha256": "387fc21d036c3f39d7f74704bebb1e9cfe0bd8564ccd48088827162b06afe583"
+    },
+    {
+      "path": "third_party\\asio\\common\\iasiodrv.h",
+      "sha256": "0b7d9786fc77ad47dc16324629eb2ae9bff716a0edb023727df3c7ab1b59bf6d"
+    },
+    {
+      "path": "third_party\\asio\\LICENSE.txt",
+      "sha256": "8240f014c79fa5ff9ff5c2d577237c42e0c6aab547412cba3881b7bec549354c"
+    },
+    {
+      "path": "third_party\\libsamplerate\\high_qual_coeffs.h",
+      "sha256": "35d4bc6ed93cbd5a89510d7d7efda00116b5c28a25369c07288bc7d25a937df6"
+    },
+    {
+      "path": "third_party\\libsamplerate\\LICENSE",
+      "sha256": "df138da02552c38a2d3c9a54c81431d36dfd8d4a27cd88678c72d129e8448239"
+    },
+    {
+      "path": "third_party\\libsamplerate\\ORIGIN.txt",
+      "sha256": "af249805d19333d2312b71043ec8f7b5f5675d3741506d35b814b4fc7ebbb4ed"
+    },
+    {
+      "path": "UPSTREAM-LICENSE",
+      "sha256": "0b383d5a63da644f628d99c33976ea6487ed89aaa59f0b3257992deac1171e6b"
+    },
+    {
+      "path": "UPSTREAM-LICENSE-APACHE-2.0",
+      "sha256": "3ddf9be5c28fe27dad143a5dc76eea25222ad1dd68934a047064e56ed2fa40c5"
+    },
+    {
+      "path": "UPSTREAM-LICENSING.md",
+      "sha256": "e90e82963b79d97809c1ef21d070d2ce38e92de0407b9a9b1df46da4e51fff4c"
+    },
+    {
+      "path": "UPSTREAM-NOTICE",
+      "sha256": "7e52a91a1001b8f95cd5aa1aa4c5da5fa740d3e7a5d1701b31e7799a708e9456"
+    },
+    {
+      "path": "UPSTREAM-THIRD-PARTY-NOTICES.md",
+      "sha256": "02b9a2cd402f5077cae8752e5287bd56383a209365077242d7b6b8cd0e6298c6"
+    }
+  ]
+}

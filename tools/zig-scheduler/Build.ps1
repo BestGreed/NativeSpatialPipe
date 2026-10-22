@@ -8,7 +8,7 @@ $out=Join-Path $root 'build/zig-scheduler'
 New-Item -ItemType Directory -Force $out | Out-Null
 $env:ZIG_GLOBAL_CACHE_DIR=Join-Path $root 'build/zig-cache'
 $env:ZIG_LOCAL_CACHE_DIR=Join-Path $out 'cache'
-$flags=@('-target','x86_64-windows-gnu','-O','ReleaseSafe','-lc','-lws2_32','-ladvapi32','-I',"$root/tools/endpoint-probe")
+$flags=@('-target','x86_64-windows-gnu','-O','ReleaseSafe','-lc','-lws2_32','-ladvapi32','-I',"$root/tools/endpoint-probe",'-I',"$root/modules/audio-backends/src")
 & $Zig build-exe "$PSScriptRoot/main.zig" @flags "-femit-bin=$out/nsp-scheduler.exe"
 if($LASTEXITCODE){throw 'Zig scheduler build failed'}
 if(-not $SkipTests){
@@ -16,5 +16,13 @@ if(-not $SkipTests){
  if($LASTEXITCODE){throw 'Zig routing tests failed'}
  & $Zig test "$PSScriptRoot/control.zig" @flags "-femit-bin=$out/control-tests.exe"
  if($LASTEXITCODE){throw 'Zig orphan recovery tests failed'}
+ & $Zig test "$PSScriptRoot/output_control_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe -lc -I "$root/modules/audio-backends/src" "-femit-bin=$out/output-control-tests.exe"
+ if($LASTEXITCODE){throw 'Output control worker tests failed'}
+ & $Zig test "$PSScriptRoot/output_processing_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/output-processing-tests.exe"
+ if($LASTEXITCODE){throw 'Common output processing tests failed'}
+ & $Zig test "$PSScriptRoot/output_stream_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/output-stream-tests.exe"
+ if($LASTEXITCODE){throw 'Reliable output stream tests failed'}
+ & $Zig test "$PSScriptRoot/output_layout_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/output-layout-tests.exe"
+ if($LASTEXITCODE){throw 'Output speaker mapping tests failed'}
 }
 Write-Output "Built native scheduler: $out/nsp-scheduler.exe"

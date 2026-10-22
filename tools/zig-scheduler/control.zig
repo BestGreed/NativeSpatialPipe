@@ -244,6 +244,14 @@ fn action(args: []const []const u8, root: []const u8, home: []const u8) !u8 {
     if (std.mem.eql(u8, command, "start")) {
         const owner = try std.fmt.parseInt(u32, u.option(args, "--owner-pid") orelse return error.OwnerRequired, 10);
         const endpoint = u.option(args, "--endpoint") orelse return error.EndpointRequired;
+        const Playback=@import("desktop_playback.zig").Config;
+        var playback:?std.json.Parsed(Playback)=null;
+        defer if(playback) |*settings| settings.deinit();
+        if(u.option(args,"--playback-config")) |path| {
+            if(!std.fs.path.isAbsolute(path))return error.PlaybackProfileRequiresAbsolutePath;
+            const bytes=try u.read(path);defer a.free(bytes);
+            playback=try @import("desktop_playback.zig").parse(a,bytes);
+        }
         try ensure(args, root, home);
         const prior = try backend.request(home, "status", empty_request);
         defer a.free(prior);
@@ -257,7 +265,9 @@ fn action(args: []const []const u8, root: []const u8, home: []const u8) !u8 {
             const recovered = try backend.request(home, "recover", empty_request);
             a.free(recovered);
         }
-        const reply = try backend.request(home, "start-session", .{ .ownerPid = owner, .endpoint = endpoint });
+        const frontend = u.option(args,"--spatial-format") orelse "WindowsSonic";
+        if (!backend.validFormat(frontend)) return error.InvalidConfig;
+        const reply = try backend.request(home, "start-session", .{ .ownerPid = owner, .endpoint = endpoint, .spatialFormat = frontend, .playback = if(playback) |settings| @as(?Playback,settings.value) else null });
         a.free(reply);
         return 11;
     }

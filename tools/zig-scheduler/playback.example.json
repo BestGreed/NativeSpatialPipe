@@ -1,0 +1,75 @@
+{
+  "renderer": "roar",
+  "mode": "olr",
+  "bridgeDll": "D:/replace/nsp_roar_bridge.dll",
+  "asioDll": "D:/replace/NSP.AsioOutput.dll",
+  "driver": "asio:{REPLACE-WITH-DRIVER-CLSID}",
+  "sourceStream": 0,
+  "sampleRate": 48000,
+  "bufferFrames": 0,
+  "master": 1,
+  "outputProcessing": {
+    "bypass": false,
+    "trim": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "delayFrames": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "limiter": {
+      "enabled": false,
+      "ceiling": 1,
+      "releaseMs": 50,
+      "lookaheadFrames": 0
+    }
+  },
+  "positionMapping": {
+    "mode": "scaled",
+    "reference": 1
+  },
+  "channelOrder": "olr",
+  "routing": {
+    "physicalChannels": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  "clockSync": true,
+  "prebufferFrames": 0,
+  "startupTimeoutMs": 5000,
+  "rebufferTimeoutMs": 1000,
+  "maxRebuffers": 3,
+  "drainTimeoutMs": 5000
+}

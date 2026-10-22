@@ -1,5 +1,19 @@
 # NSp Zig 调度层
 
+公共 DSP 已前移到 Rust 输出池块，并支持 `outputProcessing.bypass` 及中性配置自动跳过。设备 owner 通过池块租借提交，移除 Zig PCM 队列和 scratch 复制；ASIO 内部算法不变。成套候选及验证见 [输出池记录](../../docs/core/output-pool-processing-20261022.md)。
+
+DEV16 N11 曾增加独立桌面客户端和可选会话 `playback` 配置；旧 FSA 请求保持兼容，其新参数在 N12 接线。**临时 WPF 桌面已于 2026-10-22 弃用**，会话与端点管理以 FSA 为准；公共播放配置和控制接口继续保留。原因与历史边界见 已弃用临时桌面?????????????? 和 N11交付记录??????????????。
+
+DEV16 N10 已接入 LIRA（Lazy Immersive Rendering Architecture）：`--renderer lira --lira-renderer-dll <绝对DLL路径> --render-bridge-dll <本轮bridge路径>`。旧 `spatial` 参数保留兼容。默认仍为 OLR；LIRA 拒绝 OLR 专属 position 参数。共享公共输入、可靠输出与 ASIO 路径，保留 512 帧固有延迟及完整尾部；接口、构建与限定验证??????????????。本轮独立产物位于 `build/dev16-n10-renderer/`，未替换运行目录。
+
+DEV16 N05 新增 `output_control.zig` 专用后端worker和 `asio_control.zig` 生命周期适配；不自动挂入当前会话。调用/代次/退出合同见 N05交付??????????????。独立完整检查：`python tools/asio-output/Test-ControlWorker.py`，仅模拟后端与假ASIO DLL；实时输出接线在N07。
+
+N06新增 `output_processing.zig` 公共PCM处理器，配置与尾部合同见 N06交付??????????????。离线检查：`python tools/zig-scheduler/Test-OutputProcessing.py`。默认位一致直通，limiter默认关闭；实际播放调用留N07。
+
+N07已通过 `output_stream.zig` / `output_playback.zig` 接入可靠PCM和owner服务循环，正式host提供显式ASIO启用参数；见 接线、参数与测试??????????????。`python tools/asio-output/Test-Playback.py`验证实际OLR到假ASIO回调的软件闭环；现阶段未部署、未做真实驱动播放。
+
+N09：新DEV16 host默认 `--position-mode scaled --position-reference 1`，保持完整源半径数值，仅换轴、不额外缩放。`--position-mode direction` 保留旧方向基线；reference仅允许正有限值，direction下仅接受1。scaled需要配套新桥接DLL的增量导出，缺失时明确失败，不静默回退。详情与声音变化见N09记录??????????????。这不是物理房间标定；现用二进制未部署替换。N08实机与网络回送证据见对应记录。
+
 迁移对象是原 Python 管理与编排层，现有 C Hook、C 捕获/共享内存和 Rust 接收/渲染 DLL 均保持不变。遥测仍按原顺序先启动，计算与 HTTP/WebSocket 服务继续使用原 Python 实现。本阶段没有把遥测从启动链中拆开。
 
 ## 已迁移
@@ -60,6 +74,8 @@ build/zig-scheduler/nsp-scheduler.exe request --home build/zig-trial-state --act
 
 ## 验证范围和限制
 
+DEV16 新播放路径的渲染选择分两层：`--renderer roar --renderer-mode olr`，或 `--renderer lira --lira-renderer-dll <绝对路径>`。默认 ROAR／OLR；旧 `--renderer olr` 仅为兼容简写。JSON 播放配置对应 `renderer: "roar", mode: "olr"` 或 `renderer: "lira", mode: null`，报告分别记录 `renderer` 和 `rendererMode`。本轮不接入 ROAR 其他模式；`--asio-channel-order olr` 仅指定既有声道排列。职责及历史范围见[边界更正](../../docs/core/renderer-backend-boundary-20261021.md)。
+
 隔离测试覆盖本地 HTTP、鉴权、单实例、FSA 原生入口与关联磁盘状态、配置保存、故障恢复证据，以及普通/FullTiming 两种自有 fixture 音频流程。每轮 250 包、128 动态对象加 12 静态声道，输出 12 声道，确认 Hook 恢复、捕获与传输库释放、接收和渲染排空、快照记录。
 
 详细结果生成在 `build/zig-scheduler/fixture-validation.json` 和 `full-timing-validation.json`。fixture 不是游戏或设备播放验收，不代表完成真实游戏延迟、长时间稳定性或 CPU 对照测试。原生管理程序的 PE 导入检查也应与现有 DLL 依赖分开理解。
@@ -77,3 +93,5 @@ Python 现在仅在默认托管路径中承载遥测服务，实验/测试脚本
 已完成专用 Wwise 工程 Python/Zig 各一分钟对照，每轮 6,000 次位置更新，128 动态对象 + 12 bed 声道，捕获/接收/渲染检查及 Hook/端点恢复通过。宿主加遥测整机 CPU 为 3.47%→2.92%，该组顺序对照下降约 15.8%；宿主包含原生 DSP。渲染 work P99 为 1.447→1.435 ms，不是设备端到端延迟。此结果不替代长时、异常恢复或跨机器验收。
 
 开发阶段继续完整录音及约 10 Hz 的新快照记录，支持审查和回溯。12 通道 Float32/48 kHz PCM 约 8.29 GB/h，加快照已观察约 10–12 GB/h；默认用户状态目录的 `sessions/` 也承载这些大体积数据。D15 落盘治理待音频接口实际出声后实施，当前不自动关闭记录或清理。正式部署前应理解这一存储行为；完整记录仍是当前遥测文件增长选流的依赖。
+
+DEV16 合并功能的统一 JSON 字段、默认值、声道顺序与只读校验入口见 [播放配置说明](../../docs/core/playback-json-configuration-20261022.md)。新增 DSP、半径、自定义路由和既有输出策略字段；使用同批构建的客户端及 host，现有运行实例未替换。

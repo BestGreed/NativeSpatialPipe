@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_HOME = Path(os.environ.get('LOCALAPPDATA', str(ROOT / 'build'))) / 'NativeSpatialPipe'
+FRONTEND_FORMATS = ('WindowsSonic','DTSXForHomeTheater','DolbyAtmosForHomeTheater','DolbyAtmosForHeadphones','DolbyAtmosForSpeakers','DTSHeadphoneX','DTSXUltra')
 DEFAULT_CONFIG = {'version': 1, 'spatialFormat': 'WindowsSonic', 'fullTiming': False}
 
 
@@ -37,7 +38,7 @@ def load_config(path):
     value = json.loads(path.read_text(encoding='utf-8')) if path.exists() else dict(DEFAULT_CONFIG)
     if (not isinstance(value, dict) or set(value) != set(DEFAULT_CONFIG)
             or type(value['version']) is not int or value['version'] != 1
-            or value['spatialFormat'] not in ('WindowsSonic', 'DTSXForHomeTheater')
+            or value['spatialFormat'] not in FRONTEND_FORMATS
             or type(value['fullTiming']) is not bool):
         raise ValueError('Invalid backend config; original file preserved')
     return value
@@ -138,18 +139,18 @@ class Controller:
                 if set(value) - {'spatialFormat', 'fullTiming'}:
                     raise ValueError('Unsupported configuration field')
                 candidate.update(value)
-                if (candidate['spatialFormat'] not in ('WindowsSonic', 'DTSXForHomeTheater')
+                if (candidate['spatialFormat'] not in FRONTEND_FORMATS
                         or type(candidate['fullTiming']) is not bool):
                     raise ValueError('Invalid configuration')
                 atomic_json(self.home / 'config.json', candidate)
                 self.config = candidate
             elif action == 'start-session':
-                if set(value)-{'ownerPid','endpoint'}:
+                if set(value)-{'ownerPid','endpoint','spatialFormat'}:
                     raise ValueError('Unsupported session field')
                 if 'ownerPid' in value and (type(value['ownerPid']) is not int or value['ownerPid'] <= 0 or not isinstance(value.get('endpoint'), str) or not value['endpoint']):
                     raise ValueError('Managed session requires ownerPid and endpoint')
                 if self.state in ('starting', 'running'):
-                    if value and (value.get('ownerPid')!=self.session.get('ownerPid') or value.get('endpoint')!=self.session.get('endpoint')):
+                    if value and (value.get('ownerPid')!=self.session.get('ownerPid') or value.get('endpoint')!=self.session.get('endpoint') or value.get('spatialFormat','WindowsSonic')!=self.session['config']['spatialFormat']):
                         raise ValueError('Another owner or endpoint already holds the session')
                     return self.status()
                 if self.process or self.state not in ('idle', 'stopped'):
@@ -165,9 +166,12 @@ class Controller:
                     if 'ownerPid' in value:
                         if type(value['ownerPid']) is not int or value['ownerPid'] <= 0 or not isinstance(value.get('endpoint'), str) or not value['endpoint']:
                             raise ValueError('Managed session requires ownerPid and endpoint')
-                        runtime_config.update(ownerPid=value['ownerPid'], endpoint=value['endpoint'], spatialFormat='WindowsSonic')
+                        runtime_config.update(ownerPid=value['ownerPid'], endpoint=value['endpoint'], spatialFormat=value.get('spatialFormat','WindowsSonic'))
+                        if runtime_config['spatialFormat'] not in FRONTEND_FORMATS:raise ValueError('Unknown spatialFormat')
                         self.session['ownerPid'] = value['ownerPid']
                         self.session['endpoint'] = value['endpoint']
+                        self.session['config']['spatialFormat']=runtime_config['spatialFormat']
+                        self.save_session()
                     self.process = self.launcher(output, runtime_config)
                     self.session['orchestratorPid'] = self.process.pid
                 except Exception as exc:
@@ -319,7 +323,7 @@ def main():
     parser.add_argument('action', choices=('serve', 'start', 'status', 'configure', 'start-session', 'stop-session', 'recover', 'exit'))
     parser.add_argument('--home', type=Path, default=DEFAULT_HOME)
     parser.add_argument('--port', type=int, default=8765)
-    parser.add_argument('--spatial-format', choices=('WindowsSonic', 'DTSXForHomeTheater'))
+    parser.add_argument('--spatial-format', choices=FRONTEND_FORMATS)
     parser.add_argument('--full-timing', choices=('on', 'off'))
     args = parser.parse_args()
     home = args.home.resolve()

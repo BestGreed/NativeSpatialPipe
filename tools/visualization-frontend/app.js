@@ -16,6 +16,7 @@ import {projectViewPoint,namedView,dragView} from './view-camera.js';
 import {Navigation as LegacyNavigation} from './navigation-legacy.js';
 import {scenarios,scenarioObjects,metricScenario} from './navigation-scenarios.js';
 import {FrontendDiagnostics} from './diagnostics.js';
+import {meterOnset,selectVisibleOnsets} from './transient-visual.js';
 let diagnosticStorage=null;try{diagnosticStorage=localStorage;}catch{}
 const diagnostics=new FrontendDiagnostics({storage:diagnosticStorage});
 function diagnostic(kind,message,details={}){const event=diagnostics.record(kind,message,details);if(event)console.info('[NSp frontend]',JSON.stringify(event));}
@@ -40,7 +41,7 @@ const readDefaultView=()=>{try{const value=JSON.parse(localStorage.getItem('nsp.
 }catch{}return {yaw:-.28,tilt:.36,zoom:1,toiletHeight:savedToiletHeight()};};
 let defaultView=namedView('oblique',readDefaultView(),[],1);
 const state = {mode:'navigation', source:'demo', paused:false, reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,
-  snapshot:null, layout:null, selected:null, window:0, history:null, received:0, events:new Map(), objects:new Map(), weakEchoes:new Map(), transientUntil:new Map(), scope:'', ...defaultView, error:''};
+  snapshot:null, layout:null, selected:null, window:0, history:null, received:0, events:new Map(), objects:new Map(), weakEchoes:new Map(), transientUntil:new Map(), onsetHistory:new Map(), scope:'', ...defaultView, error:''};
 let schema, validate, seed, demoStart=performance.now(), lastDemo=0, lastDraw=0, lastStatus=0, socket=null, socketGeneration=0, historyGeneration=0, negotiated=false, selectorSignature='';
 let replay=null,replayGeneration=0,replayManifest=null,hiddenReplayPlaying=false;
 let replayScrubbing=false,replayResumeAfterScrub=false;
@@ -72,8 +73,7 @@ function simulate(now){
   accept(m);
 }
 function visibleOnsets(sourceNow){
-  return [...state.events.values()].filter(e=>e.kind==='onset'&&e.spatial.positionValid&&e.spatial.position&&sourceNow>=e.sourceTimeUs&&sourceNow<e.expiresTimeUs)
-    .sort((a,b)=>b.strength-a.strength).slice(0,6);
+  return selectVisibleOnsets(state.events.values(),sourceNow,spaceScale);
 }
 function accept(m){
   validate(m);
@@ -84,17 +84,27 @@ function accept(m){
   if(state.source==='socket')assert(negotiated,'服务需先返回 negotiated 再发送快照');
   const scope=JSON.stringify([m.routeId,m.sessionId,m.streamEpoch]);
   if(state.scope===scope&&state.snapshot){assert(m.telemetrySeq>state.snapshot.telemetrySeq&&m.sourceSequenceRange.start>=state.snapshot.sourceSequenceRange.endExclusive,'已忽略重复或倒序快照');}
-  if(state.scope!==scope){state.events.clear();state.objects.clear();state.weakEchoes.clear();state.transientUntil.clear();state.selected=null;state.scope=scope;spaceScale=null;navigation.reset();heading.reset();weakInertia.reset();toiletFollow.reset();lastHeadingYaw=lastHeadingPitch=0;lastRollSeq=-1;forecast.reset();pattern.reset();gridOffset=[0,0,0];}
+  if(state.scope!==scope){state.events.clear();state.objects.clear();state.weakEchoes.clear();state.transientUntil.clear();state.onsetHistory.clear();state.selected=null;state.scope=scope;spaceScale=null;navigation.reset();heading.reset();weakInertia.reset();toiletFollow.reset();lastHeadingYaw=lastHeadingPitch=0;lastRollSeq=-1;forecast.reset();pattern.reset();gridOffset=[0,0,0];}
   if(state.snapshot&&state.snapshot.meterRevision!==m.meterRevision){heading.reset();weakInertia.reset();toiletFollow.reset();lastHeadingYaw=lastHeadingPitch=0;lastRollSeq=-1;forecast.reset();pattern.reset();gridOffset=[0,0,0];}
   if(state.snapshot&&(m.sourceTimeUs<=state.snapshot.sourceTimeUs||m.sourceTimeUs-state.snapshot.sourceTimeUs>550000))forecast.reset();
   const estimateStart=performance.now();if(!baseline){navigation.ingest(m,{stableScale:state.source==='demo'&&metricScenario(scenario),sourceSpace:state.source==='replay'||state.source==='socket'&&m.dataOrigin==='measured'});pattern.ingest(m);}record('estimate',performance.now()-estimateStart);
   const sourceContinuous=state.snapshot&&m.sourceTimeUs>state.snapshot.sourceTimeUs&&m.sourceTimeUs-state.snapshot.sourceTimeUs<=250000&&state.snapshot.sourceSequenceRange.endExclusive===m.sourceSequenceRange.start;
+  const previousSourceTimeUs=state.snapshot?.sourceTimeUs;
   const interval=state.snapshot?Math.min(250,Math.max(10,(m.sourceTimeUs-state.snapshot.sourceTimeUs)/1000)):100;
   state.snapshot=m;state.received=performance.now();state.error='';
   if(!baseline&&!legacyMode)forecast.observe(navigation,state.received);
   // Classify the onset halos that the UI actually displays. The telemetry
   // contains many onset candidates that never receive a halo.
-  for(const e of m.events)if(!state.events.has(e.eventId))state.events.set(e.eventId,e);
+  const serverOnsets=new Set();
+  for(const e of m.events){if(!state.events.has(e.eventId))state.events.set(e.eventId,e);
+    if(e.kind==='onset'){const key=keyOf(e.objectKey);serverOnsets.add(key);state.onsetHistory.set(key,e.sourceTimeUs);}}
+  const tap=m.taps['decoded-input'];
+  if(state.source==='socket'&&m.dataOrigin==='measured'&&sourceContinuous&&tap.quality==='live'&&tap.snapshotComplete){
+    for(const o of tap.objects){const key=keyOf(o.objectKey);if(serverOnsets.has(key))continue;
+      const previous=state.objects.get(key)?.object;
+      const inferred=meterOnset(previous,o,m.sourceTimeUs-previousSourceTimeUs,state.onsetHistory.get(key)??-Infinity,m.sourceTimeUs);
+      if(inferred){inferred.eventId=`visual-${m.telemetrySeq}-${key}`;state.events.set(inferred.eventId,inferred);state.onsetHistory.set(key,m.sourceTimeUs);}}
+  }
   for(const [id,e]of state.events)if(e.expiresTimeUs<=m.sourceTimeUs)state.events.delete(id);
   while(state.events.size>256)state.events.delete(state.events.keys().next().value);
   for(const e of visibleOnsets(m.sourceTimeUs))if(e.objectKey){
@@ -103,7 +113,7 @@ function accept(m){
     state.weakEchoes.delete(k);
   }
   for(const [k,until] of state.transientUntil)if(until<=m.sourceTimeUs)state.transientUntil.delete(k);
-  const tap=m.taps['decoded-input'],seen=new Set();
+  const seen=new Set();
   const windowMs=1000*(m.audioSampleRange.endExclusive-m.audioSampleRange.start)/m.sampleRate;
   if(spaceScale===null)spaceScale=referenceScale(tap.objects);
   for(const o of tap.objects){const k=keyOf(o.objectKey);seen.add(k);
@@ -207,7 +217,7 @@ function line(a,b,color){vertex(a,color);vertex(b,color);}
 function flush(points){gl.uniform1i(pointMode,points==='cloud'?2:points===true?1:0);gl.bufferSubData(gl.ARRAY_BUFFER,0,vertices.subarray(0,vertexCount*7));gl.drawArrays(points==='triangles'?gl.TRIANGLES:points?gl.POINTS:gl.LINES,0,vertexCount);vertexCount=0;}
 function tint(db){const t=clamp((db+60)/60),a=t<.6?[.08,.22,.29]:[.16,.64,.60],b=t<.6?[.16,.64,.60]:[.94,.82,.52],f=t<.6?t/.6:(t-.6)/.4;return a.map((v,i)=>v+(b[i]-v)*f);}
 function positionAt(v,now){const p=v.object.spatial.position;if(!p)return null;const f=clamp((now-v.seen)/v.interval);return mapPosition(v.from?v.from.map((x,i)=>x+(p[i]-x)*f):p,spaceScale);}
-function ring(p,r,alpha,color=[.32,.83,.72]){const n=unit(p),u=unit(Math.abs(n[1])<.9?[n[2],0,-n[0]]:[1,0,0]),v=[n[1]*u[2]-n[2]*u[1],n[2]*u[0]-n[0]*u[2],n[0]*u[1]-n[1]*u[0]];const point=a=>p.map((x,i)=>x+r*(Math.cos(a)*u[i]+Math.sin(a)*v[i]));for(let i=0;i<24;i++)line(point(i*Math.PI/12),point((i+1)*Math.PI/12),[...color,alpha]);}
+function ring(p,r,alpha,color=[.32,.83,.72]){const n=norm(p)>1e-6?unit(p):[-Math.sin(state.yaw)*Math.cos(state.tilt),Math.sin(state.tilt),Math.cos(state.yaw)*Math.cos(state.tilt)],u=unit(Math.abs(n[1])<.9?[n[2],0,-n[0]]:[1,0,0]),v=[n[1]*u[2]-n[2]*u[1],n[2]*u[0]-n[0]*u[2],n[0]*u[1]-n[1]*u[0]];const point=a=>p.map((x,i)=>x+r*(Math.cos(a)*u[i]+Math.sin(a)*v[i]));for(let i=0;i<24;i++)line(point(i*Math.PI/12),point((i+1)*Math.PI/12),[...color,alpha]);}
 function drawWeakField(now,dpr,alpha,haloKeys){
   const candidates=[];
   for(const v of state.objects.values()){
@@ -454,10 +464,10 @@ function draw(now){
     if(!baseline&&!state.reduced){
       const events=haloEvents;
       flush(true);
-      for(const e of events){const t=(sourceNow-e.sourceTimeUs)/(e.expiresTimeUs-e.sourceTimeUs),p=mapPosition(e.spatial.position,spaceScale);if(!norm(p))continue;
-        ring(p,.025+t*.28,(1-t)*(1-t)*.35,[.96,.79,.48]);
+      for(const e of events){const t=(sourceNow-e.sourceTimeUs)/(e.expiresTimeUs-e.sourceTimeUs),p=mapPosition(e.spatial.position,spaceScale);
+        ring(p,.035+t*.32,(1-t)*(1-t)*.62,[.96,.79,.48]);
       }flush(false);
-      for(const e of events){const t=(sourceNow-e.sourceTimeUs)/(e.expiresTimeUs-e.sourceTimeUs),p=mapPosition(e.spatial.position,spaceScale);vertex(p,[1,.84,.52,Math.exp(-t*10)],(8+40*Math.exp(-t*12))*dpr);for(let i=0;i<18;i++){const offset=burstOffset(i,t,e.objectKey.slot);vertex(p.map((x,j)=>x+offset[j]),[.96,.79,.48,(1-t)*(1-t)*.8],(2+4*(1-t))*dpr);}}
+      for(const e of events){const t=(sourceNow-e.sourceTimeUs)/(e.expiresTimeUs-e.sourceTimeUs),p=mapPosition(e.spatial.position,spaceScale);vertex(p,[1,.84,.52,Math.exp(-t*6)],(12+44*Math.exp(-t*9))*dpr);for(let i=0;i<18;i++){const offset=burstOffset(i,t,e.objectKey.slot);vertex(p.map((x,j)=>x+offset[j]),[.96,.79,.48,(1-t)*(1-t)*.8],(2+4*(1-t))*dpr);}}
     }
   }
   flush(true);
@@ -529,7 +539,7 @@ $('objectSelect').onchange=e=>{state.selected=e.target.value||null;updateUI();};
 $('settings').onclick=()=>{$('connection').hidden=!$('connection').hidden;$('settings').setAttribute('aria-expanded',!$('connection').hidden);};
 document.addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','BUTTON'].includes(e.target.tagName))return;if(e.code==='Space'){e.preventDefault();$('pause').click();}if(e.key.toLowerCase()==='r')$('reset').click();if(e.key==='Escape')$('clearSelection').click();});
 function disconnect(){socketGeneration++;if(socket){socket.close();socket=null;}negotiated=false;$('connect').textContent='连接';}
-function resetSource(source){disconnect();replayGeneration++;replay?.dispose();replay=null;replayManifest=null;$('replayBar').hidden=true;historyGeneration++;state.source=source;navigation.reset();heading.reset();weakInertia.reset();toiletFollow.reset();lastHeadingYaw=lastHeadingPitch=0;lastRollSeq=-1;forecast.reset();pattern.reset();gridOffset=[0,0,0];$('navigationControls').hidden=source!=='demo'||state.mode!=='navigation';state.scope='';state.snapshot=null;state.history=null;state.window=0;state.events.clear();state.objects.clear();state.weakEchoes.clear();state.transientUntil.clear();state.selected=null;state.error='';selectorSignature='reset';document.querySelectorAll('[data-window]').forEach(b=>b.classList.toggle('active',b.dataset.window==='0'));}
+function resetSource(source){disconnect();replayGeneration++;replay?.dispose();replay=null;replayManifest=null;$('replayBar').hidden=true;historyGeneration++;state.source=source;navigation.reset();heading.reset();weakInertia.reset();toiletFollow.reset();lastHeadingYaw=lastHeadingPitch=0;lastRollSeq=-1;forecast.reset();pattern.reset();gridOffset=[0,0,0];$('navigationControls').hidden=source!=='demo'||state.mode!=='navigation';state.scope='';state.snapshot=null;state.history=null;state.window=0;state.events.clear();state.objects.clear();state.weakEchoes.clear();state.transientUntil.clear();state.onsetHistory.clear();state.selected=null;state.error='';selectorSignature='reset';document.querySelectorAll('[data-window]').forEach(b=>b.classList.toggle('active',b.dataset.window==='0'));}
 for(const [value,label]of Object.entries(scenarios)){const option=document.createElement('option');option.value=value;option.textContent=label;$('scenario').append(option);}
 $('scenario').onchange=()=>{scenario=$('scenario').value;$('demo').click();};
 $('demo').onclick=async()=>{resetSource('demo');state.layout=await fetchJSON('fixtures/layout.json');demoStart=performance.now();demoTick=0;lastDemo=0;simulate(demoStart);};
@@ -573,7 +583,7 @@ async function loadReplay(){
     }
     replayManifest=manifest;state.layout=loadedLayout;
     const player=new Replay(manifest,async file=>{const r=await fetch(`/replay/${file}`);assert(r.ok,'回放分块读取失败');const frames=await r.json();for(const frame of frames)validate(overlay(frame));return frames;},
-      (frame,seek,previousFrames=[])=>{if(generation!==replayGeneration)return;if(seek){state.scope='';state.snapshot=null;state.objects.clear();state.weakEchoes.clear();state.transientUntil.clear();state.events.clear();state.selected=null;}accept(frame);
+      (frame,seek,previousFrames=[])=>{if(generation!==replayGeneration)return;if(seek){state.scope='';state.snapshot=null;state.objects.clear();state.weakEchoes.clear();state.transientUntil.clear();state.onsetHistory.clear();state.events.clear();state.selected=null;}accept(frame);
         if(seek&&!baseline){pattern.reset();for(const previous of previousFrames)pattern.ingest(previous);pattern.ingest(frame);}
       },
       (status,position,error)=>{if(generation===replayGeneration)replayStatus(status,position,error);});

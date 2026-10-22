@@ -33,6 +33,18 @@ class BackendTests(unittest.TestCase):
     def controller(self):
         return Controller(self.home, self.launch)
 
+    def test_managed_frontend_is_forwarded_without_forcing_sonic(self):
+        captured=[]
+        def launch(output,config):captured.append(config);return self.process
+        c=Controller(self.home,launch)
+        c.command('start-session',{'ownerPid':42,'endpoint':'test-endpoint','spatialFormat':'DTSXUltra'})
+        self.assertEqual(captured[0]['spatialFormat'],'DTSXUltra')
+        self.assertEqual(c.session['config']['spatialFormat'],'DTSXUltra')
+        c.command('start-session',{'ownerPid':42,'endpoint':'test-endpoint','spatialFormat':'DTSXUltra'})
+        with self.assertRaises(ValueError):
+            c.command('start-session',{'ownerPid':42,'endpoint':'test-endpoint','spatialFormat':'WindowsSonic'})
+        self.assertEqual(len(captured),1)
+
     def report(self, controller, **fields):
         atomic_json(Path(controller.session['outputDirectory']) / 'endpoint.json',
                     dict(restored=True, hookCompleted=True, hookExitCode=0, **fields))

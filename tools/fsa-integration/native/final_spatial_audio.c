@@ -16,20 +16,26 @@
 #define WM_NSP_COMMAND (WM_APP+4)
 #define WM_MODE_COMMAND (WM_APP+5)
 #define WM_EXIT_READY (WM_APP+6)
+#define WM_MENU_COMMAND (WM_APP+7)
 static LONG exit_requested,exit_verified;
-static const wchar_t *names[]={L"Stereo",L"5.1",L"7.1",L"Dolby Atmos",L"DTS:X",L"Windows Sonic",L"Sonic NSp"};
+static const wchar_t *names[]={L"Stereo",L"5.1",L"7.1",L"Dolby Atmos",L"DTS:X",L"Windows Sonic",L"NSp",L"Dolby Atmos Headphones",L"Dolby Atmos Speakers",L"DTS Headphone:X",L"DTS:X Ultra"};
 static const GUID encoders[3]={{0xa289735d,0xfa3e,0x4e35,{0x9d,0x7d,0xb6,0xf8,0x96,0xac,0xb2,0xe7}},{0x10201b4a,0x3322,0x4967,{0xbf,0x40,0x2c,0xaa,0x9b,0xaf,0xca,0x44}},{0xb53d940c,0xb846,0x4831,{0x9f,0x76,0xd1,0x02,0xb9,0xb7,0x25,0xa0}}};
 static HWND window;
 static HICON mode_icons[MODE_COUNT];
 static HICON app_icon,app_icon_small;
 static HICON starting_icons[FSA_SPIN_FRAMES];
+static HICON success_icons[FSA_SPIN_FRAMES];
+static int success_source=-1,success_spinning,spin_kind;
+static ULONGLONG success_started;
+#define FSA_SUCCESS_INTERVAL_MS 30
 static LONG nsp_starting;
 static ULONGLONG spin_started;
 static int spin_timer;
 #define TIMER_NSP_SPIN 2
-static const int mode_icon_ids[MODE_COUNT]={IDI_FSA_STEREO,IDI_FSA_51,IDI_FSA_71,IDI_FSA_ATMOS,IDI_FSA_DTSX,IDI_FSA_APP,IDI_FSA_APP};
+static const int mode_icon_ids[MODE_COUNT]={IDI_FSA_STEREO,IDI_FSA_51,IDI_FSA_71,IDI_FSA_ATMOS,IDI_FSA_DTSX,IDI_FSA_APP,IDI_FSA_APP,IDI_FSA_ATMOS,IDI_FSA_ATMOS,IDI_FSA_DTSX,IDI_FSA_DTSX};
 static void release_icons(void) {
     free_spinner(starting_icons);
+    free_spinner(success_icons);success_source=-1;
     for(int i=0;i<MODE_COUNT;i++) { if(mode_icons[i]) DestroyIcon(mode_icons[i]); mode_icons[i]=NULL; }
     if(app_icon) DestroyIcon(app_icon);
     if(app_icon_small) DestroyIcon(app_icon_small);
@@ -47,6 +53,7 @@ static int load_mode_icons(HINSTANCE instance) {
     }
     for(int i=0;i<MODE_COUNT;i++) { if(mode_icons[i]) DestroyIcon(mode_icons[i]); mode_icons[i]=replacement[i]; }
     free_spinner(starting_icons);
+    free_spinner(success_icons);success_source=-1;
     make_spinner(mode_icons[MODE_STEREO],GetSystemMetrics(SM_CXSMICON),GetSystemMetrics(SM_CYSMICON),starting_icons);
     return 1;
 }
@@ -65,6 +72,10 @@ static AL_Snapshot profiles[3],spatial_profiles[3];
 static SpatialSettings spatial_settings[3];
 static unsigned spatial_captured;
 static LONG available_modes=0,capture_requested=0;
+static LONG pipeline_requested=0;
+static LONG route_lock_index=-1,route_lock_requested,route_lock_busy,route_lock_hook_mask;
+static wchar_t route_lock_endpoint[512];
+static LONG nsp_success_requested;
 static wchar_t profile_path[MAX_PATH];
 static int quiet_start;
 static Rule rules[MAX_RULES];
@@ -73,6 +84,7 @@ static int rule_count,fallback=MODE_STEREO;
 static unsigned debounce_ms=500;
 static void log_line(const wchar_t *message,HRESULT hr);
 #include "nsp_control.h"
+#include "pipeline_init.h"
 
 static void log_line(const wchar_t *message,HRESULT hr) {
     WIN32_FILE_ATTRIBUTE_DATA attr;
@@ -129,6 +141,7 @@ static unsigned exit_only_worker(void) {
 }
 static int profile_id(const wchar_t *value) {
     for(int i=0;i<MODE_COUNT;i++) if(!_wcsicmp(value,names[i])) return i;
+    if(InterlockedCompareExchange(&route_lock_index,0,0)>=0)for(int i=0;i<7;i++)if(!_wcsicmp(value,fsa_locked_nsp_label(i)))return MODE_NSP;
     if(!_wcsicmp(value,L"Atmos")) return MODE_ATMOS;
     if(!_wcsicmp(value,L"DTS-X")) return MODE_DTS;
     return -1;
@@ -138,7 +151,7 @@ static void load_rules(void) {
     wchar_t sections[8192],value[MAX_PATH]; rule_count=0;
     enabled_rules=has_running=has_foreground=0;
     GetPrivateProfileStringW(L"Manager",L"Fallback",L"Stereo",value,MAX_PATH,ini);
-    fallback=profile_id(value); if(fallback<0 || fallback==MODE_NSP) fallback=MODE_STEREO;
+    fallback=profile_id(value); if(fallback<0 || (fallback==MODE_NSP && InterlockedCompareExchange(&route_lock_index,0,0)<0)) fallback=MODE_STEREO;
     debounce_ms=GetPrivateProfileIntW(L"Manager",L"DebounceMs",500,ini);
     if(debounce_ms<100) debounce_ms=100; if(debounce_ms>5000) debounce_ms=5000;
     GetPrivateProfileSectionNamesW(sections,8192,ini);
@@ -152,7 +165,7 @@ static void load_rules(void) {
         else { log_line(L"Rule rejected: unsupported Scope",E_INVALIDARG); continue; }
         GetPrivateProfileStringW(s,L"Profile",L"",value,MAX_PATH,ini);
         r.profile=profile_id(value);
-        if(r.profile<0 || r.profile==MODE_NSP) { log_line(L"Rule rejected: unknown Profile",E_INVALIDARG); continue; }
+        if(r.profile<0 || (r.profile==MODE_NSP && InterlockedCompareExchange(&route_lock_index,0,0)<0)) { log_line(L"Rule rejected: unknown Profile",E_INVALIDARG); continue; }
         r.priority=(int)GetPrivateProfileIntW(s,L"Priority",0,ini);
         GetPrivateProfileStringW(s,L"Exe",L"",exes[rule_count],MAX_PATH,ini);
         if(!exes[rule_count][0]) continue;
@@ -201,6 +214,7 @@ static HRESULT read_spatial(SpatialPolicy *p,SpatialSettings *out) {
     CoTaskMemFree(f); CoTaskMemFree(s); CoTaskMemFree(d); return hr;
 }
 static HRESULT spatial_select(SpatialPolicy *p,int mode) {
+    if(mode>MODE_SONIC)return E_INVALIDARG;
     if(!p)return mode<MODE_ATMOS?S_OK:E_NOINTERFACE;
     if(mode>=MODE_ATMOS && (spatial_captured&(1u<<(mode-MODE_ATMOS))))
         return p->v->set(p,profiles[0].endpoint,&spatial_settings[mode-MODE_ATMOS],NULL);
@@ -224,7 +238,7 @@ done:
 }
 static int classify(const AL_Snapshot *a,const SpatialSettings *s) {
     if(s->words[0]) {
-        for(int i=0;i<3;i++)if(!memcmp(&s->words[3],&encoders[i],16))return MODE_ATMOS+i;
+        for(int i=0;i<7;i++){GUID g;if(SUCCEEDED(CLSIDFromString(pipeline_guids[i],&g)) && !memcmp(&s->words[3],&g,16))return pipeline_modes[i];}
         return -1;
     }
     if(!al_valid(a))return -1;
@@ -241,8 +255,10 @@ static HRESULT read_actual(SpatialPolicy *p,AL_Snapshot *a,SpatialSettings *s,in
     if(SUCCEEDED(hr))*mode=classify(a,s);
     return hr;
 }
+#include "nsp_route_lock.h"
 static int matches_profile(int mode,const AL_Snapshot *actual,const SpatialSettings *settings) {
     if(mode<0 || classify(actual,settings)!=mode)return 0;
+    if(mode>=MODE_DOLBY_HP)return 1;
     if(mode<3)return al_equal(actual,&profiles[mode]);
     const AL_Snapshot *target=(spatial_captured&(1u<<(mode-3)))?&spatial_profiles[mode-3]:&profiles[2];
     return actual->fullrange_present==target->fullrange_present && actual->fullrange==target->fullrange &&
@@ -266,11 +282,23 @@ static void check_capabilities(SpatialPolicy *p) {
         HRESULT hr=p->v->get(p,profiles[0].endpoint,FALSE,&f,&s,&n,&d);
         if(SUCCEEDED(hr) && n<=128 && d)for(UINT32 i=0;i<n;i++) {
             DWORD supported=0;memcpy(&supported,d+i*0x342+0x310,4);
-            for(int j=0;j<3;j++)if(supported && !memcmp(d+i*0x342+0x300,&encoders[j],16))flags|=1u<<(j+3);
+            for(int j=0;j<7;j++){GUID g;if(supported && SUCCEEDED(CLSIDFromString(pipeline_guids[j],&g)) && !memcmp(d+i*0x342+0x300,&g,16))flags|=1u<<pipeline_modes[j];}
         }
         CoTaskMemFree(f);CoTaskMemFree(s);CoTaskMemFree(d);
     }
-    if((flags&(1u<<MODE_SONIC)) && nsp_configured())flags|=1u<<MODE_NSP;
+    /* Availability of NSp follows its configured frontend, not Sonic alone. */
+    int front=pipeline_index();GUID selected_front;int front_available=0;
+    if(front>=0 && SUCCEEDED(CLSIDFromString(pipeline_guids[front],&selected_front)) && p){
+        WAVEFORMATEX *f=NULL;SpatialSettings *s=NULL;BYTE *d=NULL;UINT32 n=0;
+        if(SUCCEEDED(p->v->get(p,profiles[0].endpoint,FALSE,&f,&s,&n,&d)) && d && n<=128)
+            for(UINT32 i=0;i<n;i++)if(d[i*0x342+0x310] && !memcmp(d+i*0x342+0x300,&selected_front,16))front_available=1;
+        CoTaskMemFree(f);CoTaskMemFree(s);CoTaskMemFree(d);
+    }
+    /* An explicitly requested initializer keeps the start action selectable.
+       prepare still requires a live tag before any support-precheck bypass. */
+    if(nsp_configured() && (front_available || pipeline_live(profiles[0].endpoint,front) || pipeline_initialization_requested(front)))flags|=1u<<MODE_NSP;
+    for(int i=0;i<7;i++)if(pipeline_live(profiles[0].endpoint,i))flags|=1u<<pipeline_modes[i];
+    if(InterlockedCompareExchange(&route_lock_index,0,0)>=0 && !route_lock_bound())flags&=~(1u<<MODE_NSP);
     LONG before=InterlockedExchange(&available_modes,(LONG)flags);
     if((unsigned)before!=flags){wchar_t message[80];swprintf(message,80,L"Available mode mask: 0x%02x",flags);log_line(message,S_OK);PostMessageW(window,WM_STATUS,0,0);}
 }
@@ -278,7 +306,7 @@ static HRESULT capture_intent(SpatialPolicy *p) {
     AL_Snapshot actual;SpatialSettings settings;int mode;
     HRESULT hr=read_actual(p,&actual,&settings,&mode);
     if(FAILED(hr))return hr;
-    if(mode<0)return HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
+    if(mode<0 || mode>MODE_SONIC)return HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
     if(mode<3) {
         AL_Snapshot previous=profiles[mode];profiles[mode]=actual;
         if(!save_profiles()){profiles[mode]=previous;return E_FAIL;}
@@ -290,12 +318,14 @@ static HRESULT capture_intent(SpatialPolicy *p) {
     check_capabilities(p);publish(mode,UI(TXT_CAPTURED));return S_OK;
 }
 static HRESULT switch_mode(SpatialPolicy *p,int mode) {
-    if(mode<0 || mode>=MODE_COUNT || !(InterlockedCompareExchange(&available_modes,0,0)&(1<<mode)))return HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
+    if(mode<0 || mode>=MODE_COUNT || mode==MODE_NSP || !(InterlockedCompareExchange(&available_modes,0,0)&(1<<mode)))return HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED);
     AL_Snapshot before; SpatialSettings original; HRESULT rollback=S_FALSE;
     HRESULT hr=al_capture(profiles[0].endpoint,&before);
     if(SUCCEEDED(hr)) hr=read_spatial(p,&original);
     if(FAILED(hr)) return hr;
-    if(mode<MODE_ATMOS) {
+    if(mode>=MODE_DOLBY_HP){
+        hr=pipeline_command_index(L"prepare",pipeline_format_for_mode(mode));
+    } else if(mode<MODE_ATMOS) {
         if(original.words[0]) hr=spatial_select(p,mode);
         if(SUCCEEDED(hr)) hr=al_apply(&profiles[mode],&rollback);
     } else {
@@ -332,6 +362,10 @@ static HRESULT switch_mode(SpatialPolicy *p,int mode) {
         }
         log_line(L"Switch rollback attempt",rollback);
     }
+    if(SUCCEEDED(hr)){
+        int front=pipeline_format_for_mode(mode);
+        if(front>=0)WritePrivateProfileStringW(L"NSP",L"FrontendFormat",pipeline_names[front],ini);
+    }
     return hr;
 }
 static unsigned __stdcall worker(void *unused) {
@@ -342,13 +376,14 @@ static unsigned __stdcall worker(void *unused) {
     if(FAILED(hr))log_line(L"Spatial interface unavailable; PCM only",hr);
     int first=0;
     if(!initialize_profiles(&first)) {InterlockedExchange(&nsp_starting,0);publish(-1,UI(TXT_INIT_FAILED));if(p)p->v->release(p);CoUninitialize();return exit_only_worker();}
-    check_capabilities(p);
+    route_lock_load();check_capabilities(p);
     if(first && !(available_modes&24) && !quiet_start)PostMessageW(window,WM_NOTICE,1,0);
     AL_Snapshot baseline={0};SpatialSettings baseline_spatial={0};int have_baseline=0;
     ULONGLONG capability_due=GetTickCount64()+30000;
     Debounce d={-1,0}; int cached=-1,verified=-1; ULONGLONG audit=0,retry=0; int failed_target=-1;
     LONG generation=-1;
-    int nsp_locked=0,nsp_fault=0;ULONGLONG nsp_due=0;
+    int nsp_locked=0,nsp_fault=0,nsp_announced=0;ULONGLONG nsp_due=0,route_due=0;
+    ULONGLONG pipeline_due=0;int pipeline_first=1;
     HANDLE events[]={stop,wake};
     while(WaitForSingleObject(stop,0)!=WAIT_OBJECT_0) {
         if(InterlockedCompareExchange(&exit_requested,0,0)){
@@ -359,6 +394,26 @@ static unsigned __stdcall worker(void *unused) {
             WaitForMultipleObjects(2,events,FALSE,2000);continue;
         }
         if(InterlockedExchange(&reload_requested,0)) { load_rules(); d.pending=-1; }
+        LONG lock_action=InterlockedExchange(&route_lock_requested,0);
+        if(lock_action){
+            HRESULT changed=route_lock_change(p,lock_action);log_line(L"NSp Lock snapshot",changed);
+            InterlockedExchange(&route_lock_busy,0);check_capabilities(p);InterlockedIncrement(&control_generation);InterlockedExchange(&reload_requested,1);
+            if(FAILED(changed)){int shown;AcquireSRWLockShared(&state_lock);shown=current;ReleaseSRWLockShared(&state_lock);publish(shown,L"NSp Lock: select an active spatial format first");}
+            PostMessageW(window,WM_STATUS,0,0);
+        }
+        LONG pipeline_action=InterlockedExchange(&pipeline_requested,0);
+        if(pipeline_action==2 || pipeline_action==3){log_line(L"Pipeline enumeration recovery",pipeline_command(L"recover"));pipeline_due=GetTickCount64()+8000;}
+        if(pipeline_action==1 || pipeline_action==3 || GetTickCount64()>=pipeline_due){
+            int persist=GetPrivateProfileIntW(L"NSP",L"PersistEnumerationHook",0,ini)!=0;
+            int hp=GetPrivateProfileIntW(L"NSP",L"HookHeadphones",0,ini)!=0,sp=GetPrivateProfileIntW(L"NSP",L"HookSpeakers",0,ini)!=0;
+            /* FSA keeps the independent resident online. Never use config alone
+               as proof of a live hook or as a reason to bypass endpoint identity. */
+            if((persist || pipeline_action==3 || pipeline_first) && ((hp && !pipeline_live(profiles[0].endpoint,1)) || (sp && !pipeline_live(profiles[0].endpoint,2))))
+                log_line(L"Pipeline enumeration ensure",pipeline_command(L"ensure"));
+            pipeline_first=0;check_capabilities(p);
+            pipeline_due=GetTickCount64()+8000;
+        }
+        if(pipeline_action)check_capabilities(p);
         LONG latest=InterlockedCompareExchange(&control_generation,0,0);
         if(latest!=generation) { generation=latest; d.pending=-1; audit=0; }
         if(InterlockedExchange(&capture_requested,0)) {
@@ -368,46 +423,73 @@ static unsigned __stdcall worker(void *unused) {
             LONG request=InterlockedExchange(&nsp_requested,0);
             int code;
             if(request==1 && !nsp_locked) {
-                AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
+                AcquireSRWLockExclusive(&state_lock);if(InterlockedCompareExchange(&route_lock_index,0,0)<0)automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
                 nsp_locked=1;nsp_fault=0;
-                HRESULT selected=nsp_control(L"preflight")==NSP_PREFLIGHT && !InterlockedCompareExchange(&exit_requested,0,0)?switch_mode(p,MODE_SONIC):E_ACCESSDENIED;
-                if(SUCCEEDED(selected))selected=capture_intent(p);
+                nsp_announced=0;
+                HRESULT selected=E_ACCESSDENIED;
+                if((InterlockedCompareExchange(&route_lock_index,0,0)<0 || route_lock_bound()) && nsp_control(L"preflight")==NSP_PREFLIGHT && !InterlockedCompareExchange(&exit_requested,0,0)){
+                    int locked_front=InterlockedCompareExchange(&route_lock_index,0,0);
+                    unsigned required=(unsigned)InterlockedCompareExchange(&route_lock_hook_mask,0,0);
+                    int ready=locked_front<0 || route_lock_reassert(locked_front,required);
+                    if(ready && locked_front>=0 && required && pipeline_live(profiles[0].endpoint,locked_front) && !pipeline_live_flags(profiles[0].endpoint,locked_front,2))ready=SUCCEEDED(pipeline_command(L"recover"));
+                    /* Old installations retain Sonic behavior until configured. */
+                    wchar_t init[MAX_PATH];GetPrivateProfileStringW(L"NSP",L"PipelineInitScript",L"",init,MAX_PATH,ini);
+                    selected=!ready?E_FAIL:init[0]?pipeline_command(L"prepare"):pipeline_index()==0?switch_mode(p,MODE_SONIC):E_INVALIDARG;
+                }
                 code=SUCCEEDED(selected) && !InterlockedCompareExchange(&exit_requested,0,0)?nsp_control(L"start"):20;
                 if(FAILED(selected))nsp_fault=1;
             } else code=nsp_control(request==3?L"emergency-stop":request==2?L"stop":L"status");
             retry_start_after_stop(request,code,nsp_locked);
             nsp_due=GetTickCount64()+2000;
             if(!nsp_blocks_rules(code) && (!nsp_fault || request==1 || request==2 || request==3 || InterlockedCompareExchange(&nsp_next_mode,0,0)>=0)){
+                if(nsp_locked && !GetPrivateProfileIntW(L"NSP",L"PersistEnumerationHook",0,ini) &&
+                   (GetPrivateProfileIntW(L"NSP",L"HookHeadphones",0,ini) || GetPrivateProfileIntW(L"NSP",L"HookSpeakers",0,ini)))
+                    log_line(L"Nonpersistent pipeline enumeration recovery",pipeline_command(L"recover"));
                 InterlockedExchange(&nsp_starting,0);
-                nsp_locked=0;nsp_fault=0;have_baseline=0;audit=0;
+                nsp_locked=0;nsp_fault=0;nsp_announced=0;have_baseline=0;audit=0;
                 LONG target=InterlockedExchange(&nsp_next_mode,-1);
-                if(target>=MODE_STEREO && target<=MODE_SONIC && (available_modes&(1u<<target))){
-                    AcquireSRWLockExclusive(&state_lock);manual=target;automatic=0;ReleaseSRWLockExclusive(&state_lock);
+                if(target>=MODE_STEREO && target<MODE_COUNT && target!=MODE_NSP && (available_modes&(1u<<target))){
+                    AcquireSRWLockExclusive(&state_lock);if(InterlockedCompareExchange(&route_lock_index,0,0)<0 || !automatic){manual=target;automatic=0;}ReleaseSRWLockExclusive(&state_lock);
                     InterlockedIncrement(&control_generation);
                     log_line(L"NSp stopped and verified; applying requested audio mode",S_OK);
                 }
             }
             else {
                 nsp_locked=1;
-                AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
+                AcquireSRWLockExclusive(&state_lock);if(InterlockedCompareExchange(&route_lock_index,0,0)<0 || nsp_fault)automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
                 AL_Snapshot check,default_endpoint;SpatialSettings selection;int observed=-1;
                 HRESULT read=read_actual(p,&check,&selection,&observed);
                 if(SUCCEEDED(read)) {
                     HRESULT endpoint_read=al_capture(NULL,&default_endpoint);
                     if(FAILED(endpoint_read) || wcscmp(default_endpoint.endpoint,profiles[0].endpoint))read=E_FAIL;
                 }
-                if(nsp_verified(code,SUCCEEDED(read) && observed==MODE_SONIC,nsp_fault)){
-                    InterlockedExchange(&nsp_starting,0);publish(MODE_NSP,L"Sonic NSp: verified");
+                if(nsp_verified(code,SUCCEEDED(read) && pipeline_selected(&selection),nsp_fault)){
+                    InterlockedExchange(&nsp_starting,0);publish(MODE_NSP,L"NSp frontend: verified");
+                    if(!nsp_announced){InterlockedExchange(&nsp_success_requested,1);nsp_announced=1;PostMessageW(window,WM_STATUS,0,0);}
                 }
                 else {
                     if(code!=NSP_BUSY || nsp_fault)InterlockedExchange(&nsp_starting,0);
                     publish(-1,code==11?L"NSp: starting / stopping":L"NSp: unknown / fault locked");
-                    if(code==0 && (FAILED(read) || observed!=MODE_SONIC) && !nsp_fault){nsp_fault=1;nsp_control(L"emergency-stop");}
+                    if(code==0 && (FAILED(read) || !pipeline_selected(&selection)) && !nsp_fault){nsp_fault=1;nsp_control(L"emergency-stop");}
                 }
             }
         }
         InterlockedExchange(&nsp_ui_locked,nsp_locked);
-        if(nsp_locked){HANDLE pending[]={stop,wake};if(WaitForMultipleObjects(2,pending,FALSE,250)==WAIT_OBJECT_0)break;continue;}
+        if(nsp_locked){
+            int route_auto;AcquireSRWLockShared(&state_lock);route_auto=automatic;ReleaseSRWLockShared(&state_lock);
+            InterlockedExchange(&foreground_needed,route_auto && has_foreground);
+            if(route_auto && !nsp_fault && InterlockedCompareExchange(&route_lock_index,0,0)>=0 && GetTickCount64()>=route_due){
+                int target=-1;ULONGLONG now=GetTickCount64();route_due=now+500;
+                if(observe_rules(&target)){
+                    target=route_lock_target(InterlockedCompareExchange(&route_lock_index,0,0),target);
+                    int stable=settled(&d,target,now,debounce_ms);
+                    if(target>=MODE_STEREO && target<MODE_ATMOS && (available_modes&(1u<<target)) && stable){
+                        InterlockedExchange(&nsp_next_mode,target);nsp_queue_request(2);SetEvent(wake);
+                    }
+                }
+            }
+            HANDLE pending[]={stop,wake};if(WaitForMultipleObjects(2,pending,FALSE,250)==WAIT_OBJECT_0)break;continue;
+        }
         int auto_mode,lock_mode;
         AcquireSRWLockShared(&state_lock); auto_mode=automatic; lock_mode=manual; ReleaseSRWLockShared(&state_lock);
         InterlockedExchange(&foreground_needed,auto_mode && has_foreground);
@@ -439,7 +521,11 @@ static unsigned __stdcall worker(void *unused) {
         }
         int target=lock_mode;
         if(auto_mode && !observe_rules(&target)) target=-1;
+        target=route_lock_target(InterlockedCompareExchange(&route_lock_index,0,0),target);
         if(target>=0 && !(available_modes&(1<<target)))target=-1;
+        if(target==MODE_NSP && (lock_mode>=0 || settled(&d,target,now,debounce_ms))){
+            InterlockedExchange(&nsp_starting,1);nsp_queue_request(1);SetEvent(wake);continue;
+        }
         if(target>=0 && (lock_mode>=0 || settled(&d,target,now,debounce_ms)) && target!=verified &&
            (target!=failed_target || now>=retry)) {
             if(generation!=InterlockedCompareExchange(&control_generation,0,0))continue;
@@ -474,14 +560,31 @@ static void update_tray(void) {
     AcquireSRWLockShared(&state_lock);
     int known=current>=0 && current<MODE_COUNT;
     int starting=InterlockedCompareExchange(&nsp_starting,0,0)!=0 || !known;
-    if(starting && !spin_timer){spin_started=GetTickCount64();spin_timer=SetTimer(window,TIMER_NSP_SPIN,FSA_SPIN_INTERVAL_MS,NULL)!=0;}
-    if(!starting && spin_timer){KillTimer(window,TIMER_NSP_SPIN);spin_timer=0;}
-    /* All unknown states share the rotating stereo presentation. Only verified
-       Sonic + Hook may use MODE_NSP and the FSA application identity icon. */
+    ULONGLONG now=GetTickCount64();int frontend=pipeline_index();
+    int source=frontend>=0?pipeline_modes[frontend]:MODE_NSP;
+    if(starting || current!=MODE_NSP)success_spinning=0;
+    if(InterlockedExchange(&nsp_success_requested,0) && !starting && current==MODE_NSP){
+        BOOL animation=TRUE;SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&animation,0);
+        if(animation){success_started=now;success_spinning=1;}
+    }
+    if(success_spinning && now-success_started>=FSA_SPIN_FRAMES*FSA_SUCCESS_INTERVAL_MS)success_spinning=0;
+    if(success_spinning && success_source!=source){
+        free_spinner(success_icons);success_source=-1;
+        if(make_spinner(mode_icons[source],GetSystemMetrics(SM_CXSMICON),GetSystemMetrics(SM_CYSMICON),success_icons))success_source=source;
+        else success_spinning=0;
+    }
+    int kind=starting?1:success_spinning?2:0;
+    if(kind && (!spin_timer || kind!=spin_kind)){
+        if(kind==1)spin_started=now;
+        spin_timer=SetTimer(window,TIMER_NSP_SPIN,kind==2?FSA_SUCCESS_INTERVAL_MS:FSA_SPIN_INTERVAL_MS,NULL)!=0;
+    }
+    if(!kind && spin_timer){KillTimer(window,TIMER_NSP_SPIN);spin_timer=0;}
+    spin_kind=kind;
     unsigned frame=(unsigned)((GetTickCount64()-spin_started)/FSA_SPIN_INTERVAL_MS%FSA_SPIN_FRAMES);
     tray.hIcon=starting?(starting_icons[frame]?starting_icons[frame]:mode_icons[MODE_STEREO]):
-        mode_icons[current];
-    swprintf(tray.szTip,128,L"Final Spatial Audio: %ls\n%ls - %ls",known?names[current]:UI(TXT_UNKNOWN),automatic?UI(TXT_AUTO):UI(TXT_MANUAL),status);
+        success_spinning?success_icons[(now-success_started)/FSA_SUCCESS_INTERVAL_MS]:mode_icons[current==MODE_NSP?source:current];
+    const wchar_t *label=current==MODE_NSP?fsa_locked_nsp_label(frontend):known?names[current]:UI(TXT_UNKNOWN);
+    swprintf(tray.szTip,128,L"Final Spatial Audio: %ls\n%ls - %ls",label,automatic?UI(TXT_AUTO):UI(TXT_MANUAL),status);
     ReleaseSRWLockShared(&state_lock); Shell_NotifyIconW(NIM_MODIFY,&tray);
 }
 static int startup_enabled(void) {
@@ -504,44 +607,80 @@ static void open_text(const wchar_t *path) {
 }
 static void request_manual_mode(int target) {
     if(InterlockedCompareExchange(&exit_requested,0,0))return;
-    if(target<MODE_STEREO || target>MODE_SONIC || !(available_modes&(1u<<target)))return;
+    if(target<MODE_STEREO || target>=MODE_COUNT || target==MODE_NSP)return;
+    if(route_lock_target(InterlockedCompareExchange(&route_lock_index,0,0),target)==MODE_NSP){
+        if(!(available_modes&(1u<<MODE_NSP)))return;
+        AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;int running=current==MODE_NSP;ReleaseSRWLockExclusive(&state_lock);
+        if(!running){InterlockedExchange(&nsp_starting,1);InterlockedExchange(&nsp_next_mode,-1);nsp_queue_request(1);SetEvent(wake);}
+        return;
+    }
+    if(!(available_modes&(1u<<target)))return;
+    AcquireSRWLockExclusive(&state_lock);automatic=0;ReleaseSRWLockExclusive(&state_lock);
     if(InterlockedCompareExchange(&nsp_ui_locked,0,0)){
         InterlockedExchange(&nsp_starting,0);
         InterlockedExchange(&nsp_next_mode,target);
         nsp_queue_request(2);
         publish(-1,L"NSp: stopping before audio mode switch");
     }else{
-        AcquireSRWLockExclusive(&state_lock);manual=target;automatic=0;ReleaseSRWLockExclusive(&state_lock);
+        AcquireSRWLockExclusive(&state_lock);manual=target;automatic=0;int already_selected=current==target;ReleaseSRWLockExclusive(&state_lock);
+        int front=pipeline_format_for_mode(target);
+        if(already_selected && front>=0)WritePrivateProfileStringW(L"NSP",L"FrontendFormat",pipeline_names[front],ini);
         InterlockedIncrement(&control_generation);
     }
     SetEvent(wake);
 }
+static void read_menu_state(FSA_MenuState *state){
+    memset(state,0,sizeof(*state));state->language=language;state->frontend=pipeline_index();
+    state->extreme=(GetPrivateProfileIntW(L"NSP",L"PersistEnumerationHook",0,ini)?1u:0u)|
+                  (GetPrivateProfileIntW(L"NSP",L"HookHeadphones",0,ini)?2u:0u)|
+                  (GetPrivateProfileIntW(L"NSP",L"HookSpeakers",0,ini)?4u:0u);
+    int locked=InterlockedCompareExchange(&route_lock_index,0,0);
+    if(locked>=0){state->extreme|=FSA_MENU_ROUTE_LOCK;state->frontend=locked;}
+    if(InterlockedCompareExchange(&route_lock_busy,0,0))state->extreme|=FSA_MENU_LOCK_PENDING;
+    state->nsp_locked=InterlockedCompareExchange(&nsp_ui_locked,0,0);
+    AcquireSRWLockShared(&state_lock);state->selected=current;state->automatic=automatic;ReleaseSRWLockShared(&state_lock);
+    state->available=(unsigned)InterlockedCompareExchange(&available_modes,0,0);state->startup=startup_enabled();
+}
+static void pipeline_menu_action(UINT command){
+    if(command==311){
+        if(!InterlockedExchange(&route_lock_busy,1)){InterlockedExchange(&route_lock_requested,InterlockedCompareExchange(&route_lock_index,0,0)>=0?2:1);SetEvent(wake);}
+        return;
+    }
+    if(command<410 || command>413)return;
+    if(command<=412 && InterlockedCompareExchange(&route_lock_index,0,0)>=0)return;
+    const wchar_t *keys[]={L"PersistEnumerationHook",L"HookHeadphones",L"HookSpeakers"};
+    if(command<=412 && !InterlockedCompareExchange(&nsp_ui_locked,0,0)){int index=(int)command-410;int old=GetPrivateProfileIntW(L"NSP",keys[index],0,ini)!=0;WritePrivateProfileStringW(L"NSP",keys[index],old?L"0":L"1",ini);InterlockedExchange(&pipeline_requested,3);}
+    if(command==413){WritePrivateProfileStringW(L"NSP",L"PersistEnumerationHook",L"0",ini);InterlockedExchange(&pipeline_requested,2);}
+    InterlockedExchange(&reload_requested,1);SetEvent(wake);
+}
 static void menu(void) {
     static int showing=0;if(showing)return;
-    FSA_MenuState state;state.language=language;
-    state.nsp_locked=InterlockedCompareExchange(&nsp_ui_locked,0,0);
-    AcquireSRWLockShared(&state_lock);state.selected=current;state.automatic=automatic;ReleaseSRWLockShared(&state_lock);
-    state.available=(unsigned)InterlockedCompareExchange(&available_modes,0,0);state.startup=startup_enabled();
+    FSA_MenuState state;read_menu_state(&state);
     showing=1;UINT command=fsa_popup(window,&state);showing=0;
     if(!IsWindow(window))return;
     if(InterlockedCompareExchange(&exit_requested,0,0) && command!=209 && command!=205 && command!=204)return;
+    if(command==311 || (command>=410 && command<=413)){
+        pipeline_menu_action(command);return;
+    }
     if(command==106){
         AcquireSRWLockShared(&state_lock);state.selected=current;ReleaseSRWLockShared(&state_lock);
         LONG request=fsa_nsp_toggle_request(&state);
+        AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
         InterlockedExchange(&nsp_starting,request==1);update_tray();
         InterlockedExchange(&nsp_next_mode,-1);InterlockedExchange(&nsp_ui_locked,1);
         nsp_queue_request(request);SetEvent(wake);return;
     }
     if(command==209){
+        AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
         InterlockedExchange(&nsp_starting,0);update_tray();
         InterlockedExchange(&nsp_next_mode,-1);
         InterlockedExchange(&nsp_ui_locked,1);
         if(!nsp_emergency_dispatch())publish(-1,L"Sonic NSp: emergency dispatch failed");
         nsp_queue_request(3);SetEvent(wake);return;
     }
-    if(command==208){InterlockedExchange(&nsp_starting,0);update_tray();InterlockedExchange(&nsp_next_mode,-1);nsp_queue_request(2);SetEvent(wake);return;}
-    if(InterlockedCompareExchange(&nsp_ui_locked,0,0) && (command==200 || command==206))return;
-    if(command>=100 && command<106 && (available_modes&(1<<(command-100)))) {
+    if(command==208){AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);InterlockedExchange(&nsp_starting,0);update_tray();InterlockedExchange(&nsp_next_mode,-1);nsp_queue_request(2);SetEvent(wake);return;}
+    if(InterlockedCompareExchange(&nsp_ui_locked,0,0) && ((command==200 && InterlockedCompareExchange(&route_lock_index,0,0)<0) || command==206))return;
+    if(command>=100 && command<100+MODE_COUNT && command!=106 && (available_modes&(1<<(command-100)))) {
         request_manual_mode(command-100);return;
     } else if(command==200) {
         AcquireSRWLockExclusive(&state_lock);manual=-1;automatic=!automatic;ReleaseSRWLockExclusive(&state_lock);
@@ -553,7 +692,7 @@ static void menu(void) {
         AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
         InterlockedExchange(&capture_requested,1);
     } else if(command==207)toggle_startup();
-    if((command>=100 && command<106) || command==200 || command==206){InterlockedIncrement(&control_generation);SetEvent(wake);}
+    if((command>=100 && command<100+MODE_COUNT && command!=106) || command==200 || command==206){InterlockedIncrement(&control_generation);SetEvent(wake);}
     if(IsWindow(window))update_tray();
 }
 static void CALLBACK foreground_event(HWINEVENTHOOK hook,DWORD event,HWND hwnd,LONG object,LONG child,DWORD tid,DWORD time) {
@@ -570,22 +709,26 @@ static LRESULT CALLBACK wndproc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
             w==2?UI(TXT_CAPTURE_OK):UI(TXT_CAPTURE_FAILED);
         MessageBoxW(hwnd,message,L"Final Spatial Audio",MB_OK|(w==2?MB_ICONINFORMATION:MB_ICONWARNING));return 0;
     }
-    if(msg==WM_STATUS) { update_tray(); return 0; }
+    if(msg==WM_STATUS) { update_tray();FSA_MenuState state;read_menu_state(&state);fsa_popup_update(&state);return 0; }
+    if(msg==FSA_WM_MENU_ACTION){pipeline_menu_action((UINT)w);FSA_MenuState state;read_menu_state(&state);fsa_popup_update(&state);return 0;}
     if(msg==WM_NSP_COMMAND && w>=1 && w<=3) {
         if(InterlockedCompareExchange(&exit_requested,0,0) && w!=3)return 0;
+        AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
         InterlockedExchange(&nsp_starting,w==1);update_tray();
         InterlockedExchange(&nsp_next_mode,-1);
         InterlockedExchange(&nsp_ui_locked,1);
         if(w==3)nsp_emergency_dispatch();
         nsp_queue_request((LONG)w);SetEvent(wake);return 0;
     }
-    if(msg==WM_MODE_COMMAND && w<=MODE_SONIC){request_manual_mode((int)w);return 0;}
+    if(msg==WM_MODE_COMMAND && w<MODE_COUNT && w!=MODE_NSP){request_manual_mode((int)w);return 0;}
+    if(msg==WM_MENU_COMMAND){menu();return 0;}
     if(msg==WM_SETTINGCHANGE || msg==WM_DPICHANGED) {
         if(load_mode_icons((HINSTANCE)GetWindowLongPtrW(hwnd,GWLP_HINSTANCE))) update_tray();
         return 0;
     }
     if(msg==WM_TIMER && w==TIMER_NSP_SPIN) {update_tray();return 0;}
     if(msg==WM_TIMER && w==1) {KillTimer(hwnd,1);request_exit();return 0;}
+    if(msg==WM_TIMER && w==3) {KillTimer(hwnd,3);menu();return 0;}
     if(msg==WM_CLOSE) {request_exit();return 0;}
     if(msg==WM_EXIT_READY) {if(InterlockedCompareExchange(&exit_verified,0,0))DestroyWindow(hwnd);return 0;}
     if(msg==WM_DESTROY) {KillTimer(hwnd,TIMER_NSP_SPIN);spin_timer=0;SetEvent(stop); Shell_NotifyIconW(NIM_DELETE,&tray); PostQuitMessage(0); return 0; }
@@ -597,10 +740,18 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR cmd,int show) {
     while(*cmd==L' ') cmd++;
     size_t command_length=wcslen(cmd);
     while(command_length && cmd[command_length-1]==L' ') cmd[--command_length]=0;
-    const wchar_t *mode_commands[]={L"--mode-stereo",L"--mode-5.1",L"--mode-7.1",L"--mode-atmos",L"--mode-dts",L"--mode-sonic"};
-    for(unsigned mode=0;mode<sizeof(mode_commands)/sizeof(mode_commands[0]);mode++)if(!wcscmp(cmd,mode_commands[mode])){
+    const wchar_t *mode_commands[]={L"--mode-stereo",L"--mode-5.1",L"--mode-7.1",L"--mode-atmos",L"--mode-dts",L"--mode-sonic",L"",L"--mode-dolby-headphones",L"--mode-dolby-speakers",L"--mode-dts-headphones",L"--mode-dtsx-ultra"};
+    for(unsigned mode=0;mode<sizeof(mode_commands)/sizeof(mode_commands[0]);mode++)if(mode_commands[mode][0] && !wcscmp(cmd,mode_commands[mode])){
         HWND existing=FindWindowW(L"FinalSpatialAudioWindow",L"Final Spatial Audio");
         return existing && PostMessageW(existing,WM_MODE_COMMAND,mode,0)?0:1;
+    }
+    if(!wcscmp(cmd,L"--menu")){
+        HWND existing=FindWindowW(L"FinalSpatialAudioWindow",L"Final Spatial Audio");
+        if(existing)return PostMessageW(existing,WM_MENU_COMMAND,0,0)?0:1;
+    }
+    if(!wcscmp(cmd,L"--nsp-lock")){
+        HWND existing=FindWindowW(L"FinalSpatialAudioWindow",L"Final Spatial Audio");
+        return existing && PostMessageW(existing,FSA_WM_MENU_ACTION,311,0)?0:1;
     }
     int nsp_command=!wcscmp(cmd,L"--start-nsp")?1:!wcscmp(cmd,L"--stop-nsp")?2:!wcscmp(cmd,L"--emergency-stop-nsp")?3:0;
     if(nsp_command){
@@ -654,6 +805,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR cmd,int show) {
     thread=(HANDLE)_beginthreadex(NULL,0,worker,NULL,0,NULL);
     if(!thread) { DestroyWindow(window); return 1; }
     if(!wcscmp(cmd,L"--smoke")) SetTimer(window,1,2000,NULL);
+    if(!wcscmp(cmd,L"--menu")) SetTimer(window,3,1000,NULL);
     HWINEVENTHOOK hook=SetWinEventHook(EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_FOREGROUND,NULL,foreground_event,0,0,WINEVENT_OUTOFCONTEXT|WINEVENT_SKIPOWNPROCESS);
     MSG msg; while(GetMessageW(&msg,NULL,0,0)>0) { TranslateMessage(&msg); DispatchMessageW(&msg); }
     if(hook) UnhookWinEvent(hook); SetEvent(stop); WaitForSingleObject(thread,INFINITE);

@@ -50,16 +50,34 @@ int wmain(void) {
     current=-1;nsp_starting=1;update_tray();assert(spin_timer && last_tray_icon==starting_icons[0]);
     spin_started-=FSA_SPIN_INTERVAL_MS*4;wndproc(window,WM_TIMER,TIMER_NSP_SPIN,0);
     assert(IsWindow(window) && last_tray_icon!=starting_icons[0]);
-    nsp_starting=0;current=MODE_NSP;update_tray();assert(!spin_timer && last_tray_icon==mode_icons[MODE_NSP]);
+    nsp_starting=0;current=MODE_NSP;update_tray();assert(!spin_timer && last_tray_icon==mode_icons[MODE_SONIC]);
     nsp_starting=1;current=-1;update_tray();assert(spin_timer);
     nsp_starting=0;update_tray();assert(spin_timer); /* Unknown remains animated after initialization fails. */
     spin_started-=FSA_SPIN_INTERVAL_MS*4;wndproc(window,WM_TIMER,TIMER_NSP_SPIN,0);
     assert(last_tray_icon==starting_icons[(GetTickCount64()-spin_started)/FSA_SPIN_INTERVAL_MS%FSA_SPIN_FRAMES]);
     current=MODE_COUNT;update_tray();assert(spin_timer); /* Invalid modes are unknown too. */
     for(int mode=0;mode<MODE_COUNT;mode++){
-        current=mode;update_tray();assert(!spin_timer && last_tray_icon==mode_icons[mode]);
+        current=mode;update_tray();assert(!spin_timer && last_tray_icon==mode_icons[mode==MODE_NSP?MODE_SONIC:mode]);
     }
+    wchar_t directory[MAX_PATH],temporary[MAX_PATH];GetModuleFileNameW(NULL,directory,MAX_PATH);
+    wchar_t *slash=wcsrchr(directory,L'\\');assert(slash);*slash=0;
+    assert(GetTempFileNameW(directory,L"rot",0,temporary));wcscpy(ini,temporary);
+    assert(WritePrivateProfileStringW(L"NSP",L"FrontendFormat",L"DTSXUltra",ini));
+    current=MODE_NSP;nsp_success_requested=1;update_tray();
+    BOOL animation=TRUE;SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION,0,&animation,0);
+    if(animation){
+        assert(success_spinning && spin_timer && success_source==MODE_DTS_SP);
+        success_started-=FSA_SUCCESS_INTERVAL_MS*5;update_tray();
+        assert(last_tray_icon==success_icons[(GetTickCount64()-success_started)/FSA_SUCCESS_INTERVAL_MS]);
+        DWORD gdi=GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS),objects=GetGuiResources(GetCurrentProcess(),GR_USEROBJECTS);
+        for(int i=0;i<12;i++)update_tray();
+        assert(gdi==GetGuiResources(GetCurrentProcess(),GR_GDIOBJECTS) && objects==GetGuiResources(GetCurrentProcess(),GR_USEROBJECTS));
+        success_started-=FSA_SPIN_FRAMES*FSA_SUCCESS_INTERVAL_MS;update_tray();
+    }
+    assert(!success_spinning && !spin_timer && last_tray_icon==mode_icons[MODE_DTS_SP]);
+    update_tray();assert(!success_spinning && !spin_timer);
+    assert(DeleteFileW(temporary));ini[0]=0;
     DestroyWindow(window);CloseHandle(stop);release_icons();
-    puts("PASS 168 rotating stereo frames: alpha, rotation, DPI, GDI cleanup; unknown and initializing states animate; known modes stop timer");
+    puts("PASS rotating stereo frames, alpha/DPI cleanup, one verified success turn with the frontend icon, cached frames and timer completion");
     return 0;
 }

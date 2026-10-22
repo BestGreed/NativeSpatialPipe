@@ -5,7 +5,11 @@ use std::{
     slice,
 };
 mod packet;
+mod capture_input;
+mod olr_input;
+mod spatial_input;
 mod raw_tap;
+mod output_pool;
 
 struct Bridge {
     rdr: RoarRenderer,

@@ -336,4 +336,24 @@ mod tests {
     }
     #[test] fn fixed_frame_bound() { let text=format!("[{}]",vec!["480";161].join(","));assert!(serde_json::from_str::<Frames>(&text).is_err()); }
     #[test] fn wire_layout() { assert_eq!(SLOT,2634764);assert_eq!(RING,42156240);assert_eq!(SLOT%4,0); }
+    #[test] fn priority_route_accepts_714_and_rejects_whole_mixed_packet() {
+        fn select(types: &[u32]) -> (bool, u64) {
+            let text=format!(r#"{{"block":"0x123","sequence":0,"count":{},"captureQpcNs":1,"copyDoneQpcNs":2,"sendQpcNs":3,"framesUniform":480}}"#,types.len());
+            let d:Descriptor=serde_json::from_str(&text).unwrap();
+            let mut payload=vec![0u8;types.len()*(32+480*4)];
+            for (i,typ) in types.iter().enumerate(){
+                payload[i*32+4..i*32+8].copy_from_slice(&480u32.to_le_bytes());
+                payload[i*32+8..i*32+12].copy_from_slice(&typ.to_le_bytes());
+            }
+            let mut routes=PriorityRoutes::new([1;16],4,1_000_000);
+            let (slot,accepted)=routes.select(&d,&payload,480).unwrap();
+            (accepted,routes.routes[slot].unsupported)
+        }
+        let standard=[1,2,4,8,16,32,64,128,256,512,1024,2048,4096];
+        assert_eq!(select(&standard),(true,0));
+        for typ in standard {assert_eq!(select(&[typ]),(true,0));}
+        for typ in [0,3,8192,16384,32768,65536,131072,262144,524288] {
+            assert_eq!(select(&[1,2,typ]),(false,1));
+        }
+    }
 }

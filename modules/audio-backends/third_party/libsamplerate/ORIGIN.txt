@@ -1,0 +1,7 @@
+Coefficient source: libsndfile/libsamplerate 0.2.2
+https://github.com/libsndfile/libsamplerate
+Commit: c96f5e3de9c4488f4e6c97f59f5245f22fda22f7
+Files: src/high_qual_coeffs.h, COPYING (renamed LICENSE)
+Unmodified best-quality sinc coefficient table, compiled as double precision.
+Spatial ASIO supplies its own streaming, phase interpolation and clock control.
+See LICENSE for the BSD-2-Clause redistribution terms.
