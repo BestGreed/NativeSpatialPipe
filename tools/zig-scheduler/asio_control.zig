@@ -20,9 +20,10 @@ pub const Backend = struct {
         stream: ?*Stream = null,
         processing: processing.Config = .{},
         prebuffer_frames: u32 = 0,
-        startup_timeout_ms: u32 = 5000,
-        rebuffer_timeout_ms: u32 = 1000,
-        max_rebuffers: u32 = 3,
+        // Legacy playback-file controls, accepted but inactive for session output.
+        startup_timeout_ms: u32 = 0,
+        rebuffer_timeout_ms: u32 = 0,
+        max_rebuffers: u32 = 0,
         drain_timeout_ms: u32 = 5000,
         pub fn setOutputOrder(self: *Config, name: []const u8) !void {
             if (self.source_channels != 12 or self.output_channels != 12) return error.OutputOrderRequiresTwelveChannels;
@@ -86,9 +87,9 @@ pub const Backend = struct {
     }
     pub fn open(self: *Backend, config: Config) !void {
         if (self.dll != null) return error.AsioAlreadyOpen;
-        if (config.stream != null and (config.source_channels != 12 or config.processing.channels != 12 or
-            config.startup_timeout_ms == 0 or config.rebuffer_timeout_ms == 0 or config.drain_timeout_ms == 0 or config.prebuffer_frames > 48000)) return error.InvalidPlaybackConfig;
-        var dll = try std.DynLib.open(std.mem.sliceTo(&config.dll_path, 0));
+        if (config.stream != null and (config.source_channels != config.stream.?.channel_count or config.processing.channels != config.source_channels or
+            config.drain_timeout_ms == 0 or config.prebuffer_frames > 48000)) return error.InvalidPlaybackConfig;
+        var dll = try @import("native_library.zig").open(std.mem.sliceTo(&config.dll_path, 0));
         errdefer dll.close();
         const version = dll.lookup(*const @TypeOf(c.nsp_asio_abi_version), "nsp_asio_abi_version") orelse return error.MissingAsioExport;
         if (version() != c.NSP_ASIO_ABI_VERSION) return error.AsioAbiMismatch;
@@ -155,11 +156,10 @@ pub const Backend = struct {
         try self.check(self.stats_fn(self.handle, &stats));
         const now = self.timer.?.read();
         if (self.state == .playing and !self.device_eof and stats.starvation_frames > self.last_starved) {
-            self.rebuffers += 1;
-            if (self.rebuffers > self.limits.max_rebuffers) {
-                stream.update(.playing, self.next_frame, stats.callbacks, stats.starvation_frames, self.rebuffers);
-                return error.RepeatedOutputStarvation;
-            }
+            // Source absence is normal for a resident endpoint. Device callbacks
+            // keep writing silence while hold prevents consuming absent source.
+            // Count gaps diagnostically; they do not terminate the session.
+            self.rebuffers +|= 1;
             try self.check(self.hold_fn(self.handle, 1));
             self.state = .rebuffering;
             self.since = now;
@@ -208,15 +208,9 @@ pub const Backend = struct {
         stream.metrics(stats.device_sample_rate, stats.device_buffer_frames, stats.buffered_source_frames,
             stats.source_frame, timing.calibration_max_frames, timing.lookahead_frames,
             prebuffer, wait_ns);
-        const timeout_ms: ?u32 = switch (self.state) {
-            .waiting => self.limits.startup_timeout_ms,
-            .rebuffering => self.limits.rebuffer_timeout_ms,
-            .draining => self.limits.drain_timeout_ms,
-            else => null,
-        };
-        if (timeout_ms) |ms| {
-            if (now - self.since >= @as(u64, ms) * std.time.ns_per_ms) return error.OutputTimeout;
-        }
+        // Only explicit session termination drains and has a bounded deadline.
+        // Initial wait and later gaps never mean EOF or device stop.
+        if (self.state == .draining and now - self.since >= @as(u64, self.limits.drain_timeout_ms) * std.time.ns_per_ms) return error.OutputTimeout;
         stream.update(self.state, self.next_frame, stats.callbacks, stats.starvation_frames, self.rebuffers);
     }
 };

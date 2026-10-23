@@ -42,6 +42,20 @@ if($LASTEXITCODE){throw 'Icon tests failed'}
 if($LASTEXITCODE){throw 'NSp UI contract build failed'}
 & "$bin/nsp-ui-test.exe"
 if($LASTEXITCODE){throw 'NSp UI contract failed'}
+& $clang @flags "$src/menu_visibility_test.c" -luser32 -lgdi32 -ldwmapi -luxtheme -o "$bin/menu-visibility-test.exe"
+if($LASTEXITCODE){throw 'Menu visibility regression build failed'}
+& "$bin/menu-visibility-test.exe"
+if($LASTEXITCODE){throw 'Menu visibility regression failed'}
+& $clang @flags "$src/web_host_test.c" -ladvapi32 -luser32 -o "$bin/web-host-test.exe"
+if($LASTEXITCODE){throw 'Web host contract build failed'}
+& "$bin/web-host-test.exe"
+if($LASTEXITCODE){throw 'Web host contract failed'}
+& $clang @flags "$src/playback_location_test.c" -municode -o "$bin/playback-location-test.exe"
+if($LASTEXITCODE){throw 'Playback location regression build failed'}
+$locationFixture=Join-Path $bin ('playback-location-'+[Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $locationFixture | Out-Null
+& "$bin/playback-location-test.exe" $locationFixture
+if($LASTEXITCODE){throw 'Playback location regression failed'}
 & $clang @flags "$src/nsp_lock_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/nsp-lock-test.exe"
 if($LASTEXITCODE){throw 'NSp Lock contract build failed'}
 & "$bin/nsp-lock-test.exe"
@@ -60,6 +74,12 @@ if($LASTEXITCODE){throw 'Tray animation tests failed'}
 if($LASTEXITCODE){throw 'Popup test build failed'}
 & $clang @flags "$src/profile_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/profile-test.exe"
 if($LASTEXITCODE){throw 'Profile test build failed'}
+& $clang @flags "$src/pcm_format_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/pcm-format-test.exe"
+if($LASTEXITCODE){throw 'PCM format test build failed'}
+$pcmFixture=Join-Path $destination ('pcm-format-test-'+[guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $pcmFixture | Out-Null
+& "$bin/pcm-format-test.exe" $pcmFixture
+if($LASTEXITCODE){throw 'PCM format tests failed'}
 # Prepare a separate runnable installation; preserve existing snapshots and rules.
 if(-not(Test-Path "$destination/final-spatial-audio.ini")){
  if(Test-Path "$Installation/final-spatial-audio.ini"){Copy-Item -LiteralPath "$Installation/final-spatial-audio.ini" -Destination $destination}

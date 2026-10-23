@@ -2,6 +2,7 @@
 use std::{ffi::c_void, sync::mpsc::SyncSender};
 
 pub struct Block {
+    pub channels: usize,
     pub data: Vec<f32>,
     pub recycle: SyncSender<Box<Block>>,
 }
@@ -21,9 +22,9 @@ unsafe extern "C" fn release(token: *mut c_void) {
 }
 impl Sink {
     pub fn process(&self, block: &mut Block, finish: bool) -> Result<usize,String> {
-        let capacity = (block.data.len()/12) as u32;
+        let capacity = (block.data.len()/block.channels) as u32;
         let mut frames = capacity;
-        let code = unsafe { (self.process)(self.context as *mut c_void, u32::from(finish), block.data.as_mut_ptr(), capacity, 12, &mut frames) };
+        let code = unsafe { (self.process)(self.context as *mut c_void, u32::from(finish), block.data.as_mut_ptr(), capacity, block.channels as u32, &mut frames) };
         if code != 0 || frames > capacity || (!finish && frames != capacity) {
             return Err(format!("Pool DSP rejected PCM: {code}"));
         }
@@ -31,10 +32,11 @@ impl Sink {
     }
     pub fn publish(&self, block: Box<Block>, first: u64, frames: usize, tail: bool) -> Result<(),String> {
         let pcm = block.data.as_ptr();
+        let channels = block.channels;
         let token = Box::into_raw(block);
         // After this call succeeds we MUST NOT dereference token: the consumer
         // may already have released/reused it on another thread.
-        let code = unsafe { (self.publish)(self.context as *mut c_void, first, pcm, frames as u32, 12,
+        let code = unsafe { (self.publish)(self.context as *mut c_void, first, pcm, frames as u32, channels as u32,
             u32::from(tail), token.cast(), release) };
         if code != 0 {
             unsafe { drop(Box::from_raw(token)); }

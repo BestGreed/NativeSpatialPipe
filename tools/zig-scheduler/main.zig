@@ -23,11 +23,13 @@ fn execute() !void {
         const bytes=try u.read(path);defer u.a.free(bytes);
         var parsed=try profile.parse(u.a,bytes);defer parsed.deinit();
         const processing=parsed.value.processingConfig();
+        const channels=parsed.value.channelCount();const labels=try parsed.value.labels();
         const selection=try profile.select(parsed.value.renderer,parsed.value.mode);
         const result=try u.json(.{.valid=true,.renderer=selection.backend,.rendererMode=selection.mode,.playback=parsed.value,
-            .sourceChannels=@as(u32,12),.sourceSampleRate=@as(u32,48000),.sourceChannelIndices=try parsed.value.sources(),
-            .physicalChannelIndices=try parsed.value.physical(),.outputChannelLabels=try parsed.value.labels(),
-            .effectiveOutputProcessing=.{.bypass=processing.bypass,.effectiveBypass=processing.bypass or processing.neutral(),.placement="rust-output-pool",.master=processing.master,.trim=processing.trim[0..12],.delayFrames=processing.delay_frames[0..12],
+            .sourceChannels=channels,.outputLayout=parsed.value.outputLayout,.sourceSampleRate=@as(u32,48000),.sourceChannelIndices=try parsed.value.sources(),
+            .physicalChannelIndices=try parsed.value.physical(),.outputChannelLabels=labels[0..channels],
+            .effectiveOutputLifecycle=.{.lifetime="session",.noInput="silence",.startupTimeoutMs=@as(u32,0),.rebufferTimeoutMs=@as(u32,0),.maxRebuffers=@as(u32,0),.drainTimeoutMs=parsed.value.drainTimeoutMs},
+            .effectiveOutputProcessing=.{.bypass=processing.bypass,.effectiveBypass=processing.bypass or processing.neutral(),.placement="rust-output-pool",.master=processing.master,.trim=processing.trim[0..channels],.delayFrames=processing.delay_frames[0..channels],
                 .limiter=.{.enabled=processing.limiter,.ceiling=processing.ceiling,.releaseMs=processing.release_ms,
                     .configuredLookaheadFrames=processing.lookahead_frames,.effectiveLookaheadFrames=if(processing.limiter and !processing.bypass) processing.lookahead_frames else @as(u32,0)}}});
         defer u.a.free(result);try std.io.getStdOut().writer().print("{s}\n",.{result});return;
@@ -38,6 +40,7 @@ fn execute() !void {
     const defaultHome = try u.join(&.{ local, "NativeSpatialPipe" });
     defer u.a.free(defaultHome);
     const home = u.option(args, "--home") orelse defaultHome;
+    if (std.mem.eql(u8, args[1], "web-host")) return @import("web_host.zig").serve(args, root, home);
     if (std.mem.eql(u8, args[1], "serve")) return backend.serve(args, root, home);
     if (std.mem.eql(u8, args[1], "backend-start")) return control.ensure(args, root, home);
     if (std.mem.eql(u8, args[1], "request")) {

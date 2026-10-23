@@ -73,6 +73,10 @@ static SpatialSettings spatial_settings[3];
 static unsigned spatial_captured;
 static LONG available_modes=0,capture_requested=0;
 static LONG pipeline_requested=0;
+static LONG edid_requested=0,edid_menu_state=0,edid_busy=0;
+static HANDLE edid_process;
+static wchar_t edid_request_endpoint[1024];
+static wchar_t edid_state_endpoint[1024];
 static LONG route_lock_index=-1,route_lock_requested,route_lock_busy,route_lock_hook_mask;
 static wchar_t route_lock_endpoint[512];
 static LONG nsp_success_requested;
@@ -85,6 +89,41 @@ static unsigned debounce_ms=500;
 static void log_line(const wchar_t *message,HRESULT hr);
 #include "nsp_control.h"
 #include "pipeline_init.h"
+#include "edid_menu.h"
+#include "web_host.h"
+static HANDLE web_process,web_mapping;
+static FSA_WebSnapshot *web_snapshot;
+static LONG web_nsp_code=20;
+static FSA_TrayClicks tray_clicks;
+#define TIMER_TRAY_CLICKS 4
+static void web_publish(void) {
+    if(!web_snapshot)return;
+    InterlockedIncrement(&web_snapshot->sequence);
+    AcquireSRWLockShared(&state_lock);
+    web_snapshot->mode=current;
+    wcsncpy(web_snapshot->status,status,127);web_snapshot->status[127]=0;
+    ReleaseSRWLockShared(&state_lock);
+    web_snapshot->available=InterlockedCompareExchange(&available_modes,0,0);
+    web_snapshot->locked=InterlockedCompareExchange(&nsp_ui_locked,0,0);
+    web_snapshot->starting=InterlockedCompareExchange(&nsp_starting,0,0);
+    web_snapshot->nspCode=web_nsp_code;
+    wcsncpy(web_snapshot->endpoint,profiles[0].endpoint,1023);web_snapshot->endpoint[1023]=0;
+    web_snapshot->observedMs=GetTickCount64();
+    MemoryBarrier();InterlockedIncrement(&web_snapshot->sequence);
+}
+static void web_start(void) {
+    if(web_process){if(WaitForSingleObject(web_process,0)==WAIT_TIMEOUT)return;CloseHandle(web_process);web_process=NULL;}
+    wchar_t exe[MAX_PATH],command[2048];
+    swprintf(exe,MAX_PATH,L"%ls\\..\\zig-scheduler\\nsp-scheduler.exe",root);
+    swprintf(command,2048,L"\"%ls\" web-host --fsa-config \"%ls\" --owner-pid %lu",exe,ini,GetCurrentProcessId());
+    PROCESS_INFORMATION child={0};DWORD stage=0;
+    if(fsa_web_spawn(exe,command,&child,&stage)){CloseHandle(child.hThread);web_process=child.hProcess;}
+    else {DWORD error=GetLastError();wchar_t detail[160];swprintf(detail,160,L"Web API Host launch failed stage=%lu (audio management remains available)",stage);log_line(detail,HRESULT_FROM_WIN32(error));}
+}
+static void web_open(void) {
+    web_start();
+    ShellExecuteW(window,L"open",L"http://127.0.0.1:8767/",NULL,NULL,SW_SHOWNORMAL);
+}
 
 static void log_line(const wchar_t *message,HRESULT hr) {
     WIN32_FILE_ATTRIBUTE_DATA attr;
@@ -116,6 +155,7 @@ static void request_exit(void) {
 }
 static int exit_ready(void) {
     if(!InterlockedCompareExchange(&exit_requested,0,0))return 0;
+    if(InterlockedCompareExchange(&edid_busy,0,0)){publish(-1,language==FSA_ZH?L"等待 EDID 操作完成后退出":L"Waiting for EDID operation before exit");return 0;}
     int code=nsp_configured()?nsp_shutdown():InterlockedCompareExchange(&nsp_ui_locked,0,0)?NSP_UNKNOWN:NSP_STOPPED;
     if(code==NSP_STOPPED)return 1;
     publish(-1,language==FSA_ZH?L"退出等待停止验证；可重试急停，托盘仍可操作":L"Exit awaiting stop verification; emergency stop remains available");
@@ -127,6 +167,9 @@ static void retry_start_after_stop(LONG request,int code,int locked) {
     if(request==1 && locked && code==NSP_STOPPED && !InterlockedCompareExchange(&exit_requested,0,0)){
         nsp_queue_request(1);SetEvent(wake);
     }
+}
+static int nsp_start_cancelled(void){
+    return InterlockedCompareExchange(&exit_requested,0,0) || InterlockedCompareExchange(&nsp_requested,0,0)>=2;
 }
 /* Also keeps the exit path available after endpoint/COM initialization fails. */
 static unsigned exit_only_worker(void) {
@@ -269,35 +312,17 @@ static int actual_equal(const AL_Snapshot *a,const SpatialSettings *s,const AL_S
     return !memcmp(a,b,sizeof(*a)) && s->words[0]==t->words[0] && !memcmp(&s->words[3],&t->words[3],16);
 }
 static void check_capabilities(SpatialPolicy *p) {
-    unsigned flags=0;
-    for(int i=0;i<3;i++) {
-        HRESULT hr=al_supported(&profiles[i]);
-        /* S_FALSE means exclusive access disabled, not an unsupported format.
-           Preserve the option and let the verified apply decide at selection time. */
-        if(SUCCEEDED(hr))flags|=1u<<i;
-
-    }
-    if(p) {
-        WAVEFORMATEX *f=NULL;SpatialSettings *s=NULL;BYTE *d=NULL;UINT32 n=0;
-        HRESULT hr=p->v->get(p,profiles[0].endpoint,FALSE,&f,&s,&n,&d);
-        if(SUCCEEDED(hr) && n<=128 && d)for(UINT32 i=0;i<n;i++) {
-            DWORD supported=0;memcpy(&supported,d+i*0x342+0x310,4);
-            for(int j=0;j<7;j++){GUID g;if(supported && SUCCEEDED(CLSIDFromString(pipeline_guids[j],&g)) && !memcmp(d+i*0x342+0x300,&g,16))flags|=1u<<pipeline_modes[j];}
-        }
-        CoTaskMemFree(f);CoTaskMemFree(s);CoTaskMemFree(d);
-    }
+    unsigned spatial=pipeline_query_capabilities(p,profiles[0].endpoint);
+    AcquireSRWLockExclusive(&state_lock);wcscpy(edid_state_endpoint,profiles[0].endpoint);ReleaseSRWLockExclusive(&state_lock);
+    LONG edid_state=(LONG)fsa_edid_state(spatial,fsa_edid_endpoint_eligible(profiles[0].endpoint),InterlockedCompareExchange(&edid_busy,0,0));
+    LONG edid_before=InterlockedExchange(&edid_menu_state,edid_state);
+    if(edid_before!=edid_state)PostMessageW(window,WM_STATUS,0,0);
+    unsigned flags=pcm_profile_capabilities()|spatial;
     /* Availability of NSp follows its configured frontend, not Sonic alone. */
-    int front=pipeline_index();GUID selected_front;int front_available=0;
-    if(front>=0 && SUCCEEDED(CLSIDFromString(pipeline_guids[front],&selected_front)) && p){
-        WAVEFORMATEX *f=NULL;SpatialSettings *s=NULL;BYTE *d=NULL;UINT32 n=0;
-        if(SUCCEEDED(p->v->get(p,profiles[0].endpoint,FALSE,&f,&s,&n,&d)) && d && n<=128)
-            for(UINT32 i=0;i<n;i++)if(d[i*0x342+0x310] && !memcmp(d+i*0x342+0x300,&selected_front,16))front_available=1;
-        CoTaskMemFree(f);CoTaskMemFree(s);CoTaskMemFree(d);
-    }
+    int front=pipeline_index();int front_available=front>=0 && (spatial&(1u<<pipeline_modes[front]));
     /* An explicitly requested initializer keeps the start action selectable.
        prepare still requires a live tag before any support-precheck bypass. */
     if(nsp_configured() && (front_available || pipeline_live(profiles[0].endpoint,front) || pipeline_initialization_requested(front)))flags|=1u<<MODE_NSP;
-    for(int i=0;i<7;i++)if(pipeline_live(profiles[0].endpoint,i))flags|=1u<<pipeline_modes[i];
     if(InterlockedCompareExchange(&route_lock_index,0,0)>=0 && !route_lock_bound())flags&=~(1u<<MODE_NSP);
     LONG before=InterlockedExchange(&available_modes,(LONG)flags);
     if((unsigned)before!=flags){wchar_t message[80];swprintf(message,80,L"Available mode mask: 0x%02x",flags);log_line(message,S_OK);PostMessageW(window,WM_STATUS,0,0);}
@@ -376,6 +401,7 @@ static unsigned __stdcall worker(void *unused) {
     if(FAILED(hr))log_line(L"Spatial interface unavailable; PCM only",hr);
     int first=0;
     if(!initialize_profiles(&first)) {InterlockedExchange(&nsp_starting,0);publish(-1,UI(TXT_INIT_FAILED));if(p)p->v->release(p);CoUninitialize();return exit_only_worker();}
+    int profiles_ready=1;
     route_lock_load();check_capabilities(p);
     if(first && !(available_modes&24) && !quiet_start)PostMessageW(window,WM_NOTICE,1,0);
     AL_Snapshot baseline={0};SpatialSettings baseline_spatial={0};int have_baseline=0;
@@ -386,7 +412,21 @@ static unsigned __stdcall worker(void *unused) {
     ULONGLONG pipeline_due=0;int pipeline_first=1;
     HANDLE events[]={stop,wake};
     while(WaitForSingleObject(stop,0)!=WAIT_OBJECT_0) {
+        web_publish();
+        if(edid_process){
+            DWORD result=1;
+            if(WaitForSingleObject(edid_process,0)==WAIT_TIMEOUT){WaitForMultipleObjects(2,events,FALSE,250);continue;}
+            GetExitCodeProcess(edid_process,&result);CloseHandle(edid_process);edid_process=NULL;
+            if(p)p->v->release(p);p=NULL;
+            CoCreateInstance(&spatial_policy_class,NULL,CLSCTX_ALL,&spatial_policy_iid,(void**)&p);
+            InterlockedExchange(&edid_busy,0);check_capabilities(p);audit=0;capability_due=0;
+            int verified=result==0 && (InterlockedCompareExchange(&edid_menu_state,0,0)&FSA_EDID_SUPPORTED);
+            log_line(L"Manual EDID initialization and verification",verified?S_OK:E_FAIL);
+            if(!InterlockedCompareExchange(&exit_requested,0,0))PostMessageW(window,WM_NOTICE,verified?4:5,0);
+            PostMessageW(window,WM_STATUS,0,0);
+        }
         if(InterlockedCompareExchange(&exit_requested,0,0)){
+            if(InterlockedExchange(&edid_requested,0)){InterlockedExchange(&edid_busy,0);InterlockedAnd(&edid_menu_state,~(LONG)FSA_EDID_BUSY);}
             if(exit_ready()){
                 if(p)p->v->release(p);CoUninitialize();
                 InterlockedExchange(&exit_verified,1);PostMessageW(window,WM_EXIT_READY,0,0);return 0;
@@ -394,6 +434,41 @@ static unsigned __stdcall worker(void *unused) {
             WaitForMultipleObjects(2,events,FALSE,2000);continue;
         }
         if(InterlockedExchange(&reload_requested,0)) { load_rules(); d.pending=-1; }
+        /* Sync FSA snapshots before any idle-session hook/query/menu work.
+           An active NSp session keeps its original endpoint until it stops. */
+        if(!nsp_locked){
+            int endpoint_changed=default_pcm_endpoint_changed();
+            if(endpoint_changed || !profiles_ready){
+                AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
+                have_baseline=0;cached=-1;verified=-1;d.pending=-1;failed_target=-1;audit=0;
+                InterlockedExchange(&available_modes,0);
+                InterlockedExchange(&edid_menu_state,InterlockedCompareExchange(&edid_busy,0,0)?FSA_EDID_BUSY:0);
+                int new_endpoint=0;
+                profiles_ready=endpoint_changed>=0 && initialize_profiles(&new_endpoint);
+                if(!profiles_ready){
+                    publish(-1,UI(TXT_INIT_FAILED));WaitForMultipleObjects(2,events,FALSE,1000);continue;
+                }
+                log_line(L"FSA active endpoint snapshots synchronized",S_OK);
+                check_capabilities(p);capability_due=GetTickCount64()+30000;
+                pipeline_first=1;pipeline_due=0;
+                InterlockedExchange(&pipeline_requested,3);
+            }
+        }
+        if(InterlockedExchange(&edid_requested,0)){
+            wchar_t requested[1024],output[MAX_PATH];
+            AcquireSRWLockShared(&state_lock);wcscpy(requested,edid_request_endpoint);ReleaseSRWLockShared(&state_lock);
+            check_capabilities(p);
+            unsigned state=(unsigned)InterlockedCompareExchange(&edid_menu_state,0,0);
+            if(state&FSA_EDID_SUPPORTED){InterlockedExchange(&edid_busy,0);check_capabilities(p);continue;}
+            HRESULT started=E_INVALIDARG;
+            if(!nsp_locked && !wcscmp(requested,profiles[0].endpoint) && (state&FSA_EDID_ELIGIBLE) && !(state&FSA_EDID_SUPPORTED) && default_pcm_endpoint_changed()==0){
+                swprintf(output,MAX_PATH,L"%ls\\edid-operations\\%lu-%llu",root,GetCurrentProcessId(),GetTickCount64());
+                log_line(output,S_OK);started=pipeline_edid_begin(requested,output,&edid_process);
+            }
+            if(SUCCEEDED(started)){publish(-1,language==FSA_ZH?L"正在写入 EDID 并重载显示驱动":L"Writing EDID and reloading the display driver");continue;}
+            InterlockedExchange(&edid_busy,0);check_capabilities(p);
+            log_line(L"Manual EDID request rejected before write",started);PostMessageW(window,WM_NOTICE,5,0);
+        }
         LONG lock_action=InterlockedExchange(&route_lock_requested,0);
         if(lock_action){
             HRESULT changed=route_lock_change(p,lock_action);log_line(L"NSp Lock snapshot",changed);
@@ -427,7 +502,7 @@ static unsigned __stdcall worker(void *unused) {
                 nsp_locked=1;nsp_fault=0;
                 nsp_announced=0;
                 HRESULT selected=E_ACCESSDENIED;
-                if((InterlockedCompareExchange(&route_lock_index,0,0)<0 || route_lock_bound()) && nsp_control(L"preflight")==NSP_PREFLIGHT && !InterlockedCompareExchange(&exit_requested,0,0)){
+                if(!nsp_start_cancelled() && (InterlockedCompareExchange(&route_lock_index,0,0)<0 || route_lock_bound()) && nsp_control(L"preflight")==NSP_PREFLIGHT && !nsp_start_cancelled()){
                     int locked_front=InterlockedCompareExchange(&route_lock_index,0,0);
                     unsigned required=(unsigned)InterlockedCompareExchange(&route_lock_hook_mask,0,0);
                     int ready=locked_front<0 || route_lock_reassert(locked_front,required);
@@ -436,9 +511,11 @@ static unsigned __stdcall worker(void *unused) {
                     wchar_t init[MAX_PATH];GetPrivateProfileStringW(L"NSP",L"PipelineInitScript",L"",init,MAX_PATH,ini);
                     selected=!ready?E_FAIL:init[0]?pipeline_command(L"prepare"):pipeline_index()==0?switch_mode(p,MODE_SONIC):E_INVALIDARG;
                 }
-                code=SUCCEEDED(selected) && !InterlockedCompareExchange(&exit_requested,0,0)?nsp_control(L"start"):20;
-                if(FAILED(selected))nsp_fault=1;
+                int cancelled=nsp_start_cancelled();
+                code=cancelled?NSP_BUSY:SUCCEEDED(selected)?nsp_control(L"start"):NSP_UNKNOWN;
+                if(FAILED(selected) && !cancelled)nsp_fault=1;
             } else code=nsp_control(request==3?L"emergency-stop":request==2?L"stop":L"status");
+            web_nsp_code=code;
             retry_start_after_stop(request,code,nsp_locked);
             nsp_due=GetTickCount64()+2000;
             if(!nsp_blocks_rules(code) && (!nsp_fault || request==1 || request==2 || request==3 || InterlockedCompareExchange(&nsp_next_mode,0,0)>=0)){
@@ -506,14 +583,7 @@ static unsigned __stdcall worker(void *unused) {
                 baseline=actual;baseline_spatial=settings;have_baseline=1;verified=matches_profile(cached,&actual,&settings)?cached:-1;
             } else {cached=-1;verified=-1;have_baseline=0;}
             if(now>=capability_due){
-                AL_Snapshot endpoint;
-                if(SUCCEEDED(al_capture(NULL,&endpoint)) && wcscmp(endpoint.endpoint,profiles[0].endpoint)) {
-                    AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
-                    auto_mode=0;lock_mode=-1;have_baseline=0;cached=-1;verified=-1;d.pending=-1;
-                    int first=0;
-                    if(!initialize_profiles(&first))InterlockedExchange(&available_modes,0);
-                    else {check_capabilities(p);if(first && !(available_modes&24))PostMessageW(window,WM_NOTICE,1,0);}
-                } else check_capabilities(p);
+                check_capabilities(p);
                 capability_due=now+30000;
             }
             if(SUCCEEDED(hr)) InterlockedExchange(&worker_read_ok,1);
@@ -551,6 +621,7 @@ static unsigned __stdcall worker(void *unused) {
         DWORD delay=next_wait(after,audit,auto_mode && enabled_rules,due,
                              target>=0 && target==failed_target && retry>after?retry:0);
         if(nsp_configured() && delay>2000)delay=2000;
+        if(delay>1000)delay=1000; /* FSA default-device synchronization cadence. */
         if(WaitForMultipleObjects(2,events,FALSE,delay)==WAIT_OBJECT_0) break;
     }
     if(p)p->v->release(p); CoUninitialize(); return 0;
@@ -606,6 +677,7 @@ static void open_text(const wchar_t *path) {
     ShellExecuteW(window,L"open",L"notepad.exe",argument,NULL,SW_SHOWNORMAL);
 }
 static void request_manual_mode(int target) {
+    if(InterlockedCompareExchange(&edid_busy,0,0))return;
     if(InterlockedCompareExchange(&exit_requested,0,0))return;
     if(target<MODE_STEREO || target>=MODE_COUNT || target==MODE_NSP)return;
     if(route_lock_target(InterlockedCompareExchange(&route_lock_index,0,0),target)==MODE_NSP){
@@ -631,6 +703,7 @@ static void request_manual_mode(int target) {
 }
 static void read_menu_state(FSA_MenuState *state){
     memset(state,0,sizeof(*state));state->language=language;state->frontend=pipeline_index();
+    state->edid=(unsigned)InterlockedCompareExchange(&edid_menu_state,0,0);
     state->extreme=(GetPrivateProfileIntW(L"NSP",L"PersistEnumerationHook",0,ini)?1u:0u)|
                   (GetPrivateProfileIntW(L"NSP",L"HookHeadphones",0,ini)?2u:0u)|
                   (GetPrivateProfileIntW(L"NSP",L"HookSpeakers",0,ini)?4u:0u);
@@ -642,6 +715,15 @@ static void read_menu_state(FSA_MenuState *state){
     state->available=(unsigned)InterlockedCompareExchange(&available_modes,0,0);state->startup=startup_enabled();
 }
 static void pipeline_menu_action(UINT command){
+    if(InterlockedCompareExchange(&edid_busy,0,0))return;
+    if(command==414){
+        unsigned state=(unsigned)InterlockedCompareExchange(&edid_menu_state,0,0);
+        if(!(state&FSA_EDID_ELIGIBLE) || (state&FSA_EDID_SUPPORTED) || InterlockedCompareExchange(&nsp_ui_locked,0,0))return;
+        if(InterlockedCompareExchange(&edid_busy,1,0))return;
+        AcquireSRWLockExclusive(&state_lock);wcscpy(edid_request_endpoint,edid_state_endpoint);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
+        InterlockedOr(&edid_menu_state,FSA_EDID_BUSY);InterlockedExchange(&edid_requested,1);
+        PostMessageW(window,WM_STATUS,0,0);SetEvent(wake);return;
+    }
     if(command==311){
         if(!InterlockedExchange(&route_lock_busy,1)){InterlockedExchange(&route_lock_requested,InterlockedCompareExchange(&route_lock_index,0,0)>=0?2:1);SetEvent(wake);}
         return;
@@ -653,23 +735,29 @@ static void pipeline_menu_action(UINT command){
     if(command==413){WritePrivateProfileStringW(L"NSP",L"PersistEnumerationHook",L"0",ini);InterlockedExchange(&pipeline_requested,2);}
     InterlockedExchange(&reload_requested,1);SetEvent(wake);
 }
+static void request_nsp_toggle(void){
+    if(InterlockedCompareExchange(&edid_busy,0,0) || InterlockedCompareExchange(&exit_requested,0,0))return;
+    FSA_MenuState state={0};
+    AcquireSRWLockShared(&state_lock);state.selected=current;ReleaseSRWLockShared(&state_lock);
+    state.nsp_locked=InterlockedCompareExchange(&nsp_ui_locked,0,0);
+    LONG request=fsa_nsp_toggle_request(&state);
+    if(request==1 && !(InterlockedCompareExchange(&available_modes,0,0)&(1u<<MODE_NSP)))return;
+    AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
+    InterlockedExchange(&nsp_starting,request==1);update_tray();
+    InterlockedExchange(&nsp_next_mode,-1);InterlockedExchange(&nsp_ui_locked,1);
+    nsp_queue_request(request);SetEvent(wake);
+}
 static void menu(void) {
     static int showing=0;if(showing)return;
     FSA_MenuState state;read_menu_state(&state);
     showing=1;UINT command=fsa_popup(window,&state);showing=0;
     if(!IsWindow(window))return;
+    if(InterlockedCompareExchange(&edid_busy,0,0) && command!=204 && command!=205 && command!=209)return;
     if(InterlockedCompareExchange(&exit_requested,0,0) && command!=209 && command!=205 && command!=204)return;
-    if(command==311 || (command>=410 && command<=413)){
+    if(command==311 || (command>=410 && command<=414)){
         pipeline_menu_action(command);return;
     }
-    if(command==106){
-        AcquireSRWLockShared(&state_lock);state.selected=current;ReleaseSRWLockShared(&state_lock);
-        LONG request=fsa_nsp_toggle_request(&state);
-        AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
-        InterlockedExchange(&nsp_starting,request==1);update_tray();
-        InterlockedExchange(&nsp_next_mode,-1);InterlockedExchange(&nsp_ui_locked,1);
-        nsp_queue_request(request);SetEvent(wake);return;
-    }
+    if(command==106){request_nsp_toggle();return;}
     if(command==209){
         AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
         InterlockedExchange(&nsp_starting,0);update_tray();
@@ -678,7 +766,6 @@ static void menu(void) {
         if(!nsp_emergency_dispatch())publish(-1,L"Sonic NSp: emergency dispatch failed");
         nsp_queue_request(3);SetEvent(wake);return;
     }
-    if(command==208){AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);InterlockedExchange(&nsp_starting,0);update_tray();InterlockedExchange(&nsp_next_mode,-1);nsp_queue_request(2);SetEvent(wake);return;}
     if(InterlockedCompareExchange(&nsp_ui_locked,0,0) && ((command==200 && InterlockedCompareExchange(&route_lock_index,0,0)<0) || command==206))return;
     if(command>=100 && command<100+MODE_COUNT && command!=106 && (available_modes&(1<<(command-100)))) {
         request_manual_mode(command-100);return;
@@ -703,8 +790,15 @@ static LRESULT CALLBACK wndproc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
     static UINT recreated;
     if(!recreated) recreated=RegisterWindowMessageW(L"TaskbarCreated");
     if(msg==recreated) { Shell_NotifyIconW(NIM_ADD,&tray); return 0; }
-    if(msg==WM_TRAY && (l==WM_RBUTTONUP || l==WM_LBUTTONUP)) { menu(); return 0; }
+    if(msg==WM_TRAY && l==WM_RBUTTONUP) {KillTimer(hwnd,TIMER_TRAY_CLICKS);tray_clicks.count=0;menu();return 0;}
+    if(msg==WM_TRAY && l==WM_LBUTTONUP) {
+        KillTimer(hwnd,TIMER_TRAY_CLICKS);
+        if(fsa_tray_click(&tray_clicks,GetTickCount64(),GetDoubleClickTime()))web_open();
+        else SetTimer(hwnd,TIMER_TRAY_CLICKS,GetDoubleClickTime(),NULL);
+        return 0;
+    }
     if(msg==WM_NOTICE) {
+        if(w==4 || w==5){MessageBoxW(hwnd,w==4?(language==FSA_ZH?L"HT 能力回验通过，菜单已刷新。":L"HT capability verified. The menu has been refreshed."):(language==FSA_ZH?L"EDID 初始化未通过。请查看 FSA 日志指向的 result.json；若已写入，事务与恢复记录会保留。":L"EDID initialization did not verify. See result.json at the path in the FSA log; any applied transaction is retained."),L"Final Spatial Audio",MB_OK|(w==4?MB_ICONINFORMATION:MB_ICONWARNING));return 0;}
         const wchar_t *message=w==1?UI(TXT_NO_SPATIAL):
             w==2?UI(TXT_CAPTURE_OK):UI(TXT_CAPTURE_FAILED);
         MessageBoxW(hwnd,message,L"Final Spatial Audio",MB_OK|(w==2?MB_ICONINFORMATION:MB_ICONWARNING));return 0;
@@ -712,6 +806,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
     if(msg==WM_STATUS) { update_tray();FSA_MenuState state;read_menu_state(&state);fsa_popup_update(&state);return 0; }
     if(msg==FSA_WM_MENU_ACTION){pipeline_menu_action((UINT)w);FSA_MenuState state;read_menu_state(&state);fsa_popup_update(&state);return 0;}
     if(msg==WM_NSP_COMMAND && w>=1 && w<=3) {
+        if(w==1 && InterlockedCompareExchange(&edid_busy,0,0))return 0;
         if(InterlockedCompareExchange(&exit_requested,0,0) && w!=3)return 0;
         AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
         InterlockedExchange(&nsp_starting,w==1);update_tray();
@@ -729,6 +824,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
     if(msg==WM_TIMER && w==TIMER_NSP_SPIN) {update_tray();return 0;}
     if(msg==WM_TIMER && w==1) {KillTimer(hwnd,1);request_exit();return 0;}
     if(msg==WM_TIMER && w==3) {KillTimer(hwnd,3);menu();return 0;}
+    if(msg==WM_TIMER && w==TIMER_TRAY_CLICKS) {KillTimer(hwnd,TIMER_TRAY_CLICKS);tray_clicks.count=0;menu();return 0;}
     if(msg==WM_CLOSE) {request_exit();return 0;}
     if(msg==WM_EXIT_READY) {if(InterlockedCompareExchange(&exit_verified,0,0))DestroyWindow(hwnd);return 0;}
     if(msg==WM_DESTROY) {KillTimer(hwnd,TIMER_NSP_SPIN);spin_timer=0;SetEvent(stop); Shell_NotifyIconW(NIM_DELETE,&tray); PostQuitMessage(0); return 0; }
@@ -802,6 +898,10 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR cmd,int show) {
     tray.uCallbackMessage=WM_TRAY; tray.hIcon=mode_icons[MODE_STEREO]; swprintf(tray.szTip,128,L"Final Spatial Audio (%ls)",UI(TXT_MANUAL));
     if(!Shell_NotifyIconW(NIM_ADD,&tray)) { log_line(L"Tray creation failed",HRESULT_FROM_WIN32(GetLastError())); DestroyWindow(window); return 1; }
     update_tray();
+    web_mapping=CreateFileMappingW(INVALID_HANDLE_VALUE,NULL,PAGE_READWRITE,0,sizeof(FSA_WebSnapshot),FSA_WEB_MAPPING);
+    if(web_mapping)web_snapshot=MapViewOfFile(web_mapping,FILE_MAP_WRITE,0,0,sizeof(FSA_WebSnapshot));
+    if(web_snapshot){ZeroMemory(web_snapshot,sizeof(*web_snapshot));web_snapshot->magic=FSA_WEB_MAGIC;web_snapshot->version=1;web_snapshot->size=sizeof(*web_snapshot);web_snapshot->pid=GetCurrentProcessId();}
+    web_start();
     thread=(HANDLE)_beginthreadex(NULL,0,worker,NULL,0,NULL);
     if(!thread) { DestroyWindow(window); return 1; }
     if(!wcscmp(cmd,L"--smoke")) SetTimer(window,1,2000,NULL);
@@ -810,6 +910,9 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE previous,LPWSTR cmd,int show) {
     MSG msg; while(GetMessageW(&msg,NULL,0,0)>0) { TranslateMessage(&msg); DispatchMessageW(&msg); }
     if(hook) UnhookWinEvent(hook); SetEvent(stop); WaitForSingleObject(thread,INFINITE);
     CloseHandle(thread); CloseHandle(wake); CloseHandle(stop); CloseHandle(mutex);
+    if(web_snapshot)UnmapViewOfFile(web_snapshot);
+    if(web_mapping)CloseHandle(web_mapping);
+    if(web_process)CloseHandle(web_process); /* Host observes this FSA process exit. */
     if(nsp_emergency_process)CloseHandle(nsp_emergency_process);
     release_icons();
     return !wcscmp(cmd,L"--smoke") && !worker_read_ok ? 1 : 0;

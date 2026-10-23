@@ -19,8 +19,8 @@ def encode(value):
     return json.dumps(value, separators=(',', ':'), allow_nan=False).encode()
 
 
-def run(connection, secret, allowed_origins, debug=False, http_port=8766):
-    engine = SoundscapeEngine()
+def run(connection, secret, allowed_origins, debug=False, http_port=8766, output_layout='7.1.4'):
+    engine = SoundscapeEngine(output_layout=output_layout)
     reassembler=Reassembler()
     lock = threading.Lock()
     slots = threading.BoundedSemaphore(8)
@@ -205,7 +205,7 @@ def run(connection, secret, allowed_origins, debug=False, http_port=8766):
                         if payload:
                             with lock:
                                 if payload[:4]==b'NSPO':engine.ingest_objects(payload)
-                                elif len(payload)==BLOCK_BYTES:engine.ingest(payload)
+                                elif payload[:4]==b'NSPT':engine.ingest(payload)
             reassembler.expire()
             with lock: engine.flush()
     except (EOFError,BrokenPipeError):

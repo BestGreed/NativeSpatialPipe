@@ -4,6 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "node test-data.js",
+    "test:configuration": "node test-configuration.js",
+    "test:configuration-page": "node test-configuration-page.js",
     "test:navigation": "node test-navigation.js",
     "test:registration": "node test-registration.js",
     "test:navigation-core": "node test-navigation-core.js",

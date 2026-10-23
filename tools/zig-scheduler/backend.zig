@@ -82,6 +82,13 @@ pub const Controller = struct {
         if (!recovery) return false;
         const markerPath = u.join(&.{ session.outputDirectory, "observed/hook-session.json" }) catch return false;
         defer a.free(markerPath);
+        if (!u.exists(markerPath)) {
+            const value = u.json(session) catch return false;
+            defer a.free(value);
+            var object = u.parse(value) catch return false;
+            defer object.deinit();
+            return @import("stop_proof.zig").unmarked(self.root, self.home, object.value, session.outputDirectory) catch false;
+        }
         var marker = u.load(markerPath) catch return false;
         defer marker.deinit();
         const pid = std.math.cast(u32, u.number(u.field(marker.value, "pid")) catch return false) orelse return false;
@@ -267,14 +274,14 @@ fn telemetryLive(port: u16) bool {
     io.reader().readNoEof(&prefix) catch return false;
     return std.mem.eql(u8, &prefix, "HTTP/1.1 200") or std.mem.eql(u8, &prefix, "HTTP/1.0 200");
 }
-fn sendResponse(stream: std.net.Stream, code: u16, mime: []const u8, body: []const u8) !void {
+pub fn sendResponse(stream: std.net.Stream, code: u16, mime: []const u8, body: []const u8) !void {
     var io = try SocketIO.init(stream, 2000);
     const headers = try u.fmt("HTTP/1.1 {d} Result\r\nContent-Type: {s}\r\nContent-Length: {d}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n\r\n", .{ code, mime, body.len });
     defer a.free(headers);
     try io.writer().writeAll(headers);
     try io.writer().writeAll(body);
 }
-fn staticFile(root: []const u8, path: []const u8) !struct { body: []u8, mime: []const u8 } {
+pub fn staticFile(root: []const u8, path: []const u8) !struct { body: []u8, mime: []const u8 } {
     if (std.mem.indexOfAny(u8, path, "\\%?#") != null or std.mem.indexOf(u8, path, "..") != null) return error.InvalidPath;
     const base = if (std.mem.startsWith(u8, path, "/contracts/")) "contracts" else if (std.mem.startsWith(u8, path, "/replay/")) "build/wwise-visualization-replay" else "tools/visualization-frontend";
     const relative = if (std.mem.startsWith(u8, path, "/contracts/")) path[11..] else if (std.mem.startsWith(u8, path, "/replay/")) path[8..] else if (std.mem.eql(u8, path, "/")) "index.html" else path[1..];

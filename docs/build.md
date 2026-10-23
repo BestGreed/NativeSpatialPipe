@@ -1,7 +1,7 @@
 # Building the source export
 
 <!-- alpha-dev-status -->
-**2026-10-22 alpha-dev:** N03-N12 integration and pool-side DSP/bypass with leased output are connected. DVS/Wwise validation is limited; temporary WPF is retired. D15, OutputTimeout closeout, FSA startup feedback and Web API remain pending. See [current progress](alpha-dev.md) and [source README](../README.md). Older validation below keeps its original scope.
+**2026-10-24 alpha-dev/main:** Seven output layouts, Web configuration, session-resident ASIO and optional isolated recording are integrated. Playback configuration defaults to the user directory; PCM and snapshot archives default off. Storage quotas, 6DoF implementation and long-term device validation remain pending. See [current progress](alpha-dev.md) and [source README](../README.md). Older validation below keeps its original scope.
 <!-- /alpha-dev-status -->
 
 Run commands from the repository root on Windows x64. Required tools: Git, Python 3.12, PowerShell, Rust `1.97.1-x86_64-pc-windows-gnullvm`, and an LLVM/MinGW distribution providing clang.exe and libunwind.dll. The baseline used llvm-mingw `20261006-ucrt-x86_64`. Toolchains and dependency sources are installed separately.

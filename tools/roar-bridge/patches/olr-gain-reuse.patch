@@ -1,0 +1,97 @@
+--- a/src/renderer/olr/custom_gain_calculator.rs
++++ b/src/renderer/olr/custom_gain_calculator.rs
+@@ -338,6 +338,7 @@
+ }
+ 
+ impl GainCalculator for CustomGainCalculator {
++    fn reuse_safe(&self)->bool {true}
+     fn calculate_gains(
+         &self,
+         azimuth: Degrees,
+--- a/src/renderer/olr/gain_calculator.rs
++++ b/src/renderer/olr/gain_calculator.rs
+@@ -38,6 +38,8 @@
+ 
+     /// Returns the number of output gains this calculator produces.
+     fn gains_count(&self) -> usize;
++    /// Only immutable geometry calculators opt in to exact-coordinate reuse.
++    fn reuse_safe(&self)->bool {false}
+ 
+     /// Returns the indices of the speakers this calculator maps to.
+     fn speaker_indices(&self) -> &[usize];
+--- a/src/renderer/olr/interpret_object_metadata.rs
++++ b/src/renderer/olr/interpret_object_metadata.rs
+@@ -47,18 +47,21 @@
+     last_block_gains_from: Option<GainsBuffer>,
+     last_block_gains_to: Option<GainsBuffer>,
+     gains_scratch: GainsBuffer,
++    reuse_pool:Option<GainReusePool>,
+ }
+ 
+ impl InterpretObjectMetadata {
+     /// Creates a new `InterpretObjectMetadata` instance.
+     pub fn new(gain_calculator: Arc<dyn GainCalculator>) -> Self {
+         let n = gain_calculator.gains_count();
++        let reuse_pool=gain_calculator.reuse_safe().then(||GainReusePool::new(n));
+         InterpretObjectMetadata {
+             gain_calculator,
+             last_block_end: u64::MAX,
+             last_block_gains_from: None,
+             last_block_gains_to: None,
+             gains_scratch: GainsBuffer::new(n),
++            reuse_pool,
+         }
+     }
+ 
+@@ -88,12 +91,17 @@
+             self.last_block_gains_from = None;
+         }
+ 
++        let key=[coordinate.azimuth().0.to_bits(),coordinate.elevation().0.to_bits(),coordinate.distance().value().to_bits()];
++        let cached=self.reuse_pool.as_mut().and_then(|pool|pool.lookup(key));
++        if let Some(gains)=cached {self.gains_scratch=gains;} else {
+         self.gain_calculator.calculate_gains(
+             coordinate.azimuth(),
+             coordinate.elevation(),
+             coordinate.distance(),
+             self.gains_scratch.as_slice_mut(),
+         )?;
++            if let Some(pool)=&mut self.reuse_pool {pool.insert(key,self.gains_scratch);}
++        }
+ 
+         self.last_block_end = end_sample;
+         self.last_block_gains_to = Some(self.gains_scratch);
+@@ -159,3 +167,33 @@
+         expect_eq!(block.last_sample(), 16);
+     }
+ }
++
++const REUSE_CAPACITY:usize=4;
++const REUSE_WINDOW:u8=64;
++#[derive(Debug,Clone,Copy)]
++struct GainReuseEntry {key:Option<[u32;3]>,gains:GainsBuffer,score:u8}
++#[derive(Debug)]
++struct GainReusePool {entries:[GainReuseEntry;REUSE_CAPACITY],requests:u8,hits:u8}
++impl GainReusePool {
++ fn new(n:usize)->Self {Self{entries:[GainReuseEntry{key:None,gains:GainsBuffer::new(n),score:0};REUSE_CAPACITY],requests:0,hits:0}}
++ fn lookup(&mut self,key:[u32;3])->Option<GainsBuffer>{
++  let mut found=None;
++  for e in &mut self.entries {if e.key==Some(key){e.score=e.score.saturating_add(2);self.hits+=1;found=Some(e.gains);break;}}
++  self.requests+=1;
++  if self.requests==REUSE_WINDOW {
++   for e in &mut self.entries {e.score>>=1;}
++   // At most one hit-rate-driven eviction, with four bounded comparisons.
++   if self.hits<REUSE_WINDOW/8 {
++    if let Some(index)=(0..REUSE_CAPACITY).filter(|i|self.entries[*i].key.is_some()).min_by_key(|i|self.entries[*i].score){
++     self.entries[index].key=None;self.entries[index].score=0;
++    }
++   }
++   self.requests=0;self.hits=0;
++  }
++  found
++ }
++ fn insert(&mut self,key:[u32;3],gains:GainsBuffer){
++  let index=self.entries.iter().position(|e|e.key.is_none()).unwrap_or_else(||(0..REUSE_CAPACITY).min_by_key(|i|self.entries[*i].score).unwrap());
++  self.entries[index]=GainReuseEntry{key:Some(key),gains,score:1};
++ }
++}

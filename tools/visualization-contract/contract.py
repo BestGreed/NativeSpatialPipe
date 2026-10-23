@@ -11,6 +11,12 @@ ROOT = Path(__file__).resolve().parents[2]
 MAX_INT = 2**53 - 1
 CHANNELS = ['FL', 'FR', 'C', 'LFE', 'SL', 'SR', 'BL', 'BR', 'TFL', 'TFR', 'TBL', 'TBR']
 BED_TYPES = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
+_CATALOG=json.loads((ROOT/'contracts/output-layouts.json').read_text(encoding='utf-8'))
+_ALIASES=dict(L='FL',R='FR',C='C',LFE='LFE',Ls='SL',Rs='SR',Lrs='BL',Rrs='BR',Lw='FWL',Rw='FWR',Ltf='TFL',Rtf='TFR',Ltm='TML',Rtm='TMR',Ltr='TBL',Rtr='TBR')
+OUTPUT_CHANNELS={('ideal'+p['id'].replace('.','')+'-v1'):[_ALIASES[c] for c in p['channels']] for p in _CATALOG['layouts']}
+ALL_CHANNELS=list(dict.fromkeys(CHANNELS+['FWL','FWR','TML','TMR']))
+def output_channels(message):
+    return OUTPUT_CHANNELS.get(message['layoutRevision'],CHANNELS)
 BANDS = ['all', '20-120', '120-500', '500-2000', '2000-6000', '6000-12000', '12000-20000']
 
 
@@ -63,7 +69,7 @@ EVENT = obj(eventId=ID, objectKey=ref('identity'), kind=enum('onset', 'ended', '
             strength=POSITIVE, risePerSecond=nullable(NUMBER),
             endReason=nullable(enum('source-flag', 'replaced', 'complete-snapshot', 'epoch-change')),
             exactEosSample=enum(None))
-CHANNEL = obj(channelId=enum(*CHANNELS), band=enum('all'), meter=ref('meter'),
+CHANNEL = obj(channelId=enum(*ALL_CHANNELS), band=enum('all'), meter=ref('meter'),
               validDurationUs=UINT)
 TAP = obj(quality=QUALITY, coverage=ref('coverage'), droppedBlocks=UINT,
           snapshotComplete=BOOL, gainMode=enum('applied', 'ignored', 'not-applicable'),
@@ -79,11 +85,11 @@ ENVELOPE = dict(schemaVersion=VERSIONS, dataOrigin=enum('simulated', 'measured')
 SNAPSHOT = obj(**ENVELOPE, messageType=enum('snapshot'),
                taps=obj(**{tap: ref('tap') for tap in TAPS}), events=array(ref('event'), 256))
 LAYOUT = obj(schemaVersion=VERSIONS, messageType=enum('layout'), dataOrigin=enum('simulated', 'measured'),
-             routeId=ID, layoutRevision=ID, layoutId=enum('roar-layout714'),
+             routeId=ID, layoutRevision=ID, layoutId=enum('roar-layout714',*['nsp-layout'+p['id'].replace('.','') for p in _CATALOG['layouts'] if p['id']!='7.1.4']),
              coordinateSystem=enum('listener-relative-x-right-y-up-z-back'),
              positionSource=enum('idealized'),
-             channels=array(obj(channelId=enum(*CHANNELS), staticType=enum(*BED_TYPES),
-                                direction=nullable(VECTOR)), 12, 12))
+             channels=array(obj(channelId=enum(*ALL_CHANNELS), staticType=nullable(enum(*BED_TYPES)),
+                                direction=nullable(VECTOR)), 16, 8))
 CAPABILITIES = obj(schemaVersion=VERSIONS, messageType=enum('capabilities'),
                    dataOrigin=enum('simulated', 'measured'),
                    routes=array(obj(routeId=ID, authority=enum('fsa', 'fixture', 'native'),
@@ -91,7 +97,7 @@ CAPABILITIES = obj(schemaVersion=VERSIONS, messageType=enum('capabilities'),
                                     decodedInput=BOOL, renderReady=BOOL, frequencyBands=enum(False),
                                     history=BOOL, lufs=enum(False), truePeak=enum(False),
                                     devicePlayback=enum(False), control=enum(False),
-                                    maxObjects=enum(160), maxChannels=enum(12)), 16),
+                                    maxObjects=enum(160), maxChannels=enum(8,10,12,14,16)), 16),
                    publishRatesHz=array(enum(1, 10, 20), 3, 1),
                    historyWindowsSeconds=array(enum(600, 3600), 2, 1))
 SUBSCRIPTION = obj(schemaVersion=VERSIONS, messageType=enum('subscribe', 'negotiated'),
@@ -104,10 +110,10 @@ HISTORY = obj(schemaVersion=VERSIONS, messageType=enum('history'),
               requestedWindowSeconds=enum(600, 3600), requestedRangeUs=RANGE,
               actualRangeUs=nullable(RANGE), bucketWidthUs=enum(1000000),
               boundaryErrorUs=enum(1000000), coverage=ref('coverage'),
-              channels=array(obj(channelId=enum(*CHANNELS), sumSquares=POSITIVE,
+              channels=array(obj(channelId=enum(*ALL_CHANNELS), sumSquares=POSITIVE,
                                  validSamples=UINT, samplePeak=nullable(POSITIVE),
                                  meanSquare=nullable(POSITIVE), energyIntegral=POSITIVE,
-                                 contribution=dict(type='number', minimum=0, maximum=1)), 12, 12))
+                                 contribution=dict(type='number', minimum=0, maximum=1)), 16, 8))
 SCHEMA = {'$schema': 'https://json-schema.org/draft/2020-12/schema',
           'title': 'NSp visualization V0.1 (offline contract)',
           '$defs': dict(coverage=COVERAGE, meter=METER, identity=IDENTITY, position=POSITION,
@@ -301,8 +307,8 @@ def validate(message):
             require(not route['soundNavigation'] or route['decodedInput'], 'navigation needs input tap')
             require(not route['soundSpectrum'] or route['renderReady'], 'spectrum needs output tap')
     elif kind == 'layout':
-        require([c['channelId'] for c in message['channels']] == CHANNELS, 'ROAR channel order mismatch')
-        require([c['staticType'] for c in message['channels']] == BED_TYPES, 'static type mapping mismatch')
+        require([c['channelId'] for c in message['channels']] == output_channels(message), 'output channel order mismatch')
+        require([c['staticType'] for c in message['channels']] == [dict(zip(CHANNELS,BED_TYPES)).get(c) for c in output_channels(message)], 'static type mapping mismatch')
         for c in message['channels']:
             d = c['direction']
             require(d is None if c['channelId'] == 'LFE' else d is not None and close(sum(v*v for v in d), 1),
@@ -353,7 +359,7 @@ def check_snapshot(m):
             require(item['meter']['sampleCount'] == c['validSamples'], 'channel sample count mismatch')
             require(item['validDurationUs'] * 48000 == c['validSamples'] * 1000000, 'valid duration mismatch')
         if name == 'render-ready':
-            require({c['channelId'] for c in tap['channels']} == set(CHANNELS), 'output must explicitly include all channels, including unknown meters')
+            require({c['channelId'] for c in tap['channels']} == set(output_channels(m)), 'output must explicitly include all channels, including unknown meters')
     event_ids = set()
     for event in m['events']:
         require(event['eventId'] not in event_ids, 'duplicate event ID')
@@ -375,7 +381,7 @@ def check_history(m):
     if a:
         require(r['start'] <= a['start'] < a['endExclusive'] <= r['endExclusive'], 'history range outside request')
         require(m['coverage']['validSamples'] <= (a['endExclusive'] - a['start']) * 48000 / 1000000, 'history samples exceed actual range')
-    require([c['channelId'] for c in m['channels']] == CHANNELS, 'history channel order mismatch')
+    require([c['channelId'] for c in m['channels']] == output_channels(m), 'history channel order mismatch')
     total = sum(c['sumSquares'] for c in m['channels'])
     for c in m['channels']:
         n, energy = c['validSamples'], c['sumSquares']

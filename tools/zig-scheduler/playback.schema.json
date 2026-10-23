@@ -2,6 +2,14 @@
   "type": "object",
   "additionalProperties": false,
   "properties": {
+    "recording": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "pcm": {"type": "boolean", "default": false},
+        "telemetrySnapshots": {"type": "boolean", "default": false}
+      },
+      "description": "Optional pre-DSP PCM side recording and telemetry JSONL archival. Both disabled by default."
+    },
     "renderer": {
       "enum": [
         "roar",
@@ -79,8 +87,8 @@
       "properties": {
         "trim": {
           "type": "array",
-          "minItems": 12,
-          "maxItems": 12,
+          "minItems": 8,
+          "maxItems": 16,
           "items": {
             "type": "number",
             "minimum": 0,
@@ -90,8 +98,8 @@
         },
         "delayFrames": {
           "type": "array",
-          "minItems": 12,
-          "maxItems": 12,
+          "minItems": 8,
+          "maxItems": 16,
           "items": {
             "type": "integer",
             "minimum": 0,
@@ -186,8 +194,8 @@
           "anyOf": [
             {
               "type": "array",
-              "minItems": 12,
-              "maxItems": 12,
+              "minItems": 8,
+              "maxItems": 16,
               "items": {
                 "type": "integer",
                 "minimum": 0,
@@ -203,8 +211,8 @@
           "anyOf": [
             {
               "type": "array",
-              "minItems": 12,
-              "maxItems": 12,
+              "minItems": 8,
+              "maxItems": 16,
               "items": {
                 "type": "integer",
                 "minimum": 0,
@@ -231,27 +239,71 @@
     },
     "startupTimeoutMs": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 4294967295,
-      "default": 5000
+      "default": 0,
+      "deprecated": true,
+      "description": "Compatibility only; ignored. ASIO stays active with silent callbacks until the session ends."
     },
     "rebufferTimeoutMs": {
       "type": "integer",
-      "minimum": 1,
+      "minimum": 0,
       "maximum": 4294967295,
-      "default": 1000
+      "default": 0,
+      "deprecated": true,
+      "description": "Compatibility only; ignored. Source gaps do not terminate the ASIO session."
     },
     "maxRebuffers": {
       "type": "integer",
       "minimum": 0,
       "maximum": 4294967295,
-      "default": 3
+      "default": 0,
+      "deprecated": true,
+      "description": "Compatibility only; ignored. Rebuffer count is diagnostic, not a session lifetime limit."
     },
     "drainTimeoutMs": {
       "type": "integer",
       "minimum": 1,
       "maximum": 4294967295,
       "default": 5000
+    },
+    "outputLayout": {
+      "type": "string",
+      "enum": [
+        "5.1.2",
+        "5.1.4",
+        "7.1.2",
+        "7.1.4",
+        "7.1.6",
+        "9.1.4",
+        "9.1.6",
+        "roar-custom-6dof"
+      ],
+      "default": "7.1.4",
+      "description": "Selected speaker output geometry. roar-custom-6dof is reserved and rejected by runtime."
+    },
+    "roarCustomLayout": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "const": 1
+            },
+            "measurementFile": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ],
+      "description": "ROAR-only reserved measurement slot. Not loaded or activated."
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -317,8 +369,8 @@
             "properties": {
               "sourceChannelIndices": {
                 "type": "array",
-                "minItems": 12,
-                "maxItems": 12,
+                "minItems": 8,
+                "maxItems": 16,
                 "items": {
                   "type": "integer",
                   "minimum": 0,

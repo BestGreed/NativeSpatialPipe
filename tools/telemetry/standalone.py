@@ -42,6 +42,7 @@ def main():
     parser.add_argument('--secret', required=True)
     parser.add_argument('--http-port', type=int, default=8766)
     parser.add_argument('--origin', action='append', default=[])
+    parser.add_argument('--output-layout', default='7.1.4')
     args = parser.parse_args()
     secret = bytes.fromhex(args.secret)
     if len(secret) != 32:
@@ -53,12 +54,13 @@ def main():
     connection.send({'secret': args.secret})
     origins = args.origin or ['http://127.0.0.1:8765', 'http://localhost:8765']
     origins = set(origins)
+    origins.add('http://127.0.0.1:8767')
     for origin in tuple(origins):
         if origin.startswith('http://127.0.0.1:'):
             origins.add(origin.replace('127.0.0.1', 'localhost', 1))
         elif origin.startswith('http://localhost:'):
             origins.add(origin.replace('localhost', '127.0.0.1', 1))
-    run(connection, secret, tuple(origins), http_port=args.http_port)
+    run(connection, secret, tuple(origins), http_port=args.http_port, output_layout=args.output_layout)
 
 
 if __name__ == '__main__':

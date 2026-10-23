@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>NSp · 配置</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="configuration.css"><link rel="icon" href="data:,"></head>
+<body class="configuration">
+<header><a class="brand" href="./"><span class="mark">n<span>sp</span></span><span>配置与状态<small>NATIVE SPATIAL PIPE</small></span></a><nav><a href="./">返回可视化</a></nav></header>
+<main>
+<section class="config-intro"><span class="eyebrow">CONFIGURATION / LOCAL</span><h1>输出链路配置</h1><p>保存只更新配置文件。启停、模式切换、Hook、HT Support 和急停继续通过 FSA 操作。</p></section>
+<section class="config-status" aria-label="当前状态"><h2>当前状态</h2><p id="runtime" role="status">正在读取…</p><p id="endpointInfo"></p><p id="runtimeConfig"></p></section>
+<div class="config-tabs" role="group" aria-label="配置类型"><button id="playbackTab" type="button" aria-pressed="true">播放与公共 DSP</button><button id="backendTab" type="button" aria-pressed="false">后端默认配置</button></div>
+<section class="config-editor"><h2 id="configTitle">播放与公共 DSP</h2><p id="applyInfo">播放配置在下一次启动 NSp 会话时读取。</p><p id="fileInfo" class="config-path"></p><p id="revisionInfo" class="config-path"></p>
+<form id="configForm"><div id="fields"></div><div class="config-actions"><button type="submit" id="save" disabled>校验并保存</button><button type="button" id="reload">重新读取文件</button><span id="dirtyState"></span></div></form>
+<p id="result" role="status" aria-live="polite"></p>
+<details><summary>高级：完整 JSON</summary><p>保留已暴露字段；未知字段由后端拒绝。应用到表单后，再点“校验并保存”。</p><textarea id="rawConfig" spellcheck="false" aria-label="完整 JSON 配置"></textarea><div class="config-actions"><button type="button" id="toJson">将表单同步到 JSON</button><button type="button" id="fromJson">将 JSON 应用到表单</button></div></details>
+</section>
+<p class="config-footnote">ASIO 在会话内持续送流，等待输入或暂时欠载时输出静音。保存不会打开驱动、安装 Hook、注入 EDID 或重启后端。</p>
+</main><datalist id="asioDrivers"></datalist><script type="module" src="configuration.js"></script>
+</body></html>

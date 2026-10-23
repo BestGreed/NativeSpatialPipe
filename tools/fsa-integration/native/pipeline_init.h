@@ -34,6 +34,22 @@ static int pipeline_live_flags(const wchar_t *endpoint,int index,unsigned requir
     return valid;
 }
 static int pipeline_live(const wchar_t *endpoint,int index){return pipeline_live_flags(endpoint,index,0);}
+/* Endpoint preparation owns spatial-format discovery. Read-only: never prepares,
+   selects a format, changes PCM profiles or injects EDID. */
+static unsigned pipeline_query_capabilities(SpatialPolicy *p,const wchar_t *endpoint){
+    unsigned flags=0;
+    if(p){
+        WAVEFORMATEX *f=NULL;SpatialSettings *s=NULL;BYTE *d=NULL;UINT32 n=0;
+        HRESULT hr=p->v->get(p,endpoint,FALSE,&f,&s,&n,&d);
+        if(SUCCEEDED(hr) && n<=128 && d)for(UINT32 i=0;i<n;i++){
+            DWORD supported=0;memcpy(&supported,d+i*0x342+0x310,4);
+            for(int j=0;j<7;j++){GUID g;if(supported && SUCCEEDED(CLSIDFromString(pipeline_guids[j],&g)) && !memcmp(d+i*0x342+0x300,&g,16))flags|=1u<<pipeline_modes[j];}
+        }
+        CoTaskMemFree(f);CoTaskMemFree(s);CoTaskMemFree(d);
+    }
+    for(int i=0;i<7;i++)if(pipeline_live(endpoint,i))flags|=1u<<pipeline_modes[i];
+    return flags;
+}
 static int pipeline_selected(const SpatialSettings *settings) {
     int i=pipeline_index();GUID expected;
     if(i<0 || !settings->words[0] || FAILED(CLSIDFromString(pipeline_guids[i],&expected)) || memcmp(&settings->words[3],&expected,16))return 0;
@@ -65,4 +81,16 @@ static HRESULT pipeline_command_index(const wchar_t *action,int i) {
     CloseHandle(child.hProcess);return wait==WAIT_OBJECT_0 && result==0?S_OK:E_FAIL;
 }
 static HRESULT pipeline_command(const wchar_t *action){return pipeline_command_index(action,pipeline_index());}
+/* Explicit menu operation only. FSA owns the returned process handle and polls
+   completion; initialization/reload work stays outside its coordination loop. */
+static HRESULT pipeline_edid_begin(const wchar_t *endpoint,const wchar_t *output,HANDLE *process){
+    wchar_t python[MAX_PATH],script[MAX_PATH],command[4096];*process=NULL;
+    GetPrivateProfileStringW(L"NSP",L"Python",L"",python,MAX_PATH,ini);
+    GetPrivateProfileStringW(L"NSP",L"PipelineInitScript",L"",script,MAX_PATH,ini);
+    if(!python[0] || !script[0] || wcschr(python,L'"') || wcschr(script,L'"') || wcschr(endpoint,L'"') || wcschr(output,L'"'))return E_INVALIDARG;
+    swprintf(command,4096,L"\"%ls\" \"%ls\" edid-enable --endpoint \"%ls\" --output \"%ls\"",python,script,endpoint,output);
+    STARTUPINFOW si={.cb=sizeof(si)};PROCESS_INFORMATION child={0};
+    if(!CreateProcessW(python,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&si,&child))return HRESULT_FROM_WIN32(GetLastError());
+    CloseHandle(child.hThread);*process=child.hProcess;return S_OK;
+}
 #endif

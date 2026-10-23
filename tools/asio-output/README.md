@@ -1,5 +1,11 @@
 # ASIO 输出模块接入检查
 
+2026-10-24：录音已从正式播放交付链拆出。输出池 → 原地 DSP/bypass → 租借 → ASIO owner 的路径保持；PCM 旁录/快照存档默认关闭。旁录开启时复制到专用有界池，磁盘异常只影响录音。此次未改 ASIO 内部 ring、SRC、时钟或驱动调度。JSON/Web 开关和验证见[旁录隔离](../../docs/core/recording-isolation-20261024.md)。
+
+部署时必须将匹配工具链的 `libc++.dll`、`libunwind.dll` 与 `NSP.AsioOutput.dll` 放在同一目录。正式适配器使用模块目录依赖搜索，不依赖编译器 PATH。独立加载回归与实机启动结果见[运行库加载修复](../../docs/decisions/asio-module-runtime-loading-20261023.md)。
+
+2026-10-23：当前采用 [ASIO 随 NSp 会话常驻](../../docs/decisions/asio-session-lifetime-20261023.md)。无首包、正常停源和反复输入间歇都持续回调输出静音，不再因首包/重缓冲超时或累计次数退出。只在显式停止/真实故障时收尾；旧等待超时字段保留解析兼容但不生效。`Test-Playback.py --bridge <已构建ROAR桥接DLL> --output <测试目录>` 可复用渲染器，只构建虚拟驱动与测试宿主。
+
 DEV16 N07已接通可选NSP软件输出路径并通过假驱动回调录音测试。接口现位于 `modules/audio-backends/src/asio_output_c.h`，Windows x64、ABI v1（新增hold导出）；独立 CMake 目标为 `NSP.AsioOutput`。完整 SpatialASIO 工程已移出主线；最新状态及验证见 目录抽离记录（开发参考未随公开源码提供），下文早期未实测描述仅为历史。
 
 N04 宿主边界核对见 调用合同（开发参考未随公开源码提供）。N05/N07 已由专用控制/输出工作线程独占句柄，渲染线程通过可靠PCM交接，不直接调用设备 ABI。N07增加hold导出，原配置/状态结构不变。
@@ -21,7 +27,7 @@ N04 增补检查：`python tools/asio-output/Test-DeviceModule.py --output build
 3. `start` 允许先启动静音回调；调用方按 `get_stats.minimum_prime_frames` 和自己的有界缓冲策略准备数据，再 `prime` 一次。Prime 前源时间不推进。接口只提供所需帧数，不替上层确定预缓冲时限或调度。
 4. `submit` 同步复制 PCM；`first_frame` 从 0 连续递增，调用方保证至少 `frames*source_channels` 个可读样本。未接受的参数/样本不计入提交帧数。现有队列容量保留，溢出是故障，不主动丢旧；没有新增缓冲优化。
 5. `service` 使用零事件等待超时，沿用现有驱动消息处理、填充和消费后清理；驱动调用/Windows消息分发仍可能阻塞，不承诺调用时长有界或实时安全。由专用工作线程安排执行节奏，不能放协调循环或音频回调。数据异常返回 INVALID，运行/驱动异常返回 DEVICE_ERROR 并锁定故障；故障后只允许观察和收尾。
-6. 正常输入结束先 `finish_input`，继续服务至 `get_stats.drained`，再 `stop`。正常排空与故障时提前停止分开。stop 沿用下游已有有界等待，可能阻塞；不代表所有已提交但尚未渲染的源 PCM 必然已排空。
+6. 显式结束 NSp 会话时先 `finish_input`，继续服务至 `get_stats.drained`，再 `stop`。应用暂时不送流不代表输入结束，不调用这组收尾。正常排空与故障时提前停止分开。stop 沿用下游已有有界等待，可能阻塞；不代表所有已提交但尚未渲染的源 PCM 必然已排空。
 7. 启动过的设备必须 stop 成功后才能 close；失败时保留 handle，不假报已释放。close 成功将调用方 handle 清为 NULL。空 handle close 幂等；stopped handle 不可 restart，要重新 open。不得使用已关闭或伪造 handle。
 
 接口不跨边界暴露 C++ 容器、分配器或异常；返回码见头文件。`last_error` 是调用线程的即时错误文本，下一次普通 API 调用会覆盖，调用方复制到自有缓冲；不跨模块释放内存。get_stats 对错误/停止状态仍可使用，但不是故障自动恢复入口。

@@ -311,7 +311,10 @@ pub fn checkTarget(pid: u32) !u64 {
     return (try processIdentity(pid)) orelse error.TargetExited;
 }
 pub fn symbol(comptime T: type, lib: *std.DynLib, name: [:0]const u8) !T {
-    return lib.lookup(T, name) orelse error.MissingNativeExport;
+    return lib.lookup(T, name) orelse {
+        std.debug.print("Missing native export: {s}\n", .{name});
+        return error.MissingNativeExport;
+    };
 }
 pub fn library(path: []const u8) !std.DynLib {
     // Match ctypes' dependency lookup: bundled libunwind beside the Rust DLL,

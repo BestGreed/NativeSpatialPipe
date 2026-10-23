@@ -1,27 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "spatial_renderer_c.h"
 #include "native_scene.h"
+#include "layout_presets.h"
 #include <optional>
 #include <cstring>
 #include <stdexcept>
 
 namespace {
 thread_local std::string error;
-spatial::SpeakerLayout Layout() {
+spatial::SpeakerLayout Layout(unsigned code) {
     const auto canonical=spatial::Canonical916Layout();
     spatial::SpeakerLayout result; result.name=L"NSP OLR order 7.1.4";
-    for(const auto i:{0,1,2,3,6,7,4,5,10,11,14,15})result.speakers.push_back(canonical.speakers[i]);
+    for(const auto i:NspLayoutIndices(code))result.speakers.push_back(canonical.speakers[i]);
     return result;
 }
 struct Renderer {
-    spatial::NativeSpatialScene scene{Layout()};
+    unsigned channels;
+    spatial::NativeSpatialScene scene;
+    explicit Renderer(unsigned code):channels(static_cast<unsigned>(NspLayoutIndices(code).size())),scene(Layout(code)){}
     std::optional<uint64_t> last;
     bool sealed{},failed{};
 };
 }
 uint32_t nsp_spatial_abi(void){return 1;}
 void* nsp_spatial_create(void){
-    try { error.clear();return new Renderer; }
+    return nsp_spatial_create_layout(714);
+}
+void* nsp_spatial_create_layout(uint32_t code){
+    try { error.clear();return new Renderer(code); }
     catch(const std::exception& e){error=e.what();return nullptr;}
     catch(...){error="Spatial renderer creation failed";return nullptr;}
 }
@@ -53,7 +59,7 @@ int nsp_spatial_flush(void* handle,float* output,uint32_t capacity){
         error.clear();
         if(!r||r->sealed||r->failed||!output||capacity<512)throw std::runtime_error("Invalid spatial flush/state");
         const auto tail=r->scene.FlushStream(1);r->sealed=true;
-        if(!tail.empty())std::memcpy(output,tail.data(),tail.size()*sizeof(float));return static_cast<int>(tail.size()/12);
+        if(!tail.empty())std::memcpy(output,tail.data(),tail.size()*sizeof(float));return static_cast<int>(tail.size()/r->channels);
     }catch(const std::exception& e){if(r)r->failed=true;error=e.what();return -1;}
     catch(...){if(r)r->failed=true;error="Spatial flush failed";return -1;}
 }

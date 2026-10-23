@@ -12,6 +12,8 @@ $flags=@('-target','x86_64-windows-gnu','-O','ReleaseSafe','-lc','-lws2_32','-la
 & $Zig build-exe "$PSScriptRoot/main.zig" @flags "-femit-bin=$out/nsp-scheduler.exe"
 if($LASTEXITCODE){throw 'Zig scheduler build failed'}
 if(-not $SkipTests){
+ & $Zig test "$PSScriptRoot/stop_proof.zig" @flags "-femit-bin=$out/stop-proof-tests.exe"
+ if($LASTEXITCODE){throw 'Unmarked startup stop-proof tests failed'}
  & $Zig test "$PSScriptRoot/routing.zig" -O ReleaseSafe
  if($LASTEXITCODE){throw 'Zig routing tests failed'}
  & $Zig test "$PSScriptRoot/control.zig" @flags "-femit-bin=$out/control-tests.exe"

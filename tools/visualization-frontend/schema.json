@@ -1,0 +1,1255 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NSp visualization V0.1 (offline contract)",
+  "$defs": {
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "expectedSamples": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "validSamples": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "expectedSamples",
+        "validSamples",
+        "ratio"
+      ],
+      "additionalProperties": false
+    },
+    "meter": {
+      "type": "object",
+      "properties": {
+        "sampleCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sumSquares": {
+          "type": "number",
+          "minimum": 0
+        },
+        "meanSquare": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "samplePeak": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rmsDbfs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "peakDbfs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "silent": {
+          "type": "boolean"
+        },
+        "overFullScale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sampleCount",
+        "sumSquares",
+        "meanSquare",
+        "samplePeak",
+        "rmsDbfs",
+        "peakDbfs",
+        "silent",
+        "overFullScale"
+      ],
+      "additionalProperties": false
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "streamEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 159
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "sessionId",
+        "streamEpoch",
+        "slot",
+        "generation"
+      ],
+      "additionalProperties": false
+    },
+    "position": {
+      "type": "object",
+      "properties": {
+        "position": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "positionValid": {
+          "type": "boolean"
+        },
+        "coordinateSystem": {
+          "enum": [
+            "listener-relative-x-right-y-up-z-back"
+          ]
+        },
+        "provenance": {
+          "enum": [
+            "raw"
+          ]
+        },
+        "units": {
+          "enum": [
+            "source-unverified"
+          ]
+        },
+        "rendererPosition": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rendererTransform": {
+          "enum": [
+            "normalize-x-negz-y"
+          ]
+        }
+      },
+      "required": [
+        "position",
+        "positionValid",
+        "coordinateSystem",
+        "provenance",
+        "units",
+        "rendererPosition",
+        "rendererTransform"
+      ],
+      "additionalProperties": false
+    },
+    "object": {
+      "type": "object",
+      "properties": {
+        "objectKey": {
+          "$ref": "#/$defs/identity"
+        },
+        "sourceIdent": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "kind": {
+          "enum": [
+            "dynamic",
+            "static"
+          ]
+        },
+        "staticType": {
+          "anyOf": [
+            {
+              "enum": [
+                2,
+                4,
+                8,
+                16,
+                32,
+                64,
+                128,
+                256,
+                512,
+                1024,
+                2048,
+                4096
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spatial": {
+          "$ref": "#/$defs/position"
+        },
+        "meter": {
+          "$ref": "#/$defs/meter"
+        },
+        "activeDurationUs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "applicationName": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceCategory": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "objectKey",
+        "sourceIdent",
+        "kind",
+        "staticType",
+        "spatial",
+        "meter",
+        "activeDurationUs",
+        "applicationName",
+        "sourceCategory"
+      ],
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "objectKey": {
+          "$ref": "#/$defs/identity"
+        },
+        "kind": {
+          "enum": [
+            "onset",
+            "ended",
+            "invalidated"
+          ]
+        },
+        "sourceTimeUs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "expiresTimeUs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "spatial": {
+          "$ref": "#/$defs/position"
+        },
+        "strength": {
+          "type": "number",
+          "minimum": 0
+        },
+        "risePerSecond": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endReason": {
+          "anyOf": [
+            {
+              "enum": [
+                "source-flag",
+                "replaced",
+                "complete-snapshot",
+                "epoch-change"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exactEosSample": {
+          "enum": [
+            null
+          ]
+        }
+      },
+      "required": [
+        "eventId",
+        "objectKey",
+        "kind",
+        "sourceTimeUs",
+        "expiresTimeUs",
+        "spatial",
+        "strength",
+        "risePerSecond",
+        "endReason",
+        "exactEosSample"
+      ],
+      "additionalProperties": false
+    },
+    "channel": {
+      "type": "object",
+      "properties": {
+        "channelId": {
+          "enum": [
+            "FL",
+            "FR",
+            "C",
+            "LFE",
+            "SL",
+            "SR",
+            "BL",
+            "BR",
+            "TFL",
+            "TFR",
+            "TBL",
+            "TBR",
+            "FWL",
+            "FWR",
+            "TML",
+            "TMR"
+          ]
+        },
+        "band": {
+          "enum": [
+            "all"
+          ]
+        },
+        "meter": {
+          "$ref": "#/$defs/meter"
+        },
+        "validDurationUs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "channelId",
+        "band",
+        "meter",
+        "validDurationUs"
+      ],
+      "additionalProperties": false
+    },
+    "tap": {
+      "type": "object",
+      "properties": {
+        "quality": {
+          "enum": [
+            "live",
+            "stale",
+            "gap",
+            "warmup",
+            "disconnected"
+          ]
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "droppedBlocks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "snapshotComplete": {
+          "type": "boolean"
+        },
+        "gainMode": {
+          "enum": [
+            "applied",
+            "ignored",
+            "not-applicable"
+          ]
+        },
+        "objects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/object"
+          },
+          "minItems": 0,
+          "maxItems": 160
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/channel"
+          },
+          "minItems": 0,
+          "maxItems": 84
+        }
+      },
+      "required": [
+        "quality",
+        "coverage",
+        "droppedBlocks",
+        "snapshotComplete",
+        "gainMode",
+        "objects",
+        "channels"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "enum": [
+            "0.1.0",
+            "0.2.0"
+          ]
+        },
+        "dataOrigin": {
+          "enum": [
+            "simulated",
+            "measured"
+          ]
+        },
+        "routeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "streamEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "telemetrySeq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "sourceSequenceRange": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "endExclusive": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "start",
+            "endExclusive"
+          ],
+          "additionalProperties": false
+        },
+        "audioSampleRange": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "endExclusive": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "start",
+            "endExclusive"
+          ],
+          "additionalProperties": false
+        },
+        "sampleIndexProvenance": {
+          "enum": [
+            "derived"
+          ]
+        },
+        "framesPerBlock": {
+          "enum": [
+            480
+          ]
+        },
+        "sampleRate": {
+          "enum": [
+            48000
+          ]
+        },
+        "layoutRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "meterRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sourceTimeUs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "publishedTimeUs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "decoded-input": {
+              "$ref": "#/$defs/coverage"
+            },
+            "render-ready": {
+              "$ref": "#/$defs/coverage"
+            }
+          },
+          "required": [
+            "decoded-input",
+            "render-ready"
+          ],
+          "additionalProperties": false
+        },
+        "droppedBlocks": {
+          "type": "object",
+          "properties": {
+            "decoded-input": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "render-ready": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "decoded-input",
+            "render-ready"
+          ],
+          "additionalProperties": false
+        },
+        "eventOverflow": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "messageType": {
+          "enum": [
+            "snapshot"
+          ]
+        },
+        "taps": {
+          "type": "object",
+          "properties": {
+            "decoded-input": {
+              "$ref": "#/$defs/tap"
+            },
+            "render-ready": {
+              "$ref": "#/$defs/tap"
+            }
+          },
+          "required": [
+            "decoded-input",
+            "render-ready"
+          ],
+          "additionalProperties": false
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event"
+          },
+          "minItems": 0,
+          "maxItems": 256
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "dataOrigin",
+        "routeId",
+        "sessionId",
+        "streamEpoch",
+        "telemetrySeq",
+        "sourceSequenceRange",
+        "audioSampleRange",
+        "sampleIndexProvenance",
+        "framesPerBlock",
+        "sampleRate",
+        "layoutRevision",
+        "meterRevision",
+        "sourceTimeUs",
+        "publishedTimeUs",
+        "coverage",
+        "droppedBlocks",
+        "eventOverflow",
+        "messageType",
+        "taps",
+        "events"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "enum": [
+            "0.1.0",
+            "0.2.0"
+          ]
+        },
+        "messageType": {
+          "enum": [
+            "layout"
+          ]
+        },
+        "dataOrigin": {
+          "enum": [
+            "simulated",
+            "measured"
+          ]
+        },
+        "routeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "layoutRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "layoutId": {
+          "enum": [
+            "roar-layout714",
+            "nsp-layout512",
+            "nsp-layout514",
+            "nsp-layout712",
+            "nsp-layout716",
+            "nsp-layout914",
+            "nsp-layout916"
+          ]
+        },
+        "coordinateSystem": {
+          "enum": [
+            "listener-relative-x-right-y-up-z-back"
+          ]
+        },
+        "positionSource": {
+          "enum": [
+            "idealized"
+          ]
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "channelId": {
+                "enum": [
+                  "FL",
+                  "FR",
+                  "C",
+                  "LFE",
+                  "SL",
+                  "SR",
+                  "BL",
+                  "BR",
+                  "TFL",
+                  "TFR",
+                  "TBL",
+                  "TBR",
+                  "FWL",
+                  "FWR",
+                  "TML",
+                  "TMR"
+                ]
+              },
+              "staticType": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      2,
+                      4,
+                      8,
+                      16,
+                      32,
+                      64,
+                      128,
+                      256,
+                      512,
+                      1024,
+                      2048,
+                      4096
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "direction": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 3,
+                    "maxItems": 3
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "channelId",
+              "staticType",
+              "direction"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 8,
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "messageType",
+        "dataOrigin",
+        "routeId",
+        "layoutRevision",
+        "layoutId",
+        "coordinateSystem",
+        "positionSource",
+        "channels"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "enum": [
+            "0.1.0",
+            "0.2.0"
+          ]
+        },
+        "messageType": {
+          "enum": [
+            "capabilities"
+          ]
+        },
+        "dataOrigin": {
+          "enum": [
+            "simulated",
+            "measured"
+          ]
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "routeId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "authority": {
+                "enum": [
+                  "fsa",
+                  "fixture",
+                  "native"
+                ]
+              },
+              "soundNavigation": {
+                "type": "boolean"
+              },
+              "soundSpectrum": {
+                "type": "boolean"
+              },
+              "decodedInput": {
+                "type": "boolean"
+              },
+              "renderReady": {
+                "type": "boolean"
+              },
+              "frequencyBands": {
+                "enum": [
+                  false
+                ]
+              },
+              "history": {
+                "type": "boolean"
+              },
+              "lufs": {
+                "enum": [
+                  false
+                ]
+              },
+              "truePeak": {
+                "enum": [
+                  false
+                ]
+              },
+              "devicePlayback": {
+                "enum": [
+                  false
+                ]
+              },
+              "control": {
+                "enum": [
+                  false
+                ]
+              },
+              "maxObjects": {
+                "enum": [
+                  160
+                ]
+              },
+              "maxChannels": {
+                "enum": [
+                  8,
+                  10,
+                  12,
+                  14,
+                  16
+                ]
+              }
+            },
+            "required": [
+              "routeId",
+              "authority",
+              "soundNavigation",
+              "soundSpectrum",
+              "decodedInput",
+              "renderReady",
+              "frequencyBands",
+              "history",
+              "lufs",
+              "truePeak",
+              "devicePlayback",
+              "control",
+              "maxObjects",
+              "maxChannels"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 16
+        },
+        "publishRatesHz": {
+          "type": "array",
+          "items": {
+            "enum": [
+              1,
+              10,
+              20
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 3
+        },
+        "historyWindowsSeconds": {
+          "type": "array",
+          "items": {
+            "enum": [
+              600,
+              3600
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 2
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "messageType",
+        "dataOrigin",
+        "routes",
+        "publishRatesHz",
+        "historyWindowsSeconds"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "enum": [
+            "0.1.0",
+            "0.2.0"
+          ]
+        },
+        "messageType": {
+          "enum": [
+            "subscribe",
+            "negotiated"
+          ]
+        },
+        "routeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "mode": {
+          "enum": [
+            "sound-navigation",
+            "sound-spectrum",
+            "both"
+          ]
+        },
+        "publishRateHz": {
+          "enum": [
+            1,
+            10,
+            20
+          ]
+        },
+        "bands": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "all"
+            ]
+          },
+          "minItems": 1,
+          "maxItems": 1
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "messageType",
+        "routeId",
+        "mode",
+        "publishRateHz",
+        "bands"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "enum": [
+            "0.1.0",
+            "0.2.0"
+          ]
+        },
+        "messageType": {
+          "enum": [
+            "history"
+          ]
+        },
+        "dataOrigin": {
+          "enum": [
+            "simulated",
+            "measured"
+          ]
+        },
+        "routeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "sessionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "streamEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "layoutRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "meterRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "tap": {
+          "enum": [
+            "render-ready"
+          ]
+        },
+        "sampleRate": {
+          "enum": [
+            48000
+          ]
+        },
+        "band": {
+          "enum": [
+            "all"
+          ]
+        },
+        "requestedWindowSeconds": {
+          "enum": [
+            600,
+            3600
+          ]
+        },
+        "requestedRangeUs": {
+          "type": "object",
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "endExclusive": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "start",
+            "endExclusive"
+          ],
+          "additionalProperties": false
+        },
+        "actualRangeUs": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "endExclusive": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "start",
+                "endExclusive"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bucketWidthUs": {
+          "enum": [
+            1000000
+          ]
+        },
+        "boundaryErrorUs": {
+          "enum": [
+            1000000
+          ]
+        },
+        "coverage": {
+          "$ref": "#/$defs/coverage"
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "channelId": {
+                "enum": [
+                  "FL",
+                  "FR",
+                  "C",
+                  "LFE",
+                  "SL",
+                  "SR",
+                  "BL",
+                  "BR",
+                  "TFL",
+                  "TFR",
+                  "TBL",
+                  "TBR",
+                  "FWL",
+                  "FWR",
+                  "TML",
+                  "TMR"
+                ]
+              },
+              "sumSquares": {
+                "type": "number",
+                "minimum": 0
+              },
+              "validSamples": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "samplePeak": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "meanSquare": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "energyIntegral": {
+                "type": "number",
+                "minimum": 0
+              },
+              "contribution": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "channelId",
+              "sumSquares",
+              "validSamples",
+              "samplePeak",
+              "meanSquare",
+              "energyIntegral",
+              "contribution"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 8,
+          "maxItems": 16
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "messageType",
+        "dataOrigin",
+        "routeId",
+        "sessionId",
+        "streamEpoch",
+        "layoutRevision",
+        "meterRevision",
+        "tap",
+        "sampleRate",
+        "band",
+        "requestedWindowSeconds",
+        "requestedRangeUs",
+        "actualRangeUs",
+        "bucketWidthUs",
+        "boundaryErrorUs",
+        "coverage",
+        "channels"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

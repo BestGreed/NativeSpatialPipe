@@ -10,6 +10,7 @@ unsafe extern "system" {
 struct Module(*mut c_void);
 impl Drop for Module {fn drop(&mut self){unsafe{FreeLibrary(self.0);}}}
 pub struct Spatial {
+    pub layout_code:u32, channels:usize,
     _module:Module, handle:*mut c_void, n:usize, last:Option<u64>,
     process:unsafe extern "C" fn(*mut c_void,u64,u32,u32,*const u8,*const u8,*mut f32)->i32,
     flush:unsafe extern "C" fn(*mut c_void,*mut f32,u32)->i32,
@@ -20,7 +21,9 @@ pub struct Spatial {
 unsafe impl Send for Spatial {}
 impl Drop for Spatial {fn drop(&mut self){unsafe{if !self.handle.is_null(){(self.destroy)(self.handle);}}}}
 impl Spatial {
-    pub fn new(n:u32,path:&str)->Result<Self,String>{
+    pub fn new(n:u32,path:&str)->Result<Self,String>{Self::new_layout(n,path,714)}
+    pub fn new_layout(n:u32,path:&str,code:u32)->Result<Self,String>{
+        let channels=crate::layouts::get(code)?.labels.len();
         if !(1..=4096).contains(&n)||!std::path::Path::new(path).is_absolute(){return Err("Spatial renderer needs absolute DLL path and valid frames".into());}
         let wide:Vec<u16>=path.encode_utf16().chain(Some(0)).collect();
         unsafe {
@@ -32,10 +35,10 @@ impl Spatial {
                 let abi:unsafe extern "C" fn()->u32=std::mem::transmute(symbol(b"nsp_spatial_abi\0")?);
                 if abi()!=1{return Err("Spatial renderer ABI mismatch".into());}
                 let create:unsafe extern "C" fn()->*mut c_void=std::mem::transmute(symbol(b"nsp_spatial_create\0")?);
-                let mut s=Self{_module:owned,handle:std::ptr::null_mut(),n:n as usize,last:None,
+                let mut s=Self{layout_code:code,channels,_module:owned,handle:std::ptr::null_mut(),n:n as usize,last:None,
                     process:std::mem::transmute(symbol(b"nsp_spatial_process\0")?),flush:std::mem::transmute(symbol(b"nsp_spatial_flush\0")?),
                     destroy:std::mem::transmute(symbol(b"nsp_spatial_destroy\0")?),error:std::mem::transmute(symbol(b"nsp_spatial_error\0")?)};
-                s.handle=create();if s.handle.is_null(){return Err(s.message());}Ok(s)
+                s.handle=if code==714{create()}else{let create_layout:unsafe extern "C" fn(u32)->*mut c_void=std::mem::transmute(symbol(b"nsp_spatial_create_layout\0")?);create_layout(code)};if s.handle.is_null(){return Err(s.message());}Ok(s)
             })();
             loaded
         }
@@ -43,7 +46,7 @@ impl Spatial {
     fn message(&self)->String{unsafe{CStr::from_ptr((self.error)()).to_string_lossy().into_owned()}}
     /// LIRA writes interleaved PCM directly into the caller's owned output pool.
     pub fn process_into(&mut self,seq:u64,count:usize,data:&[u8],output:&mut [f32])->Result<(),String>{
-        if output.len()!=self.n*12{return Err("Invalid LIRA output length".into());}
+        if output.len()!=self.n*self.channels{return Err("Invalid LIRA output length".into());}
         let input=CaptureInput::new(data,count,self.n).map_err(str::to_string)?;
         if self.last.is_some_and(|v|v.checked_add(1)!=Some(seq)){return Err("Sequence discontinuity: rebuild native pipeline".into());}
         for slot in 0..count {
@@ -54,7 +57,7 @@ impl Spatial {
         self.last=Some(seq);Ok(())
     }
     pub fn finish(&mut self)->Result<Vec<f32>,String>{
-        let mut tail=vec![0.;512*12];let frames=unsafe{(self.flush)(self.handle,tail.as_mut_ptr(),512)};
-        if frames<0{return Err(self.message());}tail.truncate(frames as usize*12);Ok(tail)
+        let mut tail=vec![0.;512*self.channels];let frames=unsafe{(self.flush)(self.handle,tail.as_mut_ptr(),512)};
+        if frames<0{return Err(self.message());}tail.truncate(frames as usize*self.channels);Ok(tail)
     }
 }

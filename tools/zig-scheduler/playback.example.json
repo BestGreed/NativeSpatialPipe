@@ -1,4 +1,5 @@
 {
+  "recording": {"pcm": false, "telemetrySnapshots": false},
   "renderer": "roar",
   "mode": "olr",
   "bridgeDll": "D:/replace/nsp_roar_bridge.dll",
@@ -68,8 +69,10 @@
   },
   "clockSync": true,
   "prebufferFrames": 0,
-  "startupTimeoutMs": 5000,
-  "rebufferTimeoutMs": 1000,
-  "maxRebuffers": 3,
-  "drainTimeoutMs": 5000
+  "drainTimeoutMs": 5000,
+  "outputLayout": "7.1.4",
+  "roarCustomLayout": {
+    "version": 1,
+    "measurementFile": null
+  }
 }

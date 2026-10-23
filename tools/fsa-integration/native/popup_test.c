@@ -56,7 +56,7 @@ static LRESULT CALLBACK owner_proc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
             if(phase==1){
                 if(test_case==34){SendMessageW(popup,WM_CLOSE,0,0);return 0;}
                 if(test_case==33){
-                    live_state.extreme|=2u;fsa_popup_update(&live_state);
+                    live_state.extreme|=4u;fsa_popup_update(&live_state);
                     SendMessageW(popup,WM_KEYDOWN,VK_ESCAPE,0);SendMessageW(popup,WM_KEYDOWN,VK_ESCAPE,0);
                     SendMessageW(popup,WM_KEYDOWN,VK_HOME,0);
                     for(int i=0;i<4;i++)SendMessageW(popup,WM_KEYDOWN,VK_DOWN,0);
@@ -100,7 +100,7 @@ static LRESULT CALLBACK owner_proc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
             return 0;
         }
         if(test_case>=13) {
-            if(test_case==13){
+            if(test_case==13 || test_case==15){
                 SendMessageW(popup,WM_KEYDOWN,VK_HOME,0);
                 for(int i=0;i<6;i++)SendMessageW(popup,WM_KEYDOWN,VK_DOWN,0);
                 SendMessageW(popup,WM_KEYDOWN,VK_RETURN,0);
@@ -109,7 +109,6 @@ static LRESULT CALLBACK owner_proc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
                 SendMessageW(popup,WM_KEYDOWN,VK_END,0);
                 SendMessageW(popup,WM_KEYDOWN,VK_UP,0);
                 SendMessageW(popup,WM_KEYDOWN,VK_UP,0);
-                if(test_case==15)SendMessageW(popup,WM_KEYDOWN,VK_UP,0);
                 SendMessageW(popup,WM_KEYDOWN,VK_RETURN,0);
             }
             return 0;
@@ -209,14 +208,14 @@ int main(int argc,char **argv) {
     if(!owner)return 1;
     POINT pointer;GetCursorPos(&pointer);BOOL pointer_available=SetCursorPos(pointer.x,pointer.y);
     if(argc>1 && !strcmp(argv[1],"--preview")){
-        FSA_MenuState preview={10,0,0,2047,FSA_EN,0,7,5};
+        FSA_MenuState preview={10,0,0,2047,FSA_EN,0,7,5,0};
         UINT command=fsa_popup(owner,&preview);printf("Preview command: %u\n",command);DestroyWindow(owner);return 0;
     }
-    UINT expected[]={205,0,101,0,206,209,200,205,0,0,0,0,206,106,209,208,100,102,105,105,107,108,103,109,110,104,410,411,412,413,108,103,103,107,0,106,200,107,209};int failed=0,skipped=0;
+    UINT expected[]={205,0,101,0,206,209,200,205,0,0,0,0,206,106,209,106,100,102,105,105,107,108,103,109,110,104,410,412,411,413,107,103,103,107,0,106,200,107,209};int failed=0,skipped=0;
     for(test_case=0;test_case<39;test_case++) {
         if(!pointer_available && (test_case==8 || test_case==9 || test_case==12)){printf("SKIP popup pointer case %d: input desktop unavailable\n",test_case);skipped++;continue;}
         ticks=phase=0;live_action=0;GetCursorPos(&original_cursor);SetCursorPos(0,0);SetTimer(owner,1,250,NULL);
-        FSA_MenuState state={2,1,0,test_case>=19?2047u:test_case==6?1u:test_case==17?125u:127u,test_language,test_case>=14 && test_case<19,7,0};
+        FSA_MenuState state={2,1,0,test_case>=19?2047u:test_case==6?1u:test_case==17?125u:127u,test_language,test_case>=14 && test_case<19,7,0,0};
         if(test_case==36 || test_case==37){state.extreme|=FSA_MENU_ROUTE_LOCK;state.frontend=5;}
         if(test_case==36){state.selected=6;state.nsp_locked=1;}
         if(test_case==38)state.extreme|=FSA_MENU_LOCK_PENDING;

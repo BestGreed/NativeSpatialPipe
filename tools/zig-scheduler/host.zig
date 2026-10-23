@@ -14,7 +14,7 @@ const Telemetry = struct {
     udp: std.net.Address,
     healthy: bool = true,
     info: []u8,
-    pub fn start(root: []const u8, python: []const u8, port: []const u8, origin: []const u8) !Telemetry {
+    pub fn start(root: []const u8, python: []const u8, port: []const u8, origin: []const u8, output_layout:[]const u8) !Telemetry {
         var listener = try (try std.net.Address.parseIp4("127.0.0.1", 0)).listen(.{ .force_nonblocking = true });
         defer listener.deinit();
         var secret: [32]u8 = undefined;
@@ -25,7 +25,7 @@ const Telemetry = struct {
         defer a.free(controlPort);
         const script = try u.join(&.{ root, "tools/telemetry/standalone.py" });
         defer a.free(script);
-        var process = try u.spawn(&.{ python, script, "--control-port", controlPort, "--secret", secretHex, "--http-port", port, "--origin", origin });
+        var process = try u.spawn(&.{ python, script, "--control-port", controlPort, "--secret", secretHex, "--http-port", port, "--origin", origin, "--output-layout",output_layout });
         errdefer process.close();
         const deadline = c.GetTickCount64() + 10000;
         var stream: ?std.net.Stream = null;
@@ -152,25 +152,12 @@ const Bridge = struct {
         _ = c.setsockopt(self.socket, c.SOL_SOCKET, c.SO_SNDBUF, @ptrCast(&sendBuffer), 4);
         var nextPoll: u64 = 0;
         var nextReport: u64 = 0;
-        var files: [4]?std.fs.File = .{ null, null, null, null };
-        defer for (files) |file| {
-            if (file) |f| f.close();
-        };
         while (!self.stop.load(.acquire)) {
             const now = c.GetTickCount64();
             if (now >= nextPoll) {
                 nextPoll = now + 100;
                 var sizes: [4]?u64 = .{ null, null, null, null };
-                for (&files, 0..) |*file, i| {
-                    if (file.* == null) {
-                        const path = try u.fmt("{s}/stream-{d}/roar-714.f32", .{ self.out, i });
-                        defer a.free(path);
-                        file.* = std.fs.cwd().openFile(path, .{}) catch null;
-                    }
-                    if (file.*) |f| {
-                        sizes[i] = f.getEndPos() catch null;
-                    }
-                }
+                for(self.pipelines,0..) |*pipeline,i| sizes[i]=pipeline.progress();
                 const next = self.routes.update(now, sizes);
                 if (next != self.selected) {
                     if (self.selected) |i| try self.pipelines[i].enable(false);
@@ -198,7 +185,7 @@ const Bridge = struct {
         for (self.routes.rows, 0..) |row, i| rows[i] = .{ .pipeline = i, .outputBytes = row.size, .ageSeconds = if (row.last) |v| @as(f64, @floatFromInt(now - v)) / 1000 else null, .progressUpdates = row.updates, .@"error" = if (row.failed) "read-error" else null };
         const path = try u.join(&.{ self.out, "telemetry-routing.json" });
         defer a.free(path);
-        try u.writeJson(path, .{ .policy = "latest-active-render-output", .pollSeconds = @as(f64, 0.1), .staleAfterSeconds = @as(f64, 1), .selectedPipeline = self.selected, .selectionChanges = self.routes.changes, .routes = rows });
+        try u.writeJson(path, .{ .policy = "latest-active-render-output", .progressSource="renderer-memory-counter", .pollSeconds = @as(f64, 0.1), .staleAfterSeconds = @as(f64, 1), .selectedPipeline = self.selected, .selectionChanges = self.routes.changes, .routes = rows });
     }
     fn send(self: *Bridge, bytes: []const u8) void {
         const result = c.sendto(self.socket, @ptrCast(bytes.ptr), @intCast(bytes.len), 0, @ptrCast(&self.telemetry.udp.any), @intCast(self.telemetry.udp.getOsSockLen()));
@@ -208,14 +195,14 @@ const Bridge = struct {
         const max = 32 + 160 * 1968;
         const packet = &self.packet;
         @memcpy(packet[0..32], &self.telemetry.secret);
-        var raw: [23072]u8 = undefined;
+        var raw: [32+16*480*4]u8 = undefined;
         for (0..16) |_| {
             const size = pipeline.tap(pipeline.handle, &raw, raw.len);
             if (size == 0) break;
-            if (size != raw.len) return error.RawTapFormat;
+            if (size < 32 or size > raw.len or size != 32+@as(usize,std.mem.readInt(u16,raw[6..8],.little))*480*4) return error.RawTapFormat;
             self.epoch = @max(self.epoch, std.mem.readInt(u64, raw[16..24], .little));
             std.mem.writeInt(u64, raw[16..24], self.epoch, .little);
-            @memcpy(packet[32 .. 32 + size], &raw);
+            @memcpy(packet[32 .. 32 + size], raw[0..size]);
             self.send(packet[0 .. 32 + size]);
             self.forwarded += 1;
         }
@@ -258,11 +245,16 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     if(u.option(args,"--playback-config")) |path| {
         const bytes=try u.read(path);defer a.free(bytes);
         desktop=try @import("desktop_playback.zig").parse(a,bytes);
-        for([_][]const u8{"--renderer","--renderer-mode","--render-bridge-dll","--lira-renderer-dll","--spatial-renderer-dll","--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
+        if(u.flag(args,"--record-pcm") or u.flag(args,"--archive-telemetry"))return error.DuplicatePlaybackConfiguration;
+        for([_][]const u8{"--output-layout","--renderer","--renderer-mode","--render-bridge-dll","--lira-renderer-dll","--spatial-renderer-dll","--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
             if(u.option(args,key)!=null) return error.DuplicatePlaybackConfiguration;
         }
     }
-    const dll = if(desktop) |settings| try a.dupe(u8,settings.value.bridgeDll) else if (u.option(args,"--render-bridge-dll")) |path| try a.dupe(u8,path) else try u.join(&.{ root, "build/telemetry-objects/release/nsp_roar_bridge.dll" });
+    const output_layout=if(desktop) |settings| settings.value.outputLayout else u.option(args,"--output-layout") orelse "7.1.4";
+    const preset=@import("layout_presets.zig").get(output_layout) orelse return error.UnsupportedOutputLayout;
+    const output_channels=preset.labels.len;
+    const recording=if(desktop) |settings| settings.value.recording else @import("desktop_playback.zig").Recording{.pcm=u.flag(args,"--record-pcm"),.telemetrySnapshots=u.flag(args,"--archive-telemetry")};
+    const dll = if(desktop) |settings| try a.dupe(u8,settings.value.bridgeDll) else if (u.option(args,"--render-bridge-dll")) |path| try a.dupe(u8,path) else try u.join(&.{ root, n.default_render_bridge });
     defer a.free(dll);
     var pipelines: [4]n.Pipeline = undefined;
     const requested_renderer = if(desktop) |settings| settings.value.renderer else u.option(args,"--renderer") orelse "roar";
@@ -285,8 +277,8 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     try std.fs.cwd().makePath(first);
     const firstPath = try u.join(&.{ first, "roar-714.f32" });
     defer a.free(firstPath);
-    pipelines[0] = try n.Pipeline.initBackend(dll, firstPath, 64, radius_scaled, radius_reference, lira_dll);
-    var telemetry = try Telemetry.start(root, u.option(args, "--python") orelse "python.exe", u.option(args, "--telemetry-port") orelse "8766", u.option(args, "--origin") orelse "http://127.0.0.1:8765");
+    pipelines[0] = try n.Pipeline.initLive(dll, firstPath, 64, radius_scaled, radius_reference, lira_dll,preset.code,recording.pcm);
+    var telemetry = try Telemetry.start(root, u.option(args, "--python") orelse "python.exe", u.option(args, "--telemetry-port") orelse "8766", u.option(args, "--origin") orelse "http://127.0.0.1:8765",output_layout);
     defer telemetry.close();
     const infoPath = try u.join(&.{ out, "telemetry-service.json" });
     defer a.free(infoPath);
@@ -297,15 +289,16 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         try std.fs.cwd().makePath(directory);
         const path = try u.join(&.{ directory, "roar-714.f32" });
         defer a.free(path);
-        pipelines[i] = try n.Pipeline.initBackend(dll, path, 8, radius_scaled, radius_reference, lira_dll);
+        pipelines[i] = try n.Pipeline.initLive(dll, path, 8, radius_scaled, radius_reference, lira_dll,preset.code,recording.pcm);
     }
     // Explicit opt-in, fixed selected source; no automatic switching/merging.
     var audio: ?*playback.Session = null;
     var audio_source: usize = 0;
     var audio_order: []const u8 = "olr";
-    var audio_sources = try @import("output_layout.zig").sources("olr");
-    var audio_physical = audio_sources;
-    var audio_labels = try @import("output_layout.zig").labels("olr");
+    var audio_sources=@import("output_layout.zig").identity;
+    var audio_physical=audio_sources;
+    var audio_labels:[16][]const u8=[_] []const u8{""} ** 16;
+    @memcpy(audio_labels[0..output_channels],preset.labels);
     var audio_config: ?asio.Backend.Config = null;
     var capture_may_have_started = false;
     if (if(desktop) |settings| @as(?[]const u8,settings.value.driver) else u.option(args, "--asio-driver")) |driver| {
@@ -314,11 +307,11 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         audio_order = if(desktop) |settings| settings.value.channelOrder else u.option(args, "--asio-channel-order") orelse "olr";
         if(desktop) |settings| {
             try settings.value.applyOutput(&config);
-            audio_sources=try settings.value.sources();audio_physical=try settings.value.physical();audio_labels=try settings.value.labels();
+            @memcpy(audio_sources[0..output_channels],try settings.value.sources());@memcpy(audio_physical[0..output_channels],try settings.value.physical());audio_labels=try settings.value.labels();
         } else {
-            try config.setOutputOrder(audio_order);
-            audio_sources=try @import("output_layout.zig").sources(audio_order);
-            audio_labels=try @import("output_layout.zig").labels(audio_order);
+            const options=@import("desktop_playback.zig").Config{.bridgeDll=dll,.asioDll=device_dll,.driver=driver,.outputLayout=output_layout,.channelOrder=audio_order};
+            try options.applyOutput(&config);
+            @memcpy(audio_sources[0..output_channels],try options.sources());audio_labels=try options.labels();
         }
         if(u.flag(args, "--asio-fixed-clock")) config.clock_sync=false;
         if (u.option(args, "--asio-startup-timeout-ms")) |v| config.startup_timeout_ms = try std.fmt.parseInt(u32, v, 10);
@@ -344,16 +337,16 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         const path = u.join(&.{ out, "asio-output.json" }) catch null;
         if (path) |p| {
             defer a.free(p);
-            u.writeJson(p, .{ .renderer = renderer, .rendererMode = selection.mode, .rendererDelayFrames = @as(u32, if (lira_dll != null) 512 else 0), .state = @tagName(status.state), .receivedFrames = status.received_frames,
+            u.writeJson(p, .{ .outputLayout=output_layout,.outputChannels=output_channels,.renderer = renderer, .rendererMode = selection.mode, .rendererDelayFrames = @as(u32, if (lira_dll != null) 512 else 0), .state = @tagName(status.state), .receivedFrames = status.received_frames,
                 .outputOrder = audio_order,
-                .outputChannelLabels = audio_labels,
-                .sourceChannelIndices = audio_sources,
-                .physicalChannelIndices = audio_physical,
+                .outputChannelLabels = audio_labels[0..output_channels],
+                .sourceChannelIndices = audio_sources[0..output_channels],
+                .physicalChannelIndices = audio_physical[0..output_channels],
                 .outputHandoff = .{.mode="rust-pool-lease",.pcmCopiesBeforeAsioSubmit=@as(u32,0),.poolBlocksReceived=status.pool_blocks_received,.poolBlocksReleased=status.pool_blocks_released,.dspTailFrames=status.dsp_tail_frames},
-                .outputProcessing = .{.bypass=audio_config.?.processing.bypass,.effectiveBypass=status.dsp_bypassed,.placement="rust-output-pool",.master=audio_config.?.processing.master,.trim=audio_config.?.processing.trim[0..12],.delayFrames=audio_config.?.processing.delay_frames[0..12],
+                .outputProcessing = .{.bypass=audio_config.?.processing.bypass,.effectiveBypass=status.dsp_bypassed,.placement="rust-output-pool",.master=audio_config.?.processing.master,.trim=audio_config.?.processing.trim[0..output_channels],.delayFrames=audio_config.?.processing.delay_frames[0..output_channels],
                     .limiter=.{.enabled=audio_config.?.processing.limiter,.ceiling=audio_config.?.processing.ceiling,.releaseMs=audio_config.?.processing.release_ms,.lookaheadFrames=audio_config.?.processing.lookahead_frames}},
-                .playbackPolicy = .{.clockSync=audio_config.?.clock_sync,.prebufferFrames=audio_config.?.prebuffer_frames,.startupTimeoutMs=audio_config.?.startup_timeout_ms,
-                    .rebufferTimeoutMs=audio_config.?.rebuffer_timeout_ms,.maxRebuffers=audio_config.?.max_rebuffers,.drainTimeoutMs=audio_config.?.drain_timeout_ms},
+                .playbackPolicy = .{.lifetime="session",.noInput="silence",.clockSync=audio_config.?.clock_sync,.prebufferFrames=audio_config.?.prebuffer_frames,.startupTimeoutMs=@as(u32,0),
+                    .rebufferTimeoutMs=@as(u32,0),.maxRebuffers=@as(u32,0),.drainTimeoutMs=audio_config.?.drain_timeout_ms},
                 .submittedFrames = status.submitted_frames, .callbacks = status.callbacks,
                 .starvationFrames = status.starvation_frames, .rebuffers = status.rebuffers,
                 .deviceSampleRate = status.device_sample_rate, .deviceBufferFrames = status.device_buffer_frames,
@@ -393,7 +386,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     var bridge = Bridge{ .pipelines = &pipelines, .telemetry = &telemetry, .out = out };
     var thread = try std.Thread.spawn(.{}, Bridge.run, .{&bridge});
     var recorder = Recorder{ .telemetry = &telemetry, .out = out };
-    var recordThread = try std.Thread.spawn(.{}, Recorder.run, .{&recorder});
+    var recordThread:?std.Thread = if(recording.telemetrySnapshots) try std.Thread.spawn(.{}, Recorder.run, .{&recorder}) else null;
     // Establish cleanup before the first Hook activation attempt, including timeouts.
     capture_may_have_started = true;
     var activation = hook.call("start") catch |err| {
@@ -434,7 +427,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         if (session.stream.snapshot().failure != null) return error.AsioOutputFailed;
     }
 }
-fn shutdown(hook: *n.Hook, receiver: *n.Receiver, pipelines: *[4]n.Pipeline, bridge: *Bridge, thread: *std.Thread, recorder: *Recorder, recordThread: *std.Thread, out: []const u8) !void {
+fn shutdown(hook: *n.Hook, receiver: *n.Receiver, pipelines: *[4]n.Pipeline, bridge: *Bridge, thread: *std.Thread, recorder: *Recorder, recordThread: *?std.Thread, out: []const u8) !void {
     // Never free a mapping/renderer until Hook stop and receiver join are proven.
     var stats: ?std.json.Parsed(u.Value) = null;
     while (stats == null) {
@@ -481,7 +474,7 @@ fn shutdown(hook: *n.Hook, receiver: *n.Receiver, pipelines: *[4]n.Pipeline, bri
     bridge.stop.store(true, .release);
     thread.join();
     recorder.stop.store(true, .release);
-    recordThread.join();
+    if(recordThread.*) |worker| worker.join();
     // Renderer finish joins its producer; drain EOS from still-live tap handles
     // only after the bridge thread has joined, before destroying each pipeline.
     bridge.socket = c.socket(c.AF_INET, c.SOCK_DGRAM, c.IPPROTO_UDP);

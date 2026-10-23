@@ -4,6 +4,7 @@ import ctypes
 import os
 from pathlib import Path
 import subprocess
+import shutil
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -54,6 +55,10 @@ def main():
     subprocess.run([str(compiler), *production, '-DNSP_ASIO_BUILD', '-shared',
                     'modules/audio-backends/src/asio_output_c.cpp', *device, *libraries,
                     '-o', str(dll)], cwd=ROOT, env=env, check=True)
+    # The module may be moved out of this build directory. Keep its runtime
+    # dependencies together instead of depending on the test compiler PATH.
+    for runtime in ('libc++.dll', 'libunwind.dll'):
+        shutil.copy2(compiler.parent / runtime, output / runtime)
     # Real-driver DLL export smoke only. Invalid config returns before COM or
     # driver creation; this deliberately does NOT open/enumerate any device.
     with os.add_dll_directory(str(compiler.parent)):

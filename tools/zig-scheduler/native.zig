@@ -2,6 +2,7 @@ const std = @import("std");
 const u = @import("common.zig");
 const a = u.a;
 const c = u.c;
+pub const default_render_bridge = "build/roar-native/release/nsp_roar_bridge.dll";
 pub const Hook = struct {
     root: []const u8,
     pid: u32,
@@ -46,6 +47,7 @@ pub const Pipeline = struct {
     lib: std.DynLib,
     dll_path: []const u8,
     handle: ?*anyopaque,
+    progressFn:?*const fn(?*anyopaque) callconv(.C) u64=null,
     create: *const fn (u32, u32, u32, u32, [*:0]const u8) callconv(.C) ?*anyopaque,
     finishFn: *const fn (?*anyopaque, ?[*]u8, usize) callconv(.C) usize,
     destroy: *const fn (?*anyopaque) callconv(.C) void,
@@ -62,12 +64,23 @@ pub const Pipeline = struct {
         return initBackend(dll,path,capacity,scaled,reference,null);
     }
     pub fn initBackend(dll: []const u8, path: []const u8, capacity: u32, scaled: bool, reference: f64, lira_dll: ?[]const u8) !Pipeline {
+        return initLayout(dll,path,capacity,scaled,reference,lira_dll,714);
+    }
+    pub fn initLayout(dll:[]const u8,path:[]const u8,capacity:u32,scaled:bool,reference:f64,lira_dll:?[]const u8,code:u32) !Pipeline {
+        return initOptions(dll,path,capacity,scaled,reference,lira_dll,code,null);
+    }
+    pub fn initLive(dll:[]const u8,path:[]const u8,capacity:u32,scaled:bool,reference:f64,lira_dll:?[]const u8,code:u32,record:bool) !Pipeline {
+        return initOptions(dll,path,capacity,scaled,reference,lira_dll,code,record);
+    }
+    pub fn progress(self:*Pipeline) u64 {return if(self.progressFn) |query| query(self.handle) else 0;}
+    fn initOptions(dll:[]const u8,path:[]const u8,capacity:u32,scaled:bool,reference:f64,lira_dll:?[]const u8,code:u32,record:?bool) !Pipeline {
         // scaled/reference belong to ROAR's OLR adapter, not shared input or LIRA.
         if (lira_dll == null) {
             if (!std.math.isFinite(reference) or reference <= 0) return error.InvalidPositionReference;
             if (!scaled and reference != 1.0) return error.ReferenceRequiresScaledMode;
         }
         var lib = try u.library(dll);
+        errdefer |err| std.debug.print("Render bridge initialization failed: {s}: {s}\n", .{ dll, @errorName(err) });
         errdefer lib.close();
         var p: Pipeline = undefined;
         p.finished = false;
@@ -80,7 +93,21 @@ pub const Pipeline = struct {
         p.submit = try u.symbol(@TypeOf(p.submit), &lib, "nsp_pipeline_submit");
         const z = try a.dupeZ(u8, path);
         defer a.free(z);
-        if (lira_dll) |renderer_dll| {
+        p.progressFn=null;
+        if(record) |enabled| {
+            const CreateLive=*const fn(u32,u32,u32,u32,f64,?[*:0]const u8,[*:0]const u8,u32) callconv(.C) ?*anyopaque;
+            const create_live=try u.symbol(CreateLive,&lib,"nsp_pipeline_create_live");
+            p.progressFn=try u.symbol(@TypeOf(p.progressFn.?),&lib,"nsp_pipeline_progress");
+            const renderer_z=if(lira_dll) |value| try a.dupeZ(u8,value) else null;
+            defer if(renderer_z) |value| a.free(value);
+            p.handle=create_live(480,capacity,code,@intFromBool(scaled),reference,if(renderer_z) |value| value.ptr else null,z.ptr,@intFromBool(enabled));
+        } else if(code!=714) {
+            const CreateLayout=*const fn(u32,u32,u32,u32,f64,?[*:0]const u8,[*:0]const u8) callconv(.C) ?*anyopaque;
+            const create_layout=try u.symbol(CreateLayout,&lib,"nsp_pipeline_create_layout");
+            const renderer_z=if(lira_dll) |value| try a.dupeZ(u8,value) else null;
+            defer if(renderer_z) |value| a.free(value);
+            p.handle=create_layout(480,capacity,code,@intFromBool(scaled),reference,if(renderer_z) |value| value.ptr else null,z.ptr);
+        } else if (lira_dll) |renderer_dll| {
             const CreateSpatial = *const fn(u32,u32,[*:0]const u8,[*:0]const u8) callconv(.C) ?*anyopaque;
             const create_spatial = try u.symbol(CreateSpatial,&lib,"nsp_pipeline_create_spatial");
             const renderer_z = try a.dupeZ(u8,renderer_dll);

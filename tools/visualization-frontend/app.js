@@ -28,7 +28,7 @@ let scenario='turn',manualUntil=0,lastNavigation=0,gridOffset=[0,0,0],lastHeadin
 let toiletHidden=[],lastToiletOcclusion=-Infinity;
 const stats={estimate:[],cpu:[],gpu:[]},record=(name,value)=>{stats[name].push(value);if(stats[name].length>600)stats[name].shift();};
 const $ = id => document.getElementById(id);
-const channelIds = ['FL','FR','C','LFE','SL','SR','BL','BR','TFL','TFR','TBL','TBR'];
+let channelIds = ['FL','FR','C','LFE','SL','SR','BL','BR','TFL','TFR','TBL','TBR'];
 const fixtureRoot = '/contracts/visualization/v0/';
 const labels = {live:'连续数据',gap:'有缺块',stale:'数据过期',warmup:'预热中',disconnected:'已断开'};
 const keyOf = k => JSON.stringify([k.sessionId,k.streamEpoch,k.slot,k.generation]);
@@ -151,6 +151,10 @@ function quality(name){if(!state.snapshot)return 'disconnected';if(state.source=
 const displayedChannels=()=>state.window&&state.history?state.history.channels.map(c=>({...c,band:'all',meter:{meanSquare:c.meanSquare,rmsDbfs:c.meanSquare?10*Math.log10(c.meanSquare):null,samplePeak:c.samplePeak,silent:c.validSamples>0&&c.sumSquares===0,sampleCount:c.validSamples}})):state.snapshot?.taps['render-ready'].channels||[];
 function rows(target,items){target.replaceChildren();for(const [a,b]of items){const row=document.createElement('div');row.className='status-row';const span=document.createElement('span'),strong=document.createElement('b');span.textContent=a;strong.textContent=b;row.append(span,strong);target.append(row);}}
 function updateUI(){
+  const ids=state.layout?.channels.map(c=>c.channelId);
+  if(ids&&ids.join(',')!==channelIds.join(','))buildChannelButtons(ids);
+  $('channelCaption').textContent=`${channelIds.length} 声道 · 固定色标`;
+
   const m=state.snapshot||state.history;if(!m)return;
   const simulated=m.dataOrigin==='simulated';$('sourceLabel').textContent=state.source==='replay'?'录制数据回放':simulated?(state.source==='import'?'导入 · 模拟数据':'模拟演示'):(state.source==='import'?'导入 · 测量记录':'测量遥测');document.querySelector('.source-tag').classList.toggle('measured',!simulated);
   const q=quality(state.mode==='navigation'?'decoded-input':'render-ready');$('quality').textContent=`${simulated?'模拟 · ':''}${labels[q]}`;
@@ -160,7 +164,7 @@ function updateUI(){
   $('coverage').textContent=`${(c.ratio*100).toFixed(c.ratio===1?0:1)}%`;
   $('drops').textContent=m.droppedBlocks?`${m.droppedBlocks['decoded-input']+m.droppedBlocks['render-ready']} / ${m.eventOverflow}`:'—';
   const sameLayout=state.layout?.layoutRevision===m.layoutRevision&&state.layout?.routeId===m.routeId;
-  $('layoutLabel').textContent=sameLayout?'7.1.4 · 理想方向':'布局未知 · 声道表';
+  $('layoutLabel').textContent=sameLayout?(state.layout.layoutRevision.match(/ideal(\d)(\d)(\d)-v1/)?.slice(1).join('.')??'7.1.4')+' · 理想方向':'布局未知 · 声道表';
   $('footerState').textContent=`${m.routeId} · 48 kHz / 480 帧 · 全带`;
   if(!state.error)notice(state.source==='replay'?(state.window?'整段 60 秒录制统计 · 覆盖率按所选窗口计算':'真实录制源数据回放 · 输出为 ROAR 离线重渲染'):state.source==='socket'?(simulated?'服务提供模拟数据 · 未接通现场音频':'仅订阅遥测 · 页面不控制音频'):state.source==='import'?'离线记录 · 导入后不推进时间':state.window?'模拟历史样例 · 独立固定记录，不是动画累计结果':'模拟数据 · 未接通现场音频');
   const sig=[...state.objects.keys()].join('|');if(sig!==selectorSignature){selectorSignature=sig;const empty=document.createElement('option');empty.value='';empty.textContent='选择对象（含未定位对象）';$('objectSelect').replaceChildren(empty);for(const [k,{object:o}]of state.objects){const option=document.createElement('option');option.value=k;option.textContent=identityText(o.objectKey)+(o.kind==='static'?' · 静态声床':!o.spatial.positionValid?' · 未定位':'');$('objectSelect').append(option);}}
@@ -187,9 +191,14 @@ function updateInspector(){
   $('selectionTitle').textContent=identityText(o.objectKey);
   rows(target,[['类型',o.kind==='static'?'静态声床':'动态对象'],['RMS',`${dbText(o.meter.rmsDbfs)} dBFS`],['原始坐标',o.spatial.position?.map(v=>v.toFixed(2)).join(', ')||'未知'],['声源类别',o.sourceCategory==='speech-candidate'?'人声候选 · 离线音轨':isVoiceCategory(o.sourceCategory)?'人声 · 来源已标注':o.sourceCategory||'未识别'],['应用归属',o.applicationName||'未知'],['gain',state.snapshot.taps['decoded-input'].gainMode],['位置单位','源单位 · 未校准']]);
 }
+function buildChannelButtons(ids){
+ channelIds=[...ids];$('channels').replaceChildren();
 for(const name of channelIds){const b=document.createElement('button');b.className='channel'+(name==='LFE'?' lfe':'');b.dataset.channel=name;b.title=`选择 ${name} 声道`;
   const head=document.createElement('div');head.className='channel-name';head.textContent=name;const label=document.createElement('span');label.textContent=name==='LFE'?'LOW':name.startsWith('T')?'TOP':'BED';head.append(label);
   const track=document.createElement('div');track.className='meter-track';const fill=document.createElement('div');fill.className='meter-fill';track.append(fill);const value=document.createElement('div');value.className='value';value.textContent='—';b.append(head,track,value);b.onclick=()=>{state.selected=name;updateUI();};$('channels').append(b);}
+
+}
+buildChannelButtons(channelIds);
 
 // Small WebGL2 renderer: shared buffers, one line pass and one point pass.
 const canvas=$('scene'),gl=canvas.getContext('webgl2',{alpha:true,antialias:true});

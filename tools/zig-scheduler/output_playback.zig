@@ -18,7 +18,7 @@ pub const Session = struct {
         stream.tail_timeout_ms = value.drain_timeout_ms;
         const worker = try asio.Worker.create(allocator, .{});
         // Once spawned, storage must survive until worker confirms exit.
-        self.* = .{ .allocator = allocator, .stream = stream, .worker = worker, .wait_ms = @as(u64, value.startup_timeout_ms) + value.rebuffer_timeout_ms + value.drain_timeout_ms + 5000 };
+        self.* = .{ .allocator = allocator, .stream = stream, .worker = worker, .wait_ms = @as(u64, value.drain_timeout_ms) + 5000 };
         var config = value;
         config.stream = stream;
         _ = worker.submit(1, .open, config, null) catch unreachable;

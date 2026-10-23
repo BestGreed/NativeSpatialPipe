@@ -289,8 +289,61 @@ class SchedulerTests(unittest.TestCase):
     def test_native_fixture_audio_telemetry_and_clean_stop(self):
         self.fixture(False)
 
+    def test_live_telemetry_with_no_recording_files(self):
+        self.fixture(False,False,False)
+
+    def test_telemetry_archival_without_pcm_recording(self):
+        self.fixture(False,False,True)
+
+    def test_pcm_recording_without_telemetry_archival(self):
+        self.fixture(False,True,False)
+
     def test_full_timing_native_fixture(self):
         self.fixture(True)
+
+    def test_default_scaled_bridge_reaches_telemetry_and_old_bridge_reports_export(self):
+        # Native fixture target only. Occupy telemetry so a compatible default
+        # must pass bridge creation but cannot activate Hook/capture.
+        with tempfile.TemporaryDirectory(dir=ROOT/'build',prefix='zig-default-bridge-') as temp:
+            base=Path(temp);sample=base/'sample.bin';sample.write_bytes(bytes(140*(32+1920)))
+            source=subprocess.Popen([str(ROOT/'build/native-hook-managed-v2/nsp_fixture_host.exe'),
+                                     str(ROOT/'build/capture-fixture/nsp_fixture.dll'),str(sample),'1'],
+                                    stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,**FLAGS)
+            try:
+                self.assertEqual(source.stdout.readline().strip(),'ready')
+                with socket.socket() as occupied:
+                    occupied.bind(('127.0.0.1',0));occupied.listen()
+                    for old in (False,True):
+                        output=base/('old' if old else 'default')
+                        args=[str(EXE),'host','--root',str(ROOT),'--out',str(output),'--pid',str(source.pid),
+                              '--owner-pid',str(os.getpid()),'--stop-file',str(base/'stop'),'--fixture',
+                              '--python',sys.executable,'--telemetry-port',str(occupied.getsockname()[1])]
+                        if old:args+=['--render-bridge-dll',str(ROOT/'build/telemetry-objects/release/nsp_roar_bridge.dll')]
+                        result=subprocess.run(args,capture_output=True,text=True,timeout=20,**FLAGS)
+                        self.assertEqual(result.returncode,20,result.stderr)
+                        if old:
+                            self.assertIn('nsp_pipeline_create_with_position_mapping',result.stderr)
+                            self.assertIn('telemetry-objects',result.stderr)
+                        else:
+                            self.assertIn('TelemetryStart',result.stderr)
+                            self.assertNotIn('MissingNativeExport',result.stderr)
+                        self.assertFalse((output/'hook-session.json').exists())
+                        self.assertFalse((output/'ready.txt').exists())
+            finally:
+                source.stdin.write('quit\n');source.stdin.flush();source.wait(timeout=5)
+                source.stdin.close();source.stdout.close();source.stderr.close()
+
+    def test_unmarked_failed_start_cannot_release_live_host_or_unrestored_endpoint(self):
+        dead=subprocess.Popen([sys.executable,'-c','pass'],**FLAGS);dead.wait(timeout=5)
+        with tempfile.TemporaryDirectory(dir=ROOT/'build',prefix='zig-unmarked-stop-') as temp:
+            home=Path(temp);output=home/'sessions/fault';output.mkdir(parents=True)
+            (home/'session.json').write_text(json.dumps(dict(id='fault',outputDirectory=str(output),state='faulted',
+                ownerPid=123,endpoint='fixture',orchestratorPid=dead.pid)))
+            for restored,host_pid in [(False,dead.pid),(True,os.getpid())]:
+                (output/'endpoint.json').write_text(json.dumps(dict(restored=restored,hostPid=host_pid,hookCompleted=True,hookExitCode=20)))
+                self.assertEqual(cli(home,'status').returncode,20)
+                self.assertEqual(cli(home,'emergency-stop').returncode,20)
+                self.assertFalse((output/'startup-recovery.json').exists())
 
     def test_telemetry_start_failure_prevents_hook_activation(self):
         with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='zig-start-failure-') as temp:
@@ -325,7 +378,7 @@ class SchedulerTests(unittest.TestCase):
                 source.stdout.close()
                 source.stderr.close()
 
-    def fixture(self, full_timing):
+    def fixture(self, full_timing, record_pcm=True, archive_telemetry=True):
         # This DLL and executable are our owned synthetic target, not audiodg.
         with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='zig-fixture-') as temp:
             base = Path(temp)
@@ -351,6 +404,8 @@ class SchedulerTests(unittest.TestCase):
                                          '--render-bridge-dll', str(BRIDGE), '--position-mode', 'direction']
                 if full_timing:
                     command.append('--full-timing')
+                if record_pcm:command.append('--record-pcm')
+                if archive_telemetry:command.append('--archive-telemetry')
                 host = subprocess.Popen(command, stdout=log, stderr=log, **FLAGS)
                 try:
                     try:
@@ -385,7 +440,9 @@ class SchedulerTests(unittest.TestCase):
                     self.assertIsNone(report['telemetryBridgeError'])
                     self.assertIsNone(report['telemetryRecordError'])
                     self.assertEqual(report['bridgeSendErrors'], 0)
-                    self.assertGreater((output / 'telemetry-snapshots.jsonl').stat().st_size, 0)
+                    if archive_telemetry:self.assertGreater((output / 'telemetry-snapshots.jsonl').stat().st_size, 0)
+                    else:self.assertFalse((output / 'telemetry-snapshots.jsonl').exists())
+                    self.assertEqual(json.loads((output/'telemetry-routing.json').read_text())['progressSource'],'renderer-memory-counter')
                     # Compare actual PCM with the old Python control shim using
                     # the same native renderer and identical packet bytes.
                     reference_dir = base / 'reference'
@@ -398,14 +455,17 @@ class SchedulerTests(unittest.TestCase):
                         reference.submit(dict(block='reference', sequence=seq, count=140, frames=[480] * 140), sample.read_bytes())
                     self.assertTrue(reference.finish()['passed'])
                     expected = (reference_dir / 'roar-714.f32').read_bytes()
-                    with (output / 'stream-0/roar-714.f32').open('rb') as actual:
-                        self.assertEqual(actual.read(len(expected)), expected)
+                    if record_pcm:
+                        with (output / 'stream-0/roar-714.f32').open('rb') as actual:
+                            self.assertEqual(actual.read(len(expected)), expected)
+                    else:self.assertEqual(list(output.rglob('*.f32')),[])
                     evidence = dict(passed=True, fullTiming=full_timing, inputObjects=140,
                                     dynamicObjects=128, outputChannels=12, packets=250,
-                                    pcmReferenceBlocks=8, pcmByteIdentical=True,
+                                    pcmReferenceBlocks=8 if record_pcm else 0, pcmByteIdentical=True if record_pcm else None,
+                                    pcmRecording=record_pcm,telemetryArchival=archive_telemetry,
                                     scope='Owned fixture; explicit historical direction mapping, same bridge as Python reference; no game, audiodg or endpoint changes',
                                     observer=report)
-                    evidence_path = ROOT / 'build/zig-scheduler' / ('full-timing-validation.json' if full_timing else 'fixture-validation.json')
+                    evidence_path = ROOT / 'build/zig-scheduler' / (f'recording-{int(record_pcm)}-archive-{int(archive_telemetry)}-timing-{int(full_timing)}.json')
                     evidence_path.write_text(json.dumps(evidence, indent=2), encoding='utf-8')
                 finally:
                     if host.poll() is None:

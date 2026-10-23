@@ -1,5 +1,13 @@
 # DEV16 合并功能与播放 JSON 配置
 
+2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](playback-user-location-20261024.md).
+
+2026-10-24：新增 `recording.pcm`、`recording.telemetrySnapshots` 两个独立开关，均默认关闭，Web 配置页可编辑；详见[旁录与播放解耦](recording-isolation-20261024.md)。
+
+2026-10-23：新增七种可选输出布局及 ROAR 6DoF 自定义预留槽，详见[输出布局配置](output-layout-presets-20261023.md)。本页原有固定 12 路示例对应默认 7.1.4；其他布局的校准与路由数组按所选声道数配置。
+
+2026-10-23 更新：已增加 Web 图形配置页，覆盖本文现有字段。FSA 启动独立 Web API Host，三击托盘图标打开原首页，再点击“配置”。页面校验并保存 JSON，不控制会话；下次启动时读取。见 [Web 配置与状态 Host](../decisions/web-configuration-host-20261023.md)。本文早期“不新增界面控件”仅指 2026-10-22 当轮范围。
+
 本轮将已经实现的控制项接到同一份播放配置，不扩展 ASIO 调度/延迟优化，也不新增界面控件。配置由 `desktop_playback.zig` 统一解析、校验，再交给实际 host。旧配置省略新增字段时保留原默认行为。
 
 后续同日更新：公共 DSP 已前移至 Rust 输出池块，新增 `outputProcessing.bypass`，Zig PCM 队列和 scratch 改为池块租借交接。详见 [输出池处理与所有权](output-pool-processing-20261022.md)；ASIO 内部缓冲/时钟算法不变。

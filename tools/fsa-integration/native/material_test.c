@@ -40,7 +40,7 @@ int main(void) {
     POINT cursor;GetCursorPos(&cursor);MONITORINFO mi={.cbSize=sizeof(mi)};GetMonitorInfoW(MonitorFromPoint(cursor,MONITOR_DEFAULTTONEAREST),&mi);
     HWND owner=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_TOPMOST,wc.lpszClassName,L"FSA compositor test",WS_POPUP,mi.rcWork.left,mi.rcWork.bottom-500,800,500,NULL,NULL,instance,NULL);
     ShowWindow(owner,SW_SHOWNOACTIVATE);UpdateWindow(owner);SetCursorPos(mi.rcWork.left+600,mi.rcWork.bottom);
-    SetTimer(owner,1,400,NULL);FSA_MenuState state={2,1,0,31,FSA_ZH,0,0,0};fsa_popup(owner,&state);
+    SetTimer(owner,1,400,NULL);FSA_MenuState state={2,1,0,31,FSA_ZH,0,0,0,0};fsa_popup(owner,&state);
     if(phase!=2)failed=1;
     KillTimer(owner,1);DestroyWindow(owner);SetCursorPos(cursor.x,cursor.y);
     printf("Compositor transparency: %s\n",failed?"FAIL":"PASS");return failed;

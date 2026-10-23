@@ -1,5 +1,15 @@
 # Sonic NSp / FSA 集成候选版
 
+2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/core/playback-user-location-20261024.md).
+
+## 当前进度（2026-10-24）
+
+已接通 HT 手动准备、端点能力与 PCM 快照职责拆分、正常停止/急停反馈、ASIO 会话常驻和独立 Web API Host。原生 FSA 负责模式、Hook、端点互验及启停；Web 仅查状态、校验/保存配置。托盘连续三击打开 `http://127.0.0.1:8767/`。
+
+HT Support 为手动 EDID 入口；普通启动/枚举不自动注入，缺少能力的 HT 模式按可用性隐藏。过滤和 HT 勾选状态由 FSA 枚举负责，符合条件且缺能力时才调用准备模块，写入后重载/回验；安装入口尚未实现。见EDID 菜单（开发参考未随公开源码提供）。
+
+播放 JSON 已支持七布局、DSP、接线和两项 `recording` 开关。当前 Zig host 的 PCM/快照默认均不落盘；未填 `PlaybackConfig` 时不启用 ASIO，只运行捕获/遥测。旧 Python 对照和离线工具的录制合同单独保留。详见[播放配置](../../docs/core/playback-json-configuration-20261022.md)和[旁录隔离](../../docs/core/recording-isolation-20261024.md)。下面标日期段落为历史交付说明，不能覆盖本节。
+
 2026-10-18。基于本机 `Final_Spatial_Audio-published` 的 `decba9b`，来源为
 [BestGreed/Final_Spatial_Audio](https://github.com/BestGreed/Final_Spatial_Audio)。
 `native/` 是该提交的源码集成副本，原许可证见 `LICENSE`；未修改原仓库或
@@ -7,7 +17,7 @@
 
 ## 构建与运行
 
-DEV16 N12增加可选 `[NSP] PlaybackConfig=<绝对JSON路径>`，使用与桌面相同的单会话播放合同。`renderer=roar, mode=olr` 或 `renderer=lira, mode=null`，并显式指定渲染桥、ASIO模块、驱动等；留空沿用捕获/落盘。`Configure-Scheduler.ps1 -PlaybackConfig <路径> -ControlExecutable <开发host>` 可写入指定INI；未提供PlaybackConfig参数时保留既有值，显式空值清除。只在启动时传递，停止/急停不依赖该文件。此能力要求Zig，不能静默转给旧Python调度。N12构建与测试使用隔离目录，执行本页旧的正式构建/配置命令仍应按部署时机安排。详见N12范围、证据及剩余实机步骤（开发参考未随公开源码提供）。
+DEV16 N12增加可选 `[NSP] PlaybackConfig=<绝对JSON路径>`，使用与桌面相同的单会话播放合同。`renderer=roar, mode=olr` 或 `renderer=lira, mode=null`，并显式指定渲染桥、ASIO模块、驱动等；留空时仅捕获/遥测，录制仍默认关闭。`Configure-Scheduler.ps1 -PlaybackConfig <路径> -ControlExecutable <开发host>` 可写入指定INI；未提供PlaybackConfig参数时保留既有值，显式空值清除。只在启动时传递，停止/急停不依赖该文件。此能力要求Zig，不能静默转给旧Python调度。N12构建与测试使用隔离目录，执行本页旧的正式构建/配置命令仍应按部署时机安排。详见N12范围、证据及剩余实机步骤（开发参考未随公开源码提供）。
 
 2026-10-19：本目录为 NSp 专用集成源码，尚未回传 FSA 独立仓库主线。默认 `[NSP] Scheduler=Zig`，直接调用 Zig 调度程序，`Python` 仅传给遥测；`ControlExecutable` 留空时按正式构建布局解析，缺少 Zig 不隐式回退。集成构建会更新调度配置并保留规则、快照，但不会重启服务；旧路径须显式 `Scheduler=Python` 或构建参数 `-LegacyPythonScheduler`。部署、启动顺序与验证见[Zig 调度说明](../zig-scheduler/README.md)。
 
@@ -92,3 +102,6 @@ python tools/backend/backend.py exit
 遇到此情况保持未知/故障状态，不能通过删除状态文件假装完成停止。
 
 DEV16 的 `[NSP] PlaybackConfig` 文件可统一设置公共 DSP、ROAR/OLR 半径、物理路由与既有 ASIO 输出策略。修改后在下一次启动生效，端点互验继续归 FSA。详见 [播放 JSON 配置及示例](../../docs/core/playback-json-configuration-20261022.md)。旧 host 不识别新增字段，应使用对应的新构建；本轮未替换现有 FSA 实例。
+## Web 配置入口（2026-10-23）
+
+FSA 启动时创建独立的 Zig Web API Host，地址 `http://127.0.0.1:8767/`，不自动弹浏览器。托盘连续三击左键用默认浏览器打开原可视化首页；首页新增“配置”入口。单击/双击待多击窗口结束后显示原菜单，右键立即显示菜单。Web 仅查询状态、校验并保存现有 JSON，不提供启停、Hook、EDID 或其他控制。管理员 FSA 使用普通用户令牌启动 HTTP Host；服务失败不影响 FSA。详见 [实现边界与使用说明](../../docs/decisions/web-configuration-host-20261023.md)。

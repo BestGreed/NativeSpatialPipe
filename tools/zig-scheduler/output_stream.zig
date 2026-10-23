@@ -34,6 +34,7 @@ pub const Stream = struct {
         token: ?*anyopaque,
         release_fn: Release,
     };
+    channel_count:u32=12,
     allocator: std.mem.Allocator,
     mutex: std.Thread.Mutex = .{},
     leases: [slots]Lease = undefined,
@@ -52,6 +53,7 @@ pub const Stream = struct {
     }
     pub fn configure(self: *Stream, config: @import("output_processing.zig").Config) !void {
         if (self.processor != null) return error.OutputAlreadyConfigured;
+        self.channel_count=config.channels;
         self.processor = try @import("output_processing.zig").Processor.init(self.allocator, config);
         self.status.dsp_bypassed = config.bypass or config.neutral();
     }
@@ -103,10 +105,11 @@ pub const Stream = struct {
         while (self.popLease()) |lease| self.releaseLease(lease);
     }
     /// Diagnostic consumer only. Live ASIO uses popLease, without copying PCM.
-    pub fn pop(self: *Stream, dest: *[samples]f32) bool {
+    pub fn pop(self: *Stream, dest: []f32) bool {
+        if(dest.len<frames*self.channel_count)return false;
         const lease = self.popLease() orelse return false;
         defer self.releaseLease(lease);
-        @memcpy(dest[0..lease.frames * channels], lease.pcm[0..lease.frames * channels]);
+        @memcpy(dest[0..lease.frames * self.channel_count], lease.pcm[0..lease.frames * self.channel_count]);
         return true;
     }
     pub fn finish(self: *Stream) void {
@@ -164,7 +167,7 @@ pub const Stream = struct {
 /// op=0 processes in place; op=1 drains DSP tail into another pool block.
 pub fn processPool(context: ?*anyopaque, op: u32, pcm: [*]f32, capacity: u32, channels: u32, written: *u32) callconv(.C) c_int {
     const stream: *Stream = @ptrCast(@alignCast(context orelse return -22));
-    if (capacity == 0 or capacity > Stream.frames or channels != Stream.channels or op > 1) return -22;
+    if (capacity == 0 or capacity > Stream.frames or channels != stream.channel_count or op > 1) return -22;
     if (stream.snapshot().failure != null) return -1;
     if (op == 1 and stream.tail_started == null) stream.tail_started = std.time.Instant.now() catch {stream.fail(error.OutputTailClock);return -1;};
     written.* = if (op == 0) capacity else 0;
@@ -182,7 +185,7 @@ pub fn processPool(context: ?*anyopaque, op: u32, pcm: [*]f32, capacity: u32, ch
 pub fn publishPool(context: ?*anyopaque, first: u64, pcm: [*]const f32, frames: u32, channels: u32, tail: u32,
     token: ?*anyopaque, release_fn: Stream.Release) callconv(.C) c_int {
     const stream: *Stream = @ptrCast(@alignCast(context orelse return -22));
-    if (channels != Stream.channels or tail > 1 or token == null) {stream.fail(error.OutputFormat);return -22;}
+    if (channels != stream.channel_count or tail > 1 or token == null) {stream.fail(error.OutputFormat);return -22;}
     while (true) {
         stream.pushLease(first, .{.pcm=pcm,.frames=frames,.token=token,.release_fn=release_fn}, tail == 1) catch |err| {
             // Only EOF drain may wait: a long calibration/lookahead tail can

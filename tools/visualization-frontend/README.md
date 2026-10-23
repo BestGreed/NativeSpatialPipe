@@ -1,5 +1,110 @@
-# NSp frontend
+# NSp 声航 / 声谱前端
 
-Run `python tools/visualization-frontend/serve.py` from the repository root and open the printed localhost URL. Synthetic fixtures work without private assets. Connect to a controlled ROAR telemetry demonstration as described in [telemetry and visualization](../../docs/telemetry-visualization.md).
+2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/core/playback-user-location-20261024.md).
 
-The browser supports navigation and spectrum views, object selection, camera presets, source-relative motion candidates and bounded visual effects. It does not control Hook lifetime or output audio. Private Wwise captures, recording preparation tools and recorded-replay acceptance inputs are not included. See the root notices and assets/README.md for the CC0 listener model attribution.
+## 当前入口与配置（2026-10-24）
+
+FSA 随启的独立 Zig Web API Host 默认使用 `http://127.0.0.1:8767/`，托盘连续三击由默认浏览器打开。首页「配置」支持播放/后端 JSON 表单、renderer、七布局、DSP/bypass、按声道名称展示的设备接线和两项诊断录制开关。PCM 旁录及遥测快照均默认关闭，关闭归档不影响实时遥测、内存历史及可视化。设备通道在界面从 1 开始，在 JSON 中从 0 开始。
+
+配置由 `/api/web/` 读取、校验和按修订保存，浏览器不存主副本；播放设置下次启动会话生效，后端默认值需后端重启。Web 不控制 FSA、Hook、EDID 或播放。布局切换按声道名迁移校准/接线，ROAR 6DoF 槽不可选用。见[Web 合同](../../docs/decisions/web-configuration-host-20261023.md)、[布局](../../docs/core/output-layout-presets-20261023.md)、[旁录](../../docs/core/recording-isolation-20261024.md)。
+
+下方 `serve.py` 的 `8765` 是独立预览入口，不启动配置 API、捕获或 ASIO；FSA Web Host 运行时不要让预览服务占用 `8767`。原模拟、回放与声航/声谱入口保持。
+
+2026-10-18。支持模拟、Wwise一分钟回放与独立实时遥测服务，契约0.2能力协商、both订阅、decoded-input/render-ready。Wwise run-05已在浏览器观察声航/声谱及140对象详情；最终全部效果、独立帧率和长期资源待验。最新修复见联调总览（开发参考未随公开源码提供）。
+
+仓库根目录启动：
+
+```powershell
+python tools/visualization-frontend/serve.py
+```
+
+浏览器访问控制台打印的 `http://127.0.0.1:8765/`；端口占用时加 `--port 8767`。服务器只监听本机，提供前端和只读契约文件，不列出目录，不暴露项目其他文件。页面需要HTTP访问，不能直接双击HTML。无需npm安装、外部CDN或网络字体。
+
+## Wwise 一分钟记录回放
+
+已有真实源数据回放适配，见验证记录（开发参考未随公开源码提供）。先运行 `python tools/visualization-frontend/prepare-replay.py`，它读取保留的原一分钟源捕获、测量全部6000包，并用现有ROAR DLL重渲染12声道。生成600个10 Hz快照与60秒历史汇总，写入`build/wwise-visualization-replay`；已有manifest时拒绝重复生成。
+
+启动上述本地服务后访问 `/?replay=wwise-minute`，或点击“数据源 → 加载 Wwise 一分钟记录”。支持暂停回放、从头回放及进度条，最多缓存3个逐秒数据块。页面明确标记录制回放，不接管音频、不重新运行Wwise、不播放PCM。历史窗口使用完整60秒记录：10分钟覆盖10%，1小时覆盖1.67%。
+
+## 已实现
+
+- 声航：对象方向壳层、相对轨迹、短瞬态光斑、旋转/缩放/复位、鼠标选中及键盘对象选择。未知位置保留在对象选择器中，不塞入中心；零向量不伪造方向。
+- 声谱：理想Layout714的平滑能量球面、扬声器标记、12声道全带RMS表；固定−60～0 dBFS色标，LFE单独显示。未知布局仍显示声道表，不套用默认空间布局。
+- 对象/声道详情、gap/stale/disconnected等状态、覆盖率、遥测缺块和事件溢出；明确区分模拟与测量来源。
+- 模拟数据10 Hz、WebGL画面上限30 fps；暂停冻结画面而继续接收数据；减少动态关闭短轨迹和瞬态。隐藏页面停止绘制和模拟推进。
+- 实时/10分钟/1小时切换。演示历史是独立固定fixture，页面持续提示它不是演示动画的累计结果；未实现浏览器历史采集器。
+- 数据源面板支持导入snapshot/layout/history JSON，或连接同一服务的capabilities、layout、history HTTP接口与WebSocket快照。事件缓存最多256项，每对象轨迹最多10点；完整快照才按缺席移除对象，generation变化不串轨迹。
+
+快捷键：Space暂停/继续，R复位，Esc取消选择；按钮、对象选择器均可键盘操作。窄屏变为上下布局与两行声道表；不支持WebGL2时仍提供声道数据。
+
+## 接入真实服务
+
+点击“数据源”，输入 `ws://127.0.0.1:<服务端口>/v1/telemetry` 后连接。前端先读取同主机 `/v1/capabilities`，选第一条route并取对应layout，再发送subscribe，默认申请10 Hz、全带和已支持的模式。服务须先返回negotiated，再发snapshot；独立服务已实现这些端点，连接需满足服务Origin策略。多路由选择UI、自动重连、认证及完整错误码还未实现；本版断开后由用户手动重新连接。
+
+JSON结构由仓库生成的schema检查，浏览器另外检查关键数值、覆盖率、身份、位置变换与事件语义。外部文本仅用textContent显示。单消息/文件临时保护上限为2 MiB，此值与旧64 KiB初拟性能目标无关。浏览器结构校验器只支持本项目schema词汇，服务端仍应使用完整合同校验。
+
+原64 KiB/快照、0.5 MB/s预算不作为前端开发阻塞。按用户确认保留完整JSON，先验证真实资源开销，再决定是否优化。音频不等待界面和有界队列要求保留。
+
+## 验证与限制
+
+可用Node.js时运行（不需要安装依赖）：
+
+```powershell
+node tools/visualization-frontend/test-data.js
+```
+
+本次前端JavaScript验证：17份现有fixture通过、9份错误消息被拒绝，覆盖字段顺序无关性；app脚本语法通过。使用可用的JavaScript运行环境执行，无系统node命令依赖。原Python契约测试13组通过。
+
+浏览器已验证：模拟首屏、两模式切换、12声道、LFE详情、10分钟/1小时固定历史、导入六轴fixture与选择未知位置、暂停标识；390px窄屏检查无横向溢出。此段为早期模拟验收；后续真实WS与Wwise现场浏览器联通见联调总览。频带FFT、对象长历史、完整星云/光锥、WebView2壳、GPU context恢复及一小时资源测试尚待后续。
+
+当前展示方向和能量图用于观察，不是实际声压、声束、房间仿真或设备播放证明。首次真实接入应先核对声道表及覆盖率，再验证空间效果。
+
+## 声航 V0.2 原型
+
+参见 审查、算法和输入限制（开发参考未随公开源码提供）。页面可控运动下拉框覆盖转向、平移、混合声源、身份复用及中断。真实回放沿用 100 ms 快照，约 50 ms 更新视觉状态；无可信尺度时不生成平移。测试：`node tools/visualization-frontend/test-navigation.js`。
+
+## 弱持续声源丝网
+
+声航的弱持续声源丝网采用路径生长：各对象先横向探索并轻微向内弯曲，主丝数量和夹角按对象变化，较短侧枝从丝束中途生出；相邻且持续时间相近的对象再从两端沿内凹的局部弯曲路径逐步接通，接通段更亮。邻近关系只选择可接通的局部对象组，不直接绘制点间直线；深场薄雾沿丝束分布。特殊纵深点列不再画对象间直线。
+
+部分外围种子另长出一条更短、更暗的外向探丝，外向层数量少于内向主丝，沿线仅有较弱雾光，以形成厚度而不恢复整齐的放射状轮廓。
+
+成熟的外围丝束、连接段与膜面共用缓慢变化的空间形变场，产生有界的游动；每条路径在真实对象点处保持固定，近处丝束及“减少动态”模式不游动。此动画只影响视觉顶点，不参与对象位置、轨迹或航向计算。
+
+接通的局部网段按图块顺序短促增亮。近处低声对象仍保留较暗的丝束与局部连接；只有相对会话尺度判为外围的相邻路径会生成朝监听者侧内凹的透明膜片。外围低声对象消失或降至静音时，视觉层沿最后一次连续位移最多预测 0.5 秒（显示位移封顶），之后再用 0.5 秒渐隐和收束；这段残影不计入活动对象与航向求解。该距离是未经米制校准的相对视觉尺度。
+
+实际显示瞬态光圈的对象在事件有效期及其后 0.2 秒内退出丝网和普通云雾；若随后仍持续低响度活动，重新满足约 0.65 秒连续条件后才可入网。普通云雾另要求至少 0.35 秒持续活动，因此短声不会留下云团。回放中的 onset 是高频候选事件，画面每帧只显示最强的 6 个光圈，不能把所有未显示的候选都当作已确认瞬态。浅蓝色纵深点列标记属于另一项空间分布提示，不表示瞬态分类。
+
+现场对象可能长期存活，而服务端 onset 只在身份新建或源标志出现时触发。前端在连续、完整的实测快照之间，若同一动态对象的窗口 RMS 至少升高 10 dB、当前 RMS 不低于 −42 dBFS 且峰值至少 0.05，可补一个带 450 ms 冷却的**视觉瞬态候选**；服务端已有事件优先。候选仅进入前端光圈与短时视觉排他状态，不写回遥测、运动估计或游戏语义，断帧和首帧不推断。默认显示最强 6 个光圈；若其中没有聆听位中心附近的候选，则额外保留该区域最强的 1 个，有界为 7 个。中心区域按会话固定的视觉径向尺度判断，不冒充米制距离；精确原点也能绘制朝相机的光圈。“减少动态”会关闭瞬态动画。
+
+普通云雾由连续至少 0.35 秒、RMS 高于约 −42 dBFS 的动态对象驱动，并按画面相对径向位置调节尺寸、扩散与透明度。画面中心附近的云团收紧且变淡，外围保持原强度；这种层级不是实际声源距离或声学类别判断。
+
+云雾入场另取同一对象最初约 0.35 秒的 RMS 强度：早期较强的持续声以更亮的初始雾层、更短的渐亮时间进入；中等响度以中等亮度缓慢展开。入场后云雾的稳态强弱仍跟随当前实测能量，早期强度不永久覆盖后续变化；短声及瞬态光圈期不入场。
+
+一分钟回放的系统侧原始位置与导出首帧逐值一致。Windows 接口规定坐标单位为米，Wwise 可按 `fGameUnitsToMeters` 从游戏单位换算；采集未包含该游戏转换系数或独立物理尺标，故前端契约仍标 `source-unverified`。全段对象位置模长中位数约 18.67 接口单位、最大 152；约 3,152/76,800 份动态对象快照为精确原点。中心大云团的原因是原有规则把靠近原点的持续较响对象也扩成四片大雾，不是从距离数据推得的大型声源。
+
+## 原始音轨人声候选试验
+
+先将 `onnxruntime` 和 `silero-vad==6.2.1` 安装到 `build/voice-vad-deps`，再运行 `python tools/visualization-frontend/probe-voice.py`。脚本读取 `work/wwise-minute/sources/Slot*.wav`，在原回放目录生成独立的 `voice-candidates.json`，不改动 WAV 或已测量的回放分块。打开 `/?replay=wwise-minute&voice=probe` 可以看到候选区间对应的弧面；去掉 `voice=probe` 即回到原始回放。不要附加 `navigation=legacy`，除非有意对照旧求解器。此标签只是离线语音活动假设，不能证明是人声或对应人物，更不能从 VAD 推断说话内容。
+
+```powershell
+python -m pip install --target build/voice-vad-deps onnxruntime silero-vad==6.2.1
+python tools/visualization-frontend/probe-voice.py
+```
+
+## 声航 V0.3 运动估计
+
+当前默认使用短期稳定参考筛选、加权 Procrustes、RANSAC/IRLS 和独立声源残差流；Wwise 回放用内部一致的源坐标估计相对转向与共同流向，单位未经米制校准。详情及输入边界见 V0.3 审查与验证（开发参考未随公开源码提供）。在页面地址后加 `?navigation=legacy`（已有参数则加 `&navigation=legacy`）切换到保留的 V0.2 求解器，`navigation=off` 关闭自动航向。运行 `node tools/visualization-frontend/test-registration.js`、`test-navigation-core.js`、`test-navigation.js`，以及准备好一分钟回放后的 `test-navigation-recording.js` 验证。
+
+## 外围网格连线与惯性反馈
+
+对象间的曲线连接按路径位置着色：两个对象端点较亮，静止时中段仅微弱可见；分块闪烁保留端点梯度，流动电流经过的位置才短暂提亮中段。连接段的雾光也按端点位置衰减。亮度变化沿用既有线段，不增加 WebGL 绘制批次或顶点数。
+
+外围丝束和连接路径对可信的共同流向及相对旋转产生小幅、带回稳的视觉滞后；原始对象坐标及其连线端点保持固定。控制器预留三项平移和三项转动响应，但回放没有真实监听者 6DoF 姿态，也没有可靠米制标尺；缺失或不可信的运动轴保持零输入。手动观察、低可信状态和减少动态效果时回稳。该反馈仅用于视觉，不回写姿态估计。
+
+本机 QuickJS 合成测试对 19 点连接曲线重复 19 万点计算，加入惯性后的单点处理约由 2.04 微秒增至 2.55 微秒；这是解释器压力测试，不是浏览器 CPU/GPU 帧时间。真实浏览器性能和视觉强弱仍需在回放页面观察。
+## FSA 配置入口（2026-10-23）
+
+FSA 自动启动独立 Web API Host 后，访问 `http://127.0.0.1:8767/`，或连续三击 FSA 托盘图标。可视化首页新增“配置”链接，进入 `configuration.html`，提供既有播放、ASIO、DSP、路由、半径映射和后端 JSON 的图形编辑与完整 JSON 编辑。配置保存不控制运行，原绘图和遥测逻辑不变。单独使用旧的只读预览服务时，配置页会提示 API 不可用。详见 [Web Host 合同](../../docs/decisions/web-configuration-host-20261023.md)。
+
+纯模型/DOM 合同验证：`npm run test:configuration` 与 `npm run test:configuration-page`；不需要浏览器自动操作。

@@ -4,9 +4,14 @@ import os
 from pathlib import Path
 import subprocess
 import time
+import argparse
 
 ROOT=Path(__file__).absolute().parents[2]
-OUT=ROOT/'build/dev16-n07-playback'
+parser=argparse.ArgumentParser()
+parser.add_argument('--bridge',type=Path,help='Reuse an already built ROAR bridge; no renderer rebuild')
+parser.add_argument('--output',type=Path,default=ROOT/'build/dev16-n07-playback')
+args=parser.parse_args()
+OUT=args.output.resolve()
 LLVM=ROOT/'work/rust-bootstrap/llvm-fast/llvm-mingw-20261006-ucrt-x86_64/bin'
 ZIG=ROOT/'work/zig-bootstrap/zig-windows-x86_64-0.13.0/zig.exe'
 OUT.mkdir(parents=True,exist_ok=True)
@@ -19,8 +24,11 @@ def run(args):
     print(r.stdout+r.stderr,end='',flush=True)
     with (OUT/'test.log').open('a',encoding='utf-8') as log:log.write(r.stdout+r.stderr)
     r.check_returncode()
-run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File',ROOT/'tools/roar-bridge/Build.ps1',
-     '-TargetDirectory','build/dev16-n07-roar'])
+bridge=args.bridge.resolve() if args.bridge else ROOT/'build/dev16-n07-roar/release/nsp_roar_bridge.dll'
+if not args.bridge:
+    run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File',ROOT/'tools/roar-bridge/Build.ps1',
+         '-TargetDirectory','build/dev16-n07-roar'])
+if not bridge.is_file():raise FileNotFoundError(bridge)
 dll=OUT/'NSP.AsioOutput.Fake.dll'
 run([LLVM/'clang++.exe','-std=c++20','-O2','-DUNICODE','-D_UNICODE','-DNOMINMAX',
      '-DSPATIAL_AUDIO_ASIO_TESTING','-DSPATIALASIO_VERSION="n07-playback-test"','-DNSP_ASIO_BUILD','-shared',
@@ -36,9 +44,9 @@ probe=OUT/'playback-probe.exe'
 run([ZIG,'build-exe',ROOT/'tools/zig-scheduler/playback_probe.zig',*flags,'-femit-bin='+str(probe)])
 run([ZIG,'build-exe',ROOT/'tools/zig-scheduler/main.zig',*flags,'-femit-bin='+str(OUT/'nsp-scheduler.exe')])
 results=[]
-for case in ['normal','tail','rebuffer','repeat','timeout','startup-timeout','device-fault','clock-sync','rebuffer-sync']:
+for case in ['normal','tail','rebuffer','repeat','idle-gap','idle-start','device-fault','clock-sync','rebuffer-sync','idle-start-sync','idle-gap-sync','idle-stop','drain-stall']:
     directory=OUT/'runs'/str(time.time_ns())/case
-    run([probe,ROOT/'build/dev16-n07-roar/release/nsp_roar_bridge.dll',dll,directory,case])
+    run([probe,bridge,dll,directory,case])
     results.append(json.loads((directory/'playback.json').read_text()))
 (OUT/'checks.json').write_text(json.dumps(dict(passed=True,scope='Owned software fixtures only; no DVS or physical driver',cases=results),indent=2),encoding='utf-8')
 print(f'N07: {len(results)} complete software playback cases passed; evidence: {OUT / "checks.json"}')

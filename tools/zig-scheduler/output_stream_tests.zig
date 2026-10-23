@@ -1,6 +1,20 @@
 const std = @import("std");
 const pool = @import("output_stream.zig");
 const S = pool.Stream;
+test "all layout pool callbacks use configured dimensions and preserve lease ownership" {
+    for([_]u32{8,10,12,14,16}) |channels| {
+        const stream=try S.create(std.testing.allocator);defer stream.destroy();
+        try stream.configure(.{.channels=channels,.master=0.5});
+        var data=[_]f32{0.25} ** (480*16);var written:u32=0;
+        try std.testing.expectEqual(@as(c_int,0),pool.processPool(stream,0,&data,480,channels,&written));
+        try std.testing.expectEqual(@as(u32,480),written);
+        for(data[0..480*channels]) |sample| try std.testing.expectEqual(@as(f32,0.125),sample);
+        var token=Token{};
+        try std.testing.expectEqual(@as(c_int,0),pool.publishPool(stream,0,&data,480,channels,0,&token,Token.release));
+        const block=stream.popLease().?;try std.testing.expect(block.pcm==data[0..].ptr);
+        stream.releaseLease(block);try std.testing.expectEqual(@as(u32,1),token.returns);
+    }
+}
 const Token = struct {
     returns: u32 = 0,
     fn release(context: ?*anyopaque) callconv(.C) void {

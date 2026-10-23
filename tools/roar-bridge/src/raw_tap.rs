@@ -16,17 +16,18 @@ impl Ring {
     }
 }
 pub(crate) struct Control {
-    bytes: usize, supported: bool, state: AtomicU64, stopped: AtomicBool, ring: OnceLock<Ring>,
+    channels:usize, bytes: usize, supported: bool, state: AtomicU64, stopped: AtomicBool, ring: OnceLock<Ring>,
     reader: Mutex<usize>, published: AtomicU64, dropped: AtomicU64, consumed: AtomicU64,
 }
 pub(crate) struct Producer { control: Arc<Control>, cursor: usize }
 impl Control {
     pub(crate) fn new(supported: bool) -> Arc<Self> {
-        Self::sized(supported, WIRE_SIZE)
+        Self::output(supported,12)
     }
+    pub(crate) fn output(supported:bool, channels:usize)->Arc<Self>{let mut control=Self::sized(supported,32+channels*480*4);Arc::get_mut(&mut control).unwrap().channels=channels;control}
     pub(crate) fn objects(supported: bool) -> Arc<Self> { Self::sized(supported, OBJECT_SIZE) }
     fn sized(supported: bool, bytes: usize) -> Arc<Self> {
-        Arc::new(Self { bytes, supported, state: AtomicU64::new(0), stopped: AtomicBool::new(false), ring: OnceLock::new(), reader: Mutex::new(0), published: AtomicU64::new(0), dropped: AtomicU64::new(0), consumed: AtomicU64::new(0) })
+        Arc::new(Self { channels:0, bytes, supported, state: AtomicU64::new(0), stopped: AtomicBool::new(false), ring: OnceLock::new(), reader: Mutex::new(0), published: AtomicU64::new(0), dropped: AtomicU64::new(0), consumed: AtomicU64::new(0) })
     }
     pub(crate) fn producer(self: &Arc<Self>) -> Producer { Producer { control: self.clone(), cursor: 0 } }
     /// Control caller only. Allocate/touch the pool before enabling publication.
@@ -70,25 +71,27 @@ impl Control {
 impl Producer {
     pub(crate) fn active(&self) -> bool { self.control.state.load(Ordering::Acquire) & 1 != 0 }
     pub(crate) fn publish(&mut self, sequence: u64, pcm: &[f32]) -> bool {
-        if pcm.len() != SAMPLES { return false; }
+        let channels=self.control.channels;
+        if pcm.len() != (channels*480) { return false; }
         self.publish_custom(|epoch, wire| {
-            header(wire, b"NSPT", 12, epoch, sequence);
-            let bytes = unsafe { std::slice::from_raw_parts(pcm.as_ptr() as *const u8, SAMPLES * 4) };
-            wire[32..WIRE_SIZE].copy_from_slice(bytes); WIRE_SIZE
+            header(wire, b"NSPT", channels as u16, epoch, sequence);
+            let bytes = unsafe { std::slice::from_raw_parts(pcm.as_ptr() as *const u8, (channels*480) * 4) };
+            wire[32..(32+channels*480*4)].copy_from_slice(bytes); (32+channels*480*4)
         })
     }
     /// Preserve the planar wire contract without a planar audio workspace.
     pub(crate) fn publish_interleaved(&mut self, sequence: u64, pcm: &[f32]) -> bool {
-        if pcm.len() != SAMPLES { return false; }
+        let channels=self.control.channels;
+        if pcm.len() != (channels*480) { return false; }
         self.publish_custom(|epoch, wire| {
-            header(wire, b"NSPT", 12, epoch, sequence);
-            for channel in 0..12 {
+            header(wire, b"NSPT", channels as u16, epoch, sequence);
+            for channel in 0..channels {
                 for frame in 0..480 {
                     let at = 32 + (channel*480+frame)*4;
-                    wire[at..at+4].copy_from_slice(&pcm[frame*12+channel].to_le_bytes());
+                    wire[at..at+4].copy_from_slice(&pcm[frame*channels+channel].to_le_bytes());
                 }
             }
-            WIRE_SIZE
+            (32+channels*480*4)
         })
     }
     pub(crate) fn publish_custom(&mut self, fill: impl FnOnce(u64, &mut [u8]) -> usize) -> bool {

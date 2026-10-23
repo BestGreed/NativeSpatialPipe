@@ -1,45 +1,54 @@
-# Native Spatial Pipe - alpha-dev
+# Native Spatial Pipe
 
-Native capture, rendering, and real-time visualization of Windows spatial audio object streams. This is a development source snapshot dated 2026-10-22, not a registered Spatial Sound Provider or a Dolby/DTS bitstream decoder.
+Windows spatial-audio object capture, native rendering and real-time visualization. Updated 2026-10-24 for `alpha-dev` and `main`. This is a build-specific research implementation, not a registered Windows Spatial Sound Provider or a Dolby/DTS bitstream decoder.
 
-**N03-N12 integration is complete within its documented scope. Pool-side DSP/bypass and leased output are connected; the temporary WPF frontend is retired.** Workspace cleanup and source branch synchronization are complete. See [alpha-dev progress](docs/alpha-dev.md) for completed work and remaining tasks.
+## Current implementation
 
 ```text
-C Hook / capture -> shared memory -> Rust receiver / common input conversion
- -> ROAR (OLR validated in this round) or LIRA -> Rust interleaved output pool
- -> in-place DSP / bypass -> leased pool blocks -> ASIO
-Side path: current file recording -> Python telemetry -> web visualization
-Control: native FSA endpoint management -> Zig session coordination / backend worker
+MinHook / C capture -> shared memory -> Rust receiver / common input
+ -> ROAR (OLR mode) or C++ LIRA -> interleaved output pool
+ -> in-place DSP / bypass -> leased pool blocks -> ASIO owner
+Optional pre-DSP copy -> bounded recording pool -> dedicated file writer
+Independent telemetry -> Python metering/history -> browser visualization
+Native FSA -> Zig session coordination and independent Web configuration host
 ```
 
-ASIO retains its internal buffering, sample-rate conversion, and device clock matching. Pool leases replace the Zig PCM queue and scratch copies. Neutral DSP settings skip processing automatically; `outputProcessing.bypass=true` explicitly bypasses common DSP. See [playback JSON configuration](docs/core/playback-json-configuration-20261022.md); the example and schema are under `tools/zig-scheduler`.
+Both renderers support **5.1.2, 5.1.4, 7.1.2, 7.1.4, 7.1.6, 9.1.4 and 9.1.6**, using common channel order and speaker-identity calibration/routing migration. ROAR's 6DoF measurement slot is reserved and cannot be selected yet. See [output layouts](docs/core/output-layout-presets-20261023.md).
 
-Validation covers DVS at 48 kHz / 128 frames, a 12-channel digital network return, and the classic Wwise cases using Atmos Home Theater with ROAR/OLR and DTS:X Home Theater with LIRA. It does not establish compatibility with every driver, acoustic end-to-end latency, or long-term stability. The new output-pool path has produced audible output, but one session's final `OutputTimeout` still needs investigation. Historical performance figures do not automatically apply to this version.
+ASIO retains its device buffering, sample-rate conversion and clock matching. It remains active for the session and sends silence without input. DSP runs in the output pool; no Zig PCM staging queue or scratch copy is required before ASIO submission. The audio handoff thread does not write recording files.
 
-## Build and entry points
+PCM recording and telemetry JSONL archival are independent and **disabled by default**:
 
-Follow [dependencies and core build instructions](docs/build.md) to prepare the pinned MinHook, ROAR, Rust, LLVM/MinGW, and Zig 0.13.0 dependencies. This source repository does not bundle toolchains, private recordings, Wwise projects, or proprietary codec DLLs.
+```json
+"recording": {"pcm": false, "telemetrySnapshots": false}
+```
+
+Enabling PCM recording copies pre-DSP audio into a dedicated 32-block pool. A slow or failed recorder drops recording blocks and reports them without retaining playback leases. Live telemetry and in-memory history continue without archival. See [recording isolation](docs/core/recording-isolation-20261024.md).
+
+## Configuration and entry points
+
+FSA starts a separate Zig Web API Host at `http://127.0.0.1:8767/`; triple-click its tray icon to open the default browser. The configuration page reads, validates and saves playback/backend JSON. Saving does not apply settings automatically. Start/stop, mode changes, Hook and EDID actions remain exclusively with FSA. Python telemetry stays read-only and separate. Standalone visual preview uses port 8765.
+
+Playback configuration defaults to `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`. Existing installation-adjacent `playback.json` is copied without deleting the original or overwriting an existing user file. Explicit custom `PlaybackConfig` paths remain supported. Default saves do not write the installation INI. See [migration](docs/core/playback-user-location-20261024.md) and [playback fields](docs/core/playback-json-configuration-20261022.md).
+
+## Build
+
+Prepare the pinned dependencies in [build instructions](docs/build.md), then run:
 
 ```powershell
 ./tools/Build-Alpha.ps1 -LlvmBin C:/toolchains/llvm-mingw/bin -Zig C:/toolchains/zig-0.13.0/zig.exe
 ```
 
-This builds the core, LIRA and ASIO DLLs, and the Zig backend without opening a driver or injecting Hook. See [FSA integration](tools/fsa-integration/README.md) and [scheduler configuration](tools/zig-scheduler/README.md). Building does not deploy or restart FSA. Actual Hook operations requiring administrator privileges must be started explicitly.
+Building does not open a driver, inject Hook, deploy or restart FSA. ASIO/LIRA modules require matching `libc++.dll` and `libunwind.dll` alongside them. The native audio path uses C/Rust/C++; Zig manages coordination and configuration, Python supplies telemetry and tests, and JavaScript runs in the browser. The product does not require .NET; the retired WPF frontend is excluded.
 
-The native audio and management path has no .NET runtime dependency. Python remains necessary for telemetry and development tests. The complete SpatialASIO project, temporary WPF frontend, and installer are excluded. A separate web API control host is planned but not implemented; existing telemetry remains read-only.
+## Validation and remaining work
 
-## Current limitations
+Development validation includes bounded recording/failure checks, four archive combinations with an owned 140-slot capture fixture, seven-layout renderer checks, Web configuration tests and actual FSA/ASIO idle start/stop. Earlier DVS 48 kHz/128-frame 12-channel network return and classic Wwise HT tests retain their original scope. Private captures and evidence payloads are not distributed here.
 
-Continuous PCM and telemetry recording still occurs. Active 12-channel Float32 PCM consumes about 8.29 GB/hour. D15 recording decoupling and the default recording policy remain pending. Configuration and session data normally reside under `%LOCALAPPDATA%/NativeSpatialPipe`; these runtime files are not included here.
-
-Capture transport faults remain fatal. Temporary ASIO underruns allow bounded recovery, while device faults stop playback safely. LIRA retains its original room projection, clipping, and smoothing behavior. The default OLR mapping uses the full source radius with `scaled/reference=1`; this is a software coordinate contract, not a physical room calibration.
-
-Other pending work includes FSA first-input waiting and error feedback, output-pool session closeout, web API design, and a future native network output path. Inferno has not been integrated. ASIO-internal transfer, scheduling, and latency optimization remain out of scope.
+These checks do not establish all-layout physical playback, 14/16-channel network routing, acoustic latency or long-term stability. Storage quotas, retention/cleanup policies, 6DoF measurement handling, detailed startup error presentation and a native network output remain future work. Inferno is not integrated. ASIO-internal scheduling and latency optimization remain out of scope. An earlier output-session `OutputTimeout` still needs targeted sustained-input/stop validation; later idle success does not erase that evidence.
 
 ## Licensing and attribution
 
-The root [LICENSE](LICENSE) applies Apache-2.0 to original NSP contributions. LIRA retains its original Apache notices. ASIO device code and the included SDK headers have a GPL-3.0-only scope; a combined program containing them must not be described as Apache-only. See [license scope](LICENSING.md), [third-party notices](THIRD_PARTY_NOTICES.md), and [module licensing](modules/audio-backends/LICENSING.md). FSA source and artwork retain their separate terms.
+Original NSP contributions retain Apache-2.0. LIRA keeps its original Apache notices. ASIO device code and SDK headers retain GPL-3.0-only scope; a combined program containing them must not be described as Apache-only. See [license scope](LICENSING.md), [third-party notices](THIRD_PARTY_NOTICES.md) and [module licensing](modules/audio-backends/LICENSING.md). FSA code and artwork retain their separate terms.
 
-Thanks to hikari-taritsu (rmj) for the original Spatial ASIO / LIRA contributions. Original author and license notices are retained. See [provenance and export scope](docs/alpha-dev.md) and the [source mapping manifest](docs/core-source-manifest.json). Public `main` retains its earlier baseline; this update targets `alpha-dev`.
-
-[Documentation index](docs/README.md)
+Thanks to hikari-taritsu (rmj) for the Spatial ASIO / LIRA contributions. Original notices are preserved. Public `main` and `alpha-dev` carry the reviewed source export, without importing private Git history. See [provenance](docs/alpha-dev.md), [source manifest](docs/core-source-manifest.json) and [documentation index](docs/README.md).

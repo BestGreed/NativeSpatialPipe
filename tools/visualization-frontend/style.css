@@ -14,3 +14,5 @@
 .scene-panel:fullscreen{width:100vw;height:100vh;min-height:0;border-radius:0}
 .scene-panel:fullscreen::backdrop{background:#0b1015}
 @media(max-width:720px){.view-switch{right:15px;top:48px}.view-switch button{padding:5px 7px}}
+
+.actions .config-link{display:inline-flex;align-items:center;justify-content:center;border:1px solid #34474c;border-radius:8px;padding:9px 14px;color:#bfe9e3;text-decoration:none;font-size:13px}.actions .config-link:hover{border-color:#85ddce}

@@ -386,7 +386,11 @@
             "TFL",
             "TFR",
             "TBL",
-            "TBR"
+            "TBR",
+            "FWL",
+            "FWR",
+            "TML",
+            "TMR"
           ]
         },
         "band": {
@@ -709,7 +713,13 @@
         },
         "layoutId": {
           "enum": [
-            "roar-layout714"
+            "roar-layout714",
+            "nsp-layout512",
+            "nsp-layout514",
+            "nsp-layout712",
+            "nsp-layout716",
+            "nsp-layout914",
+            "nsp-layout916"
           ]
         },
         "coordinateSystem": {
@@ -740,23 +750,34 @@
                   "TFL",
                   "TFR",
                   "TBL",
-                  "TBR"
+                  "TBR",
+                  "FWL",
+                  "FWR",
+                  "TML",
+                  "TMR"
                 ]
               },
               "staticType": {
-                "enum": [
-                  2,
-                  4,
-                  8,
-                  16,
-                  32,
-                  64,
-                  128,
-                  256,
-                  512,
-                  1024,
-                  2048,
-                  4096
+                "anyOf": [
+                  {
+                    "enum": [
+                      2,
+                      4,
+                      8,
+                      16,
+                      32,
+                      64,
+                      128,
+                      256,
+                      512,
+                      1024,
+                      2048,
+                      4096
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
                 ]
               },
               "direction": {
@@ -782,8 +803,8 @@
             ],
             "additionalProperties": false
           },
-          "minItems": 12,
-          "maxItems": 12
+          "minItems": 8,
+          "maxItems": 16
         }
       },
       "required": [
@@ -883,7 +904,11 @@
               },
               "maxChannels": {
                 "enum": [
-                  12
+                  8,
+                  10,
+                  12,
+                  14,
+                  16
                 ]
               }
             },
@@ -1141,7 +1166,11 @@
                   "TFL",
                   "TFR",
                   "TBL",
-                  "TBR"
+                  "TBR",
+                  "FWL",
+                  "FWR",
+                  "TML",
+                  "TMR"
                 ]
               },
               "sumSquares": {
@@ -1196,8 +1225,8 @@
             ],
             "additionalProperties": false
           },
-          "minItems": 12,
-          "maxItems": 12
+          "minItems": 8,
+          "maxItems": 16
         }
       },
       "required": [

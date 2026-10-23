@@ -8,6 +8,7 @@ import struct
 import time
 import uuid
 from metering import Metering
+from layout_presets import LAYOUTS
 
 spec = importlib.util.spec_from_file_location('output_contract', Path(__file__).resolve().parents[1] / 'visualization-contract/contract.py')
 contract = importlib.util.module_from_spec(spec)
@@ -28,7 +29,13 @@ def cov(n, expected):
 
 
 class Engine:
-    def __init__(self, route='native-route', clock=time.monotonic, meter_backend=None):
+    def __init__(self, route='native-route', clock=time.monotonic, meter_backend=None, output_layout='7.1.4'):
+        self.channels=LAYOUTS[output_layout]
+        self.channel_count=len(self.channels)
+        self.output_layout=output_layout
+        self.layout_revision='ideal'+output_layout.replace('.','')+'-v1'
+        self.layout_id=('roar-layout' if output_layout=='7.1.4' else 'nsp-layout')+output_layout.replace('.','')
+        self.block_bytes=32+self.channel_count*480*4
         self.metering = Metering(meter_backend)
         self.route = route
         self.session = str(uuid.uuid4())
@@ -49,28 +56,32 @@ class Engine:
         return max(0, int((self.clock() - self.started)*1000000))
 
     def layout(self):
-        angles = [(-30,0),(30,0),(0,0),None,(-90,0),(90,0),(-150,0),(150,0),(-30,45),(30,45),(-150,45),(150,45)]
+        directions=dict(zip(contract.CHANNELS,[(-30,0),(30,0),(0,0),None,(-90,0),(90,0),(-150,0),(150,0),(-30,45),(30,45),(-150,45),(150,45)]))
+        directions.update(FWL=(-60,0),FWR=(60,0),TML=(-90,45),TMR=(90,45))
+        if self.output_layout.startswith('5.') : directions.update(SL=(-110,0),SR=(110,0))
+        types=dict(zip(contract.CHANNELS,contract.BED_TYPES))
         rows = []
-        for name, typ, angle in zip(contract.CHANNELS, contract.BED_TYPES, angles):
+        for name in self.channels:
+            typ=types.get(name);angle=directions[name]
             d = None
             if angle is not None:
                 az, el = map(math.radians, angle)
                 d = [math.sin(az)*math.cos(el), math.sin(el), -math.cos(az)*math.cos(el)]
             rows.append(dict(channelId=name, staticType=typ, direction=d))
         return dict(schemaVersion=VERSION, messageType='layout', dataOrigin='measured', routeId=self.route,
-            layoutRevision='ideal714-v1', layoutId='roar-layout714', coordinateSystem='listener-relative-x-right-y-up-z-back', positionSource='idealized', channels=rows)
+            layoutRevision=self.layout_revision, layoutId=self.layout_id, coordinateSystem='listener-relative-x-right-y-up-z-back', positionSource='idealized', channels=rows)
 
     def capabilities(self):
         return dict(schemaVersion=VERSION, messageType='capabilities', dataOrigin='measured',
             routes=[dict(routeId=self.route, authority='native', soundNavigation=False, soundSpectrum=True,
             decodedInput=False, renderReady=True, frequencyBands=False, history=True, lufs=False, truePeak=False,
-            devicePlayback=False, control=False, maxObjects=160, maxChannels=12)], publishRatesHz=[1,10], historyWindowsSeconds=[600,3600])
+            devicePlayback=False, control=False, maxObjects=160, maxChannels=self.channel_count)], publishRatesHz=[1,10], historyWindowsSeconds=[600,3600])
 
     def ingest(self, raw):
-        if len(raw) != BLOCK_BYTES:
+        if len(raw) != self.block_bytes:
             self.invalid += 1; return False
         magic, version, channels, frames, rate, epoch, seq = HEADER.unpack_from(raw)
-        if (magic,version,channels,frames,rate) != (b'NSPT',1,12,480,48000) or epoch % 2 != 1 or seq >= contract.MAX_INT//10000 or epoch > contract.MAX_INT:
+        if (magic,version,channels,frames,rate) != (b'NSPT',1,self.channel_count,480,48000) or epoch % 2 != 1 or seq >= contract.MAX_INT//10000 or epoch > contract.MAX_INT:
             self.invalid += 1; return False
         if self.epoch is not None and (epoch < self.epoch or epoch == self.epoch and seq < self.next_seq):
             self.reordered += 1; return False
@@ -86,18 +97,18 @@ class Engine:
         self.last_end = seq + 1
         self.last_received = self.clock()
         self.received += 1
-        measured = self.metering.rows(raw, HEADER.size, 480*4, 12)
+        measured = self.metering.rows(raw, HEADER.size, 480*4, self.channel_count)
         finite = measured is not None
         if not finite:
             self.invalid += 1
         if self.batch is None:
-            self.batch = dict(start=start, end=seq+1, n=0, energy=[0.]*12, peak=[None]*12, deadline=self.clock()+.1)
+            self.batch = dict(start=start, end=seq+1, n=0, energy=[0.]*self.channel_count, peak=[None]*self.channel_count, deadline=self.clock()+.1)
         batch = self.batch
         batch['end'] = seq+1
         if finite:
             batch['n'] += 480
             tag = (seq-self.origin)//100
-            bucket = self.buckets.setdefault(tag, dict(first=seq, end=seq+1, n=0, energy=[0.]*12, peak=[None]*12))
+            bucket = self.buckets.setdefault(tag, dict(first=seq, end=seq+1, n=0, energy=[0.]*self.channel_count, peak=[None]*self.channel_count))
             bucket['end'] = seq+1
             bucket['n'] += 480
             for c,(energy,peak) in enumerate(measured):
@@ -119,7 +130,7 @@ class Engine:
         output = dict(quality='live' if b['n']==expected else 'gap', coverage=cov(b['n'],expected),
             droppedBlocks=(expected-b['n'])//480, snapshotComplete=b['n']==expected,
             gainMode='not-applicable', objects=[], channels=[dict(channelId=name,band='all',
-            meter=meter(b['n'],b['energy'][c],b['peak'][c]),validDurationUs=b['n']*1000000//48000) for c,name in enumerate(contract.CHANNELS)])
+            meter=meter(b['n'],b['energy'][c],b['peak'][c]),validDurationUs=b['n']*1000000//48000) for c,name in enumerate(self.channels)])
         missing = dict(quality='disconnected',coverage=cov(0,expected),droppedBlocks=expected//480,
             snapshotComplete=False,gainMode='ignored',objects=[],channels=[])
         source = self.base+(b['end']-self.origin)*10000
@@ -127,7 +138,7 @@ class Engine:
             sessionId=self.session,streamEpoch=self.epoch,telemetrySeq=self.telemetry_seq,
             sourceSequenceRange=dict(start=b['start'],endExclusive=b['end']),
             audioSampleRange=dict(start=b['start']*480,endExclusive=b['end']*480), sampleIndexProvenance='derived',
-            framesPerBlock=480,sampleRate=48000,layoutRevision='ideal714-v1',meterRevision='render-ready-linear-v1',
+            framesPerBlock=480,sampleRate=48000,layoutRevision=self.layout_revision,meterRevision='render-ready-linear-v1',
             sourceTimeUs=source,publishedTimeUs=max(source,self.us()),
             coverage={'decoded-input':copy.deepcopy(missing['coverage']),'render-ready':copy.deepcopy(output['coverage'])},
             droppedBlocks={'decoded-input':missing['droppedBlocks'],'render-ready':output['droppedBlocks']},
@@ -145,20 +156,20 @@ class Engine:
         request_end = start+window*1000000
         selected = [b for tag,b in self.buckets.items() if tag*1000000 >= start and (b['end']-self.origin)*10000 <= request_end]
         n = sum(b['n'] for b in selected)
-        energy = [math.fsum(b['energy'][c] for b in selected) for c in range(12)]
+        energy = [math.fsum(b['energy'][c] for b in selected) for c in range(self.channel_count)]
         total = math.fsum(energy)
         actual = None
         if selected:
             actual = dict(start=self.base+(min(b['first'] for b in selected)-self.origin)*10000,
                 endExclusive=self.base+(max(b['end'] for b in selected)-self.origin)*10000)
         message = dict(schemaVersion=VERSION,messageType='history',dataOrigin='measured',routeId=self.route,
-            sessionId=self.session,streamEpoch=self.epoch or 0,layoutRevision='ideal714-v1',meterRevision='render-ready-linear-v1',
+            sessionId=self.session,streamEpoch=self.epoch or 0,layoutRevision=self.layout_revision,meterRevision='render-ready-linear-v1',
             tap='render-ready',sampleRate=48000,band='all',requestedWindowSeconds=window,
             requestedRangeUs=dict(start=self.base+start,endExclusive=self.base+request_end),actualRangeUs=actual,
             bucketWidthUs=1000000,boundaryErrorUs=1000000,coverage=cov(n,window*48000),
             channels=[dict(channelId=name,sumSquares=energy[c],validSamples=n,
                 samplePeak=max((b['peak'][c] for b in selected),default=None),meanSquare=energy[c]/n if n else None,
-                energyIntegral=energy[c]/48000,contribution=energy[c]/total if total else 0) for c,name in enumerate(contract.CHANNELS)])
+                energyIntegral=energy[c]/48000,contribution=energy[c]/total if total else 0) for c,name in enumerate(self.channels)])
         return contract.validate(message)
 
     def status(self):

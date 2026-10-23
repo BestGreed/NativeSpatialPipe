@@ -1,6 +1,22 @@
 # NSp Zig 调度层
 
-**当前状态（2026-10-22，alpha-dev）：** N03–N12 已完成限定开发集成，FSA 参数已接通，ROAR／OLR 与 LIRA 共用公共输出和 ASIO；DVS 12 路数字回送及两组 Wwise HT 实测已完成。池内 DSP／bypass 和池块租借已接通，临时 WPF 已弃用。D15、OutputTimeout 收尾、FSA 等待反馈和 Web API 仍待推进。以下按轮次排列的“尚未接线／未做真实播放”描述仅对应当时阶段，不能覆盖当前状态。
+2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/core/playback-user-location-20261024.md).
+
+## 当前实现（2026-10-24）
+
+正式 host 通过 `nsp_pipeline_create_live` 初始化 ROAR/OLR 或 LIRA，支持七种输出布局、池内 DSP 与池块租借。`recording.pcm`、`recording.telemetrySnapshots` 默认均关闭；旁录使用独立线程与 32 块专用录音池，播放交付不执行文件 IO。遥测候选流通过 `nsp_pipeline_progress` 内存计数选取，不依赖录音文件。旧桥缺少 live 导出时明确失败。
+
+独立 `web-host` 随 FSA 启动，默认 `8767`，仅查询状态、校验/保存 JSON，不提供运行控制。默认播放 JSON 为 `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`，显式自定义 `PlaybackConfig` 路径继续有效；旧安装目录默认文件迁移为用户副本，保留原件且不覆盖已有目标。默认保存及修订锁不写安装目录。保存后下次启动会话生效；后端状态目录保持不变。
+
+默认完整半径映射 `scaled/1`。ASIO 会话内常驻，无输入时静音；旧首包/重缓冲超时字段保留但不生效。模块运行库从 DLL 目录加载。已完成有限实机启停，14/16 路实际接线、6DoF 插槽启用及长期稳定性另验。
+
+参见[布局](../../docs/core/output-layout-presets-20261023.md)、[旁录与 ABI](../../docs/core/recording-isolation-20261024.md)、本轮验证（开发参考未随公开源码提供）。下方 N05–N12 的“未部署/未接线”只描述当时状态。
+
+2026-10-23 启动修复：默认渲染桥、preflight 和 Web 候选路径统一为 `build/roar-native/release/nsp_roar_bridge.dll`，支持当前默认完整半径映射。无 Hook 身份记录的启动失败须通过进程退出、端点恢复及实时 Hook 基线证据后才解除锁定，原失败报告保留。DTS:X HT 实机启动/停止闭环通过，见 修复与验证（开发参考未随公开源码提供）。
+
+2026-10-23：已修正 [ASIO 会话寿命](../../docs/decisions/asio-session-lifetime-20261023.md)：输入缺席时持续静音回调，不再触发首包等待、重缓冲超时或次数退出。显式停止仍有排空期限，设备和捕获/传输故障仍须安全退出。旧超时 JSON 字段保留解析兼容，新的有效策略通过 `effectiveOutputLifecycle` / `playbackPolicy` 报告。此更新替代下文历史轮次中的有限播放策略。
+
+**当前状态（2026-10-23，alpha-dev）：** N03–N12 已完成限定开发集成，FSA 参数已接通，ROAR／OLR 与 LIRA 共用公共输出和 ASIO；DVS 12 路数字回送及两组 Wwise HT 实测已完成。池内 DSP／bypass 和池块租借已接通，临时 WPF 已弃用。ASIO 已改为会话内常驻送流；独立 Web API Host 和图形配置页已实现，仅读状态、读写配置，不提供运行控制。D15 与 OG27QH EDID 驱动重载实机回归等仍单独跟踪。以下按轮次排列的“尚未接线／未做真实播放”描述仅对应当时阶段，不能覆盖当前状态。
 
 公共 DSP 已前移到 Rust 输出池块，并支持 `outputProcessing.bypass` 及中性配置自动跳过。设备 owner 通过池块租借提交，移除 Zig PCM 队列和 scratch 复制；ASIO 内部算法不变。成套候选及验证见 [输出池记录](../../docs/core/output-pool-processing-20261022.md)。
 
@@ -23,8 +39,8 @@ N09：新DEV16 host默认 `--position-mode scaled --position-reference 1`，保�
 - `backend.zig`：常驻后端、单实例、配置与会话持久化、HTTP 控制及前端文件服务、子进程监控、停止超时和恢复锁定。
 - `control.zig`：FSA 的 preflight/start/status/stop/emergency-stop、目标实例检查、关联状态文件与新鲜度协议。
 - `native.zig`：直接调用现有管线与接收端 C ABI，调用原生 Hook 控制器；不经过 ctypes/Python 编排。
-- `host.zig`：四条原生管线预热、遥测进程管理、原生接收端启动、Hook 生命周期、非实时遥测转发、快照记录及结束排空。
-- `routing.zig`：迁移现有遥测文件长度选流策略，轮询间隔 100 ms、失效时间 1 s、新候选两次增长后抢占。
+- `host.zig`：四条原生管线预热、遥测进程管理、原生接收端启动、Hook 生命周期、非实时遥测转发、可选快照存档及结束排空。
+- `routing.zig`：按 renderer 内存进度选择遥测候选流，轮询 100 ms、失效 1 s、新候选两次增长后抢占；不受录音开关影响。
 - FSA 默认 `[NSP] Scheduler=Zig`；`ControlExecutable` 可指定 Zig EXE，留空时按正式构建布局解析。`Python` 配置仅传给遥测服务。缺少 Zig 不隐式回退；旧管理路径必须显式设置 `Scheduler=Python`。
 
 启动顺序：首条原生管线准备 → Python 遥测就绪 → 其余三条管线与原生接收端准备 → Hook 启用。遥测启动失败会阻止 Hook 启用。
@@ -97,3 +113,6 @@ Python 现在仅在默认托管路径中承载遥测服务，实验/测试脚本
 开发阶段继续完整录音及约 10 Hz 的新快照记录，支持审查和回溯。12 通道 Float32/48 kHz PCM 约 8.29 GB/h，加快照已观察约 10–12 GB/h；默认用户状态目录的 `sessions/` 也承载这些大体积数据。D15 落盘治理待音频接口实际出声后实施，当前不自动关闭记录或清理。正式部署前应理解这一存储行为；完整记录仍是当前遥测文件增长选流的依赖。
 
 DEV16 合并功能的统一 JSON 字段、默认值、声道顺序与只读校验入口见 [播放配置说明](../../docs/core/playback-json-configuration-20261022.md)。新增 DSP、半径、自定义路由和既有输出策略字段；使用同批构建的客户端及 host，现有运行实例未替换。
+## Web configuration host (2026-10-23)
+
+`nsp-scheduler.exe web-host --fsa-config <absolute FSA INI> --owner-pid <FSA PID>` runs the separate loopback-only configuration/status server on `http://127.0.0.1:8767/`. FSA starts it without opening a browser; triple-click the tray icon to open the existing frontend. The new configuration page edits the existing playback and backend JSON contracts, validates and atomically saves with a revision check. Saving never starts/restarts a session or opens an audio device. Playback changes apply on the next session; backend defaults require backend restart. Runtime control is intentionally not exposed. See [the implemented contract](../../docs/decisions/web-configuration-host-20261023.md).

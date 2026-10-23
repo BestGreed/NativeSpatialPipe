@@ -1,0 +1,90 @@
+--- a/src/common/layout.rs
++++ b/src/common/layout.rs
+@@ -36,6 +36,10 @@
+     Layout312 = 9,
+     /// 9.1.6 surround sound layout.
+     Layout916 = 10,
++    /// NSP output extension, not an IAMF input layout.
++    Layout716 = 13,
++    /// NSP output extension, not an IAMF input layout.
++    Layout914 = 14,
+     /// 22.2 surround sound layout (A293).
+     LayoutA293 = 11,
+     /// 7.1.5.4 surround sound layout.
+@@ -120,6 +124,7 @@
+             Layout::Layout714 => 12,
+             Layout::Layout312 => 6,
+             Layout::Layout916 => 16,
++            Layout::Layout716 | Layout::Layout914 => 14,
+             Layout::LayoutA293 => 24,
+             Layout::Layout7154 => 17,
+             Layout::SoundSystemE451 => 11,
+--- a/src/renderer/olr/layout.rs
++++ b/src/renderer/olr/layout.rs
+@@ -133,6 +133,8 @@
+ 
+ // Speaker layouts with LFE
+ static SPEAKER_LAYOUTS: &[SpeakerLayout] = &[
++    SpeakerLayout { name: "nsp_layout_716", layout: Layout::Layout716, speakers: &[SP_MP030, SP_MM030, SP_MP000, SP_LFE1, SP_MP090, SP_MM090, SP_MP135, SP_MM135, SP_UP045, SP_UM045, SP_UP135, SP_UM135, SP_UP090, SP_UM090] },
++    SpeakerLayout { name: "nsp_layout_914", layout: Layout::Layout914, speakers: &[SP_MP060, SP_MM060, SP_MP000, SP_LFE1, SP_MP135, SP_MM135, SP_MP030, SP_MM030, SP_MP090, SP_MM090, SP_UP045, SP_UM045, SP_UP135, SP_UM135] },
+     SpeakerLayout { name: "layout_1.0.0(mono)", layout: Layout::Mono, speakers: &[SP_MP000] },
+     SpeakerLayout {
+         name: "layout_2.0.0(stereo)",
+@@ -237,6 +239,8 @@
+ 
+ // Speaker layouts without LFE
+ static SPEAKER_LAYOUTS_WITHOUT_LFE: &[SpeakerLayout] = &[
++    SpeakerLayout { name: "nsp_layout_716", layout: Layout::Layout716, speakers: &[SP_MP030, SP_MM030, SP_MP000, SP_MP090, SP_MM090, SP_MP135, SP_MM135, SP_UP045, SP_UM045, SP_UP135, SP_UM135, SP_UP090, SP_UM090] },
++    SpeakerLayout { name: "nsp_layout_914", layout: Layout::Layout914, speakers: &[SP_MP060, SP_MM060, SP_MP000, SP_MP135, SP_MM135, SP_MP030, SP_MM030, SP_MP090, SP_MM090, SP_UP045, SP_UM045, SP_UP135, SP_UM135] },
+     SpeakerLayout { name: "layout_1.0.0(mono)", layout: Layout::Mono, speakers: &[SP_MP000] },
+     SpeakerLayout {
+         name: "layout_2.0.0(stereo)",
+--- a/src/renderer/ear/ear_renderer.rs
++++ b/src/renderer/ear/ear_renderer.rs
+@@ -59,6 +59,8 @@
+     },
+     /// High-Order Ambisonics to multichannel matrix (`H2M`).
+     Scene(H2mRdr),
++    /// Exact 7.1.4 bed identity routing into NSP extended output geometry.
++    NspBed(Vec<usize>, usize),
+ }
+ 
+ impl EarRenderer {
+@@ -98,6 +100,15 @@
+     /// Configures an audio element within the renderer (`_open` equivalent).
+     fn add_element(&mut self, _id: u32, config: &AudioElementConfig) -> Result<(), OarError> {
+         self.active_mode = None;
++        if matches!(self.target_layout, Layout::Layout716 | Layout::Layout914) {
++            if matches!(config, AudioElementConfig::ChannelBased(cb) if cb.layout == Layout::Layout714) {
++                let map = if self.target_layout == Layout::Layout716 { (0..12).collect() }
++                    else { vec![6,7,2,3,8,9,4,5,10,11,12,13] };
++                self.active_mode = Some(EarRenderingMode::NspBed(map, 14));
++                return Ok(());
++            }
++            return Err(OarError::NotSupported);
++        }
+         if !is_predefined_output_layout(self.target_layout) {
+             return Err(OarError::InvalidParameter);
+         }
+@@ -199,6 +210,7 @@
+             Some(EarRenderingMode::ChannelPredefined(m2m)) => (m2m.m, m2m.n),
+             Some(EarRenderingMode::ChannelCustom { matrix, .. }) => (matrix.m, matrix.n),
+             Some(EarRenderingMode::Scene(h2m)) => (h2m.m, h2m.channels),
++            Some(EarRenderingMode::NspBed(map, count)) => (map.len(), *count),
+             None => return Err(OarError::NotSupported),
+         };
+         if inputs.num_channels() != expected_in_channels
+@@ -217,6 +229,13 @@
+                 element_renderer_render_m2m_custom(matrix, inputs, output, channels_map)
+             }
+             Some(EarRenderingMode::Scene(h2m)) => element_renderer_render_h2m(h2m, inputs, output),
++            Some(EarRenderingMode::NspBed(map, _)) => {
++                for channel in 0..output.num_channels() { output.channel_mut(channel).fill(0.); }
++                for (source, &destination) in map.iter().enumerate() {
++                    output.channel_mut(destination).copy_from_slice(inputs.channel(source));
++                }
++                Ok(())
++            },
+             None => Err(OarError::NotSupported),
+         }
+     }

@@ -13,6 +13,8 @@ int wmain(int argc,wchar_t **argv) {
     assert(fsa_nsp_toggle_request(&menu_state)==2);
     menu_state.selected=-1;
     for(UINT command=100;command<=106;command++)assert(!fsa_menu_checked(&menu_state,command));
+    menu_state.nsp_locked=1;assert(fsa_nsp_toggle_request(&menu_state)==2);
+    menu_state.nsp_locked=0;assert(fsa_nsp_toggle_request(&menu_state)==1);
     puts("PASS independent Sonic endpoint and NSp feature checks, stop/start toggle, unknown state unselected");
     assert(mode_icon_ids[MODE_NSP]==IDI_FSA_APP);
     {
@@ -46,6 +48,16 @@ int wmain(int argc,wchar_t **argv) {
         menu_state.selected=pipeline_modes[i];assert(fsa_menu_checked(&menu_state,100+pipeline_modes[i]));
     }
     wake=CreateEventW(NULL,FALSE,FALSE,NULL);
+    available_modes=1u<<MODE_NSP;current=MODE_SONIC;
+    request_nsp_toggle();assert(nsp_requested==1 && nsp_ui_locked && nsp_starting);
+    request_nsp_toggle();assert(nsp_requested==2 && nsp_ui_locked && !nsp_starting && nsp_start_cancelled());
+    request_nsp_toggle();assert(nsp_requested==2); /* Stopping never becomes start. */
+    nsp_requested=0;current=-1;available_modes=0;nsp_ui_locked=1;
+    request_nsp_toggle();assert(nsp_requested==2 && nsp_start_cancelled()); /* Fault/unknown stop needs no frontend capability. */
+    nsp_requested=3;request_nsp_toggle();assert(nsp_requested==3); /* Preserve emergency priority. */
+    nsp_requested=0;nsp_ui_locked=0;
+    assert(!nsp_start_cancelled());exit_requested=1;assert(nsp_start_cancelled());exit_requested=0;
+    request_nsp_toggle();assert(nsp_requested==0); /* Unsupported idle frontend cannot start. */
     available_modes=1u<<MODE_STEREO;
     nsp_ui_locked=1;manual=-1;
     request_manual_mode(MODE_STEREO);
@@ -65,5 +77,6 @@ int wmain(int argc,wchar_t **argv) {
         puts("PASS native FSA -> selected scheduler -> correlated user-state disk read (idle/stop/emergency)");
     }
     puts("PASS seven spatial identities, active checkmarks, NSp frontend mapping and separate Hook qualification");
+    puts("PASS unified NSp start, cancel, fault stop, repeated stop and emergency priority");
     return 0;
 }

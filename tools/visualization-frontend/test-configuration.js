@@ -1,0 +1,45 @@
+import assert from 'node:assert/strict';
+import {prepare,numeric,finish,setPath,orders} from './configuration-model.js';
+const original={renderer:'roar',bridgeDll:'C:/bridge.dll',asioDll:'C:/asio.dll',driver:'asio:{test}',startupTimeoutMs:120000};
+const prepared=prepare(original,'playback');
+assert.equal(original.outputProcessing,undefined);
+assert.equal(prepared.outputProcessing.trim.length,12);
+assert.equal(prepared.outputProcessing.limiter.enabled,false);
+assert.equal(prepared.startupTimeoutMs,120000);
+assert.equal(prepare({...original,renderer:'olr'},'playback').renderer,'roar');
+setPath(prepared,'outputProcessing.trim.2',.7);
+assert.equal(prepared.outputProcessing.trim[2],.7);
+prepared.renderer='lira';prepared.positionMapping={mode:'scaled',reference:1};
+assert.equal(finish(prepared).positionMapping,undefined);
+assert.equal(prepared.mode,null);
+prepared.channelOrder='custom';prepared.routing.sourceChannelIndices=orders['dvs-speakers'].slice();
+assert.equal(finish(prepared).routing.sourceChannelIndices.length,12);
+prepared.channelOrder='olr';assert.equal(finish(prepared).routing.sourceChannelIndices,undefined);
+assert.equal(numeric('0',true),0);assert.equal(numeric('0.5'),.5);
+for(const value of ['',' ','NaN','Infinity'])assert.throws(()=>numeric(value));
+assert.throws(()=>numeric('1.5',true));
+assert.equal(JSON.stringify(prepare({version:1,fullTiming:false},'backend')),JSON.stringify({version:1,fullTiming:false}));
+console.log('PASS configuration form defaults, optional fields, renderer/routing conversion and numeric validation');
+
+const {outputLayouts,migrateLayout,layoutFor}=await import('./configuration-model.js');
+for(const layout of outputLayouts){
+ const value=prepare({...original,outputLayout:layout.id},'playback');
+ assert.equal(value.outputProcessing.trim.length,layout.channels.length);
+ assert.equal(value.routing.physicalChannels.length,layout.channels.length);
+}
+let routed=prepare(original,'playback');
+routed.outputProcessing.trim[0]=.7;routed.outputProcessing.delayFrames[2]=123;
+routed.channelOrder='dvs-speakers';routed.routing.physicalChannels=Array.from({length:12},(_,i)=>i+20);
+const wide=migrateLayout(routed,'7.1.4','9.1.6');
+assert.equal(wide.outputProcessing.trim[6],.7);
+assert.equal(wide.outputProcessing.delayFrames[2],123);
+assert.equal(wide.routing.physicalChannels[6],20);
+assert.equal(wide.routing.physicalChannels[2],21);
+assert.equal(new Set(wide.routing.physicalChannels).size,16);
+assert.equal(wide.outputProcessing.trim[0],1);
+assert.equal(wide.channelOrder,'olr');
+const back=migrateLayout(wide,'9.1.6','7.1.4');
+assert.equal(back.outputProcessing.trim[0],.7);
+assert.equal(back.routing.physicalChannels[2],21);
+assert.equal(layoutFor('9.1.6').channels.length,16);
+console.log('PASS seven layouts, speaker-identity calibration migration and collision-free device routing');

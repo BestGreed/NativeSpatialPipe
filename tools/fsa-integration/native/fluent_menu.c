@@ -7,15 +7,17 @@
 static const UINT main_commands[]={100,101,102,105,107,108,103,109,110,104,106,200,300,205};
 static const wchar_t *spatial_labels[]={L"Windows Sonic",L"Dolby Atmos (Headphones)",L"Dolby Atmos (Speakers)",L"Dolby Atmos (Home Theater)",L"DTS Headphone:X",L"DTS:X Ultra",L"DTS:X (Home Theater)"};
 static const UINT spatial_commands[]={105,107,108,103,109,110,104};
-static const wchar_t *extreme_labels[]={L"Expand Online",L"Enum OLR",L"Enum OBR",L"Rec Hook"};
-static const UINT extreme_commands[]={410,411,412,413};
-enum { MAIN_NSP_ROW=10, MAIN_ADVANCED_ROW=12, ADVANCED_EXTREME_ROW=8 };
-static const FSA_Text advanced_labels[]={TXT_CAPTURE,TXT_EDIT,TXT_RELOAD,TXT_LOG,TXT_STARTUP,TXT_NSP_STOP,TXT_NSP_EMERGENCY};
-static const UINT advanced_commands[]={206,202,203,204,207,208,209,311,310};
-static const wchar_t *advanced_label(FSA_Language language,int i){return i==ADVANCED_EXTREME_ROW?L"NS Extreme":i==7?L"NSp Lock":fsa_text(language,advanced_labels[i]);}
+static const wchar_t *extreme_labels[]={L"Expand Online",L"Enum OLR",L"Enum OBR",L"Rec Hook",L"HT Support"};
+/* Preserve command/config semantics: 411=headphones, 412=speakers. */
+static const UINT extreme_commands[]={410,412,411,413,414};
+enum { MAIN_NSP_ROW=10, MAIN_ADVANCED_ROW=12, ADVANCED_EXTREME_ROW=7 };
+static const FSA_Text advanced_labels[]={TXT_CAPTURE,TXT_EDIT,TXT_RELOAD,TXT_LOG,TXT_STARTUP,TXT_NSP_EMERGENCY};
+static const UINT advanced_commands[]={206,202,203,204,207,209,311,310};
+static const wchar_t *advanced_label(FSA_Language language,int i){return i==ADVANCED_EXTREME_ROW?L"NS Extreme":i==6?L"NSp Lock":fsa_text(language,advanced_labels[i]);}
 static const wchar_t *main_label(const FSA_MenuState *state,int i){
     FSA_Language language=state->language;
     UINT c=main_commands[i];for(int j=0;j<7;j++)if(c==spatial_commands[j])return spatial_labels[j];
+    if(c==106 && state->nsp_locked && state->selected!=6)return fsa_text(language,TXT_NSP_STOP);
     if(c==106 && (state->extreme&FSA_MENU_ROUTE_LOCK))return fsa_locked_nsp_label(state->frontend);
     return c==310?L"NS Extreme":fsa_text(language,c==100?TXT_STEREO:c==101?TXT_51:c==102?TXT_71:c==106?TXT_NSP:c==200?TXT_AUTO:c==300?TXT_ADVANCED:TXT_EXIT);
 }
@@ -42,12 +44,15 @@ static int px(Popup *p,int value) { return MulDiv(value,p->dpi,96); }
 static Popup *root_of(Popup *p){while(p->parent)p=p->parent;return p;}
 static int extra_visible(const FSA_MenuState *s,UINT c){
     if((s->extreme&FSA_MENU_ROUTE_LOCK) && c>=103 && c<=110 && c!=106)return 0;
+    /* HT declarations are prepared only through explicit installation/manual
+       actions. Unsupported HT modes do not occupy disabled menu rows. */
+    if(c==103 || c==104)return (s->available&(1u<<(c-100)))!=0;
     unsigned group=(c==107 || c==109)?2u:(c==108 || c==110)?4u:0u;
     return !group || ((s->extreme&group) && (s->available&(1u<<(c-100))));
 }
 static unsigned hidden_rows(const FSA_MenuState *s){unsigned mask=0;for(unsigned i=0;i<sizeof(main_commands)/sizeof(*main_commands);i++)if(!extra_visible(s,main_commands[i]))mask|=1u<<i;return mask;}
 static double removal_progress(Popup *p){double t=(GetTickCount64()-p->removal_start)/160.0;if(t>1)t=1;double r=1-t;return 1-r*r*r;}
-static int count(Popup *p) { return p->advanced==2?4:p->advanced?9:(int)(sizeof(main_commands)/sizeof(*main_commands)); }
+static int count(Popup *p) { return p->advanced==2?(int)(sizeof(extreme_commands)/sizeof(*extreme_commands)):p->advanced?(int)(sizeof(advanced_commands)/sizeof(*advanced_commands)):(int)(sizeof(main_commands)/sizeof(*main_commands)); }
 static int top(Popup *p,int i) {
     double y=8,progress=p->removing?removal_progress(p):0;
     for(int j=0;j<i;j++)if(!(p->hidden&(1u<<j)))y+=p->stride*((p->removing&(1u<<j))?1-progress:1);
@@ -56,7 +61,18 @@ static int top(Popup *p,int i) {
 static UINT command_at(Popup *p,int i) { return p->advanced==2?extreme_commands[i]:p->advanced?advanced_commands[i]:main_commands[i]; }
 static const wchar_t *label_at(Popup *p,int i){return p->advanced==2?extreme_labels[i]:p->advanced?advanced_label(p->state.language,i):main_label(&p->state,i);}
 static int submenu_row(Popup *p,int i){return i>=0 && i<count(p) && ((!p->advanced && i==MAIN_ADVANCED_ROW) || (p->advanced==1 && i==ADVANCED_EXTREME_ROW));}
-static int enabled(Popup *p,int i) { if(i<0 || i>=count(p) || ((p->hidden|p->removing)&(1u<<i)))return 0;UINT c=command_at(p,i);if(c==311 && (p->state.extreme&FSA_MENU_LOCK_PENDING))return 0;if((p->state.extreme&FSA_MENU_ROUTE_LOCK) && c>=410 && c<=412)return 0;if(p->state.nsp_locked && ((c==106 && p->state.selected!=6) || (c==200 && !(p->state.extreme&FSA_MENU_ROUTE_LOCK)) || c==206 || (c>=410 && c<=412)))return 0;return c<100 || c>=111 || (p->state.available&(1u<<(c-100))); }
+static int enabled(Popup *p,int i) {
+    if(i<0 || i>=count(p) || ((p->hidden|p->removing)&(1u<<i)))return 0;
+    UINT c=command_at(p,i);
+    if(c==414)return (p->state.edid&FSA_EDID_ELIGIBLE) && !(p->state.edid&FSA_EDID_BUSY) &&
+        (!p->state.nsp_locked || (p->state.edid&FSA_EDID_SUPPORTED));
+    if((p->state.edid&FSA_EDID_BUSY) && ((c>=100 && c<=110) || c==200 || c==206 || c==311 || (c>=410 && c<=413)))return 0;
+    if(c==106 && fsa_nsp_toggle_request(&p->state)==2)return 1;
+    if(c==311 && (p->state.extreme&FSA_MENU_LOCK_PENDING))return 0;
+    if((p->state.extreme&FSA_MENU_ROUTE_LOCK) && c>=410 && c<=412)return 0;
+    if(p->state.nsp_locked && ((c==200 && !(p->state.extreme&FSA_MENU_ROUTE_LOCK)) || c==206 || (c>=410 && c<=412)))return 0;
+    return c<100 || c>=111 || (p->state.available&(1u<<(c-100)));
+}
 static void measure(Popup *p){
     p->width=200;p->stride=34;
     HDC dc=GetDC(p->hwnd);HGDIOBJ old=SelectObject(dc,p->font);
@@ -162,7 +178,7 @@ static void choose(Popup *p,int row) {
     if(row<0 || !enabled(p,row))return;
     UINT c=command_at(p,row);
     if(c==300 || c==310)open_submenu(p,row);
-    else if((c==311 || (c>=410 && c<=413)) && p->owner)SendMessageW(p->owner,FSA_WM_MENU_ACTION,c,0);
+    else if((c==311 || (c>=410 && c<=414)) && p->owner)SendMessageW(p->owner,FSA_WM_MENU_ACTION,c,0);
     else {Popup *root=root_of(p);root->command=c;DestroyWindow(root->hwnd);}
 }
 static int hit(Popup *p,int x,int y) {
@@ -377,10 +393,12 @@ UINT fsa_popup(HWND owner,const FSA_MenuState *state) {
     if((contrast.dwFlags&HCF_HIGHCONTRASTON) || reader) {
         HMENU menu=CreatePopupMenu(),advanced=CreatePopupMenu(),extreme=CreatePopupMenu();
         Popup access={0};access.state=*state;
-        for(int i=0;i<4;i++)AppendMenuW(extreme,MF_STRING|(fsa_menu_checked(state,extreme_commands[i])?MF_CHECKED:0)|(((state->nsp_locked || (state->extreme&FSA_MENU_ROUTE_LOCK)) && i<3)?MF_GRAYED:0),extreme_commands[i],extreme_labels[i]);
-        for(int i=0;i<9;i++){
+        Popup extreme_access={0};extreme_access.state=*state;extreme_access.advanced=2;
+        for(int i=0;i<count(&extreme_access);i++)AppendMenuW(extreme,MF_STRING|(fsa_menu_checked(state,extreme_commands[i])?MF_CHECKED:0)|(!enabled(&extreme_access,i)?MF_GRAYED:0),extreme_commands[i],extreme_labels[i]);
+        Popup advanced_access={0};advanced_access.state=*state;advanced_access.advanced=1;
+        for(int i=0;i<count(&advanced_access);i++){
             if(i==ADVANCED_EXTREME_ROW)AppendMenuW(advanced,MF_POPUP,(UINT_PTR)extreme,L"NS Extreme");
-            else AppendMenuW(advanced,MF_STRING|(fsa_menu_checked(state,advanced_commands[i])?MF_CHECKED:0)|(((state->nsp_locked && i==0) || (i==7 && (state->extreme&FSA_MENU_LOCK_PENDING)))?MF_GRAYED:0),advanced_commands[i],advanced_label(state->language,i));
+            else AppendMenuW(advanced,MF_STRING|(fsa_menu_checked(state,advanced_commands[i])?MF_CHECKED:0)|(!enabled(&advanced_access,i)?MF_GRAYED:0),advanced_commands[i],advanced_label(state->language,i));
         }
         for(unsigned i=0;i<sizeof(main_commands)/sizeof(*main_commands);i++) {
             if(i==MAIN_NSP_ROW)AppendMenuW(menu,MF_SEPARATOR,0,NULL);

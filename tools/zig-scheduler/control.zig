@@ -80,6 +80,8 @@ pub fn observe(root: []const u8, home: []const u8) !u8 {
     const state = if (status) |value| try u.string(u.field(value.value, "sessionState")) else "unreachable";
     if (!u.exists(marker)) {
         if (std.mem.eql(u8, state, "starting") or std.mem.eql(u8, state, "stopping")) return 11;
+        if (!std.mem.eql(u8, state, "idle") and !std.mem.eql(u8, state, "stopped") and
+            (try @import("stop_proof.zig").unmarked(root, home, session.value, output))) return 10;
         return if (std.mem.eql(u8, state, "idle") or std.mem.eql(u8, state, "stopped")) 10 else 20;
     }
     var actual = try inspect(root, home, output, "status");
@@ -226,7 +228,7 @@ fn action(args: []const []const u8, root: []const u8, home: []const u8) !u8 {
         const pid = try u.audioPid();
         const created = try u.checkTarget(pid);
         _ = try u.checkModules(pid);
-        for ([_][]const u8{ "build/native-hook-managed-v2/nsp_hook_control.exe", "build/native-hook-managed-v2/nsp_managed_hook_v2.dll", "build/native-send/nsp_native_send.dll", "build/capture-scheduler-mmcss/nsp_native_capture.dll", "build/native-receiver-routing/release/nsp_native_receiver.dll", "build/telemetry-objects/release/nsp_roar_bridge.dll" }) |relative| {
+        for ([_][]const u8{ "build/native-hook-managed-v2/nsp_hook_control.exe", "build/native-hook-managed-v2/nsp_managed_hook_v2.dll", "build/native-send/nsp_native_send.dll", "build/capture-scheduler-mmcss/nsp_native_capture.dll", "build/native-receiver-routing/release/nsp_native_receiver.dll", n.default_render_bridge }) |relative| {
             const path = try u.join(&.{ root, relative });
             defer a.free(path);
             if (!u.exists(path)) return error.MissingRuntimeDependency;
@@ -291,11 +293,17 @@ fn action(args: []const []const u8, root: []const u8, home: []const u8) !u8 {
         defer a.free(userStop);
         try u.write(userStop, "stop");
         if (std.mem.eql(u8, command, "emergency-stop")) {
-            var actual = try inspect(root, home, output, "status");
-            defer actual.deinit();
-            if ((u.number(u.field(actual.value, "state")) catch 0) == 1) {
-                var result = try inspect(root, home, output, "stop");
-                result.deinit();
+            const hook_marker = try u.join(&.{ output, "observed/hook-session.json" });
+            defer a.free(hook_marker);
+            if (u.exists(hook_marker)) {
+                var actual = try inspect(root, home, output, "status");
+                defer actual.deinit();
+                if ((u.number(u.field(actual.value, "state")) catch 0) == 1) {
+                    var result = try inspect(root, home, output, "stop");
+                    result.deinit();
+                }
+            } else if (!try @import("stop_proof.zig").unmarked(root, home, session.value, output)) {
+                return error.StopEvidenceRequired;
             }
         }
         const result = backend.request(home, "stop-session", empty_request) catch null;
