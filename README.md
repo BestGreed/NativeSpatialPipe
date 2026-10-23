@@ -4,6 +4,12 @@ Windows spatial-audio object capture, native rendering and real-time visualizati
 
 ## Current implementation
 
+Extra spatial-format enumeration now uses native C/MinHook and the same controller source as capture. The preparation supervisor still uses Python, but no longer loads Frida or a JavaScript injection agent. See [implementation and verification](docs/core/native-enumeration-hook-20261024.md).
+
+See the [current architecture](docs/core/current-architecture.md) and [stack audit](docs/core/stack-architecture-audit-20261024.md) for runtime boundaries. Python preparation/telemetry and Windows PowerShell/WinRT helpers remain; browser JS does not require a Node service or a WebView2/WPF desktop. Earlier designs are explicitly historical, and native network output remains a future option.
+
+Explicit EDID preflight/HT Support and `inspect` also retain the legacy C# endpoint probe using Windows .NET Framework. Its source and separate `tools/endpoint-probe/Build-EndpointProbe.ps1` build are included; it is outside the audio path and does not require .NET 10. Preparation is not yet fully native.
+
 ```text
 MinHook / C capture -> shared memory -> Rust receiver / common input
  -> ROAR (OLR mode) or C++ LIRA -> interleaved output pool
@@ -39,7 +45,7 @@ Prepare the pinned dependencies in [build instructions](docs/build.md), then run
 ./tools/Build-Alpha.ps1 -LlvmBin C:/toolchains/llvm-mingw/bin -Zig C:/toolchains/zig-0.13.0/zig.exe
 ```
 
-Building does not open a driver, inject Hook, deploy or restart FSA. ASIO/LIRA modules require matching `libc++.dll` and `libunwind.dll` alongside them. The native audio path uses C/Rust/C++; Zig manages coordination and configuration, Python supplies telemetry and tests, and JavaScript runs in the browser. The product does not require .NET; the retired WPF frontend is excluded.
+Building does not open a driver, inject Hook, deploy or restart FSA. ASIO/LIRA modules require matching `libc++.dll` and `libunwind.dll` alongside them. C/Rust/C++ handle capture, adaptation, rendering and device output; Zig provides coordination, in-pool DSP and configuration. Python provides preparation supervision, telemetry and test tools; PowerShell/WinRT retains system interop. JavaScript runs in the browser. No .NET 10/WPF installation is required; existing Windows-managed interop helpers are distinct from the excluded desktop runtime.
 
 ## Validation and remaining work
 

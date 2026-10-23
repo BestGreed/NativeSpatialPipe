@@ -1,5 +1,7 @@
 # NSp Zig 调度层
 
+当前技术栈与文档权威入口见[架构](../../docs/core/current-architecture.md)。Zig 负责默认调度和公共 DSP；Python 仍用于准备控制与独立遥测，PowerShell/WinRT 仍执行系统互操作。下方 DEV16 分轮日志只作历史证据，其中“未接线”、固定布局、旧 WPF 或有限播放策略不构成当前待办，不得重新引入产品链。
+
 2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/core/playback-user-location-20261024.md).
 
 ## 当前实现（2026-10-24）

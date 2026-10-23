@@ -15,6 +15,8 @@ if($LASTEXITCODE){throw 'Telemetry meter build failed'}
 if(-not $SkipHookBuild){
  & powershell -NoProfile -ExecutionPolicy Bypass -File "$root/tools/endpoint-probe/Build-NativeHook.ps1" -Managed -TestFixtures
  if($LASTEXITCODE){throw 'Managed hook build failed'}
+ & powershell -NoProfile -ExecutionPolicy Bypass -File "$root/tools/pipeline-init/Build-EnumHook.ps1"
+ if($LASTEXITCODE){throw 'Enumeration hook build failed'}
 }
 }
 $candidate=Join-Path $bin 'FinalSpatialAudio.exe'

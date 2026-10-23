@@ -38,7 +38,7 @@ ASIO owner 通过现有 C ABI 同步提交借用地址，ASIO 模块直接读取
 
 `validate-playback` 的 `effectiveOutputProcessing` 会显示 `bypass`、`effectiveBypass`、`placement` 和有效前视；实际输出报告提供同样的旁路/位置状态，以及 `outputHandoff` 的池块接收/归还计数和 DSP 尾帧数。
 
-原 renderer PCM 录音和原遥测仍位于公共 DSP 之前。本次未改变原录音语义；writer 先将原始块写入既有缓冲文件，再原地处理并交给设备。因此原有落盘与可靠输出耦合仍存在，本次没有宣称消除磁盘阻塞或测得端到端延迟下降。
+**历史（10/22，已替代）：** 当时 writer 先写文件再处理/交付的行为仅作为迁移证据保留。**当前（10/24）：** renderer PCM 可选旁录仍位于公共 DSP 前，但写入独立录音池和线程；播放交付在输出池中执行 DSP 后发布租借描述符，不等待磁盘。遥测仍为独立旁路。见[旁录解耦](recording-isolation-20261024.md)，不能因旧名称 writer 而重新把磁盘 IO 接回播放线程。
 
 ## 所有权与结束行为
 

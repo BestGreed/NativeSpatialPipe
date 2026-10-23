@@ -1,5 +1,7 @@
 # Receiver startup diagnostics
 
+> Historical, narrowly scoped startup evidence. The AppContainer diagnosis remains useful; old DLL paths and build status are not current deployment instructions. See [current architecture](core/current-architecture.md).
+
 2026-10-17. This update changes startup diagnostics and owned-process regression tests. The packet-processing loop, shared-memory ACL and normal/MMCSS scheduling semantics are unchanged.
 
 ## Failure boundary

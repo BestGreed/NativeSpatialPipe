@@ -3,6 +3,8 @@ $ErrorActionPreference='Stop'
 $root=(Resolve-Path "$PSScriptRoot/..").Path
 $llvm=(Resolve-Path -LiteralPath $LlvmBin).Path
 & "$PSScriptRoot/Build-Core.ps1" -LlvmBin $llvm
+& "$PSScriptRoot/pipeline-init/Build-EnumHook.ps1" -LlvmBin $llvm
+if($LASTEXITCODE){throw 'Enumeration hook build failed'}
 & "$PSScriptRoot/spatial-renderer/Build.ps1" -LlvmBin $llvm
 $out=Join-Path $root 'build/audio-backends'
 New-Item -ItemType Directory -Force $out | Out-Null

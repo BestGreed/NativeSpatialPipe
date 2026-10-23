@@ -1,12 +1,12 @@
 # Native scheduling and Sonic NSp integration
 
 <!-- alpha-dev-status -->
-**2026-10-24 alpha-dev/main:** Seven output layouts, Web configuration, session-resident ASIO and optional isolated recording are integrated. Playback configuration defaults to the user directory; PCM and snapshot archives default off. Storage quotas, 6DoF implementation and long-term device validation remain pending. See [current progress](alpha-dev.md) and [source README](../README.md). Older validation below keeps its original scope.
+**2026-10-24 alpha-dev/main:** Seven output layouts, Web configuration, session-resident ASIO and optional isolated recording are integrated. Enumeration now uses native MinHook; preparation retains Python/PowerShell helpers. Earlier desktop, metering and recording paths are explicitly historical. Playback configuration defaults to the user directory; PCM and snapshot archives default off. Storage quotas, 6DoF implementation and long-term device validation remain pending. See [current progress](alpha-dev.md) and [source README](../README.md). Older validation below keeps its original scope.
 <!-- /alpha-dev-status -->
 
-The default Zig 0.13.0 managed scheduler replaces Python orchestration: backend HTTP control, persistent session/configuration files, FSA commands, process ownership, four-stream prewarming, receiver startup, telemetry forwarding, snapshots and orderly shutdown. Capture, transport and rendering remain C/Rust. Python 3.12 still runs telemetry and development tests; this update does not remove that dependency.
+The default Zig 0.13.0 scheduler manages backend sessions, process ownership, prewarming, telemetry forwarding, in-pool DSP and shutdown. Rendering is Rust ROAR (OLR mode) or C++ LIRA; C++ ASIO owns device transport. Python 3.12 still handles preparation supervision, isolated telemetry and development tools. FSA owns runtime actions; the separate Zig Web Host reads status and validates/saves configuration without exposing session controls.
 
-The first pipeline is prepared before the Python telemetry handshake. The remaining pipelines and receiver are then prepared before enabling Hook. Telemetry routing checks file growth every 100 ms outside the real-time audio path; two updates qualify a new candidate, with a one-second stale timeout. It does not change receiver routing or add checks to audio submission.
+The first pipeline is prepared before the Python telemetry handshake; the remaining pipelines and receiver are prepared before enabling capture Hook. Current Zig telemetry selection reads renderer memory progress, not recording file growth. Its control-side checks do not poll inside audio submission. Extra AudioSrv enumeration is separately supervised using native C/MinHook, with the same pinned engine/controller source as capture.
 
 ## Build
 
@@ -14,6 +14,7 @@ First follow [the core build instructions](build.md), including the pinned depen
 
 ```powershell
 ./tools/endpoint-probe/Build-NativeHook.ps1 -Managed -TestFixtures
+./tools/pipeline-init/Build-EnumHook.ps1 -LlvmBin $env:NSP_LLVM_BIN
 ./tools/telemetry/Build-Meter.ps1
 ./tools/zig-scheduler/Build.ps1
 ```
@@ -36,7 +37,7 @@ The integration source derives from [Final Spatial Audio](https://github.com/Bes
 
 FSA ICO artwork is included with the project owner's authorization. Its separate asset notice remains in effect; inclusion does not relicense artwork under the root Apache license or grant rights in third-party marks. Build the optional FSA UI with `Build-Integration.ps1 -FsaOnly`. The independent Zig scheduler does not need the artwork. The build updates scheduler configuration while preserving other rules and snapshots; it does not close or restart an existing FSA/backend process. FSA defaults to `Scheduler=Zig`; an empty `ControlExecutable` resolves the native path from the integration build layout. Missing Zig fails without implicit fallback. Legacy comparisons require explicit `Scheduler=Python` or the build option `-LegacyPythonScheduler`. The managed launcher also defaults to Zig and requires `-LegacyPythonScheduler` for old orchestration. Telemetry still uses the separately configured Python interpreter.
 
-## Validation boundary
+## Historical validation boundary (2026-10-19)
 
 The source revision was checked with seven isolated scheduler integration tests, including default configuration migration and missing-Zig refusal, including ordinary and FullTiming owned-process fixtures, HTTP/authentication, state correlation and recovery refusal. Each fixture used 250 blocks with 128 dynamic objects plus 12 bed channels; its first eight PCM blocks matched the prior Python control path byte for byte. Existing backend and telemetry checks also passed. These results do not guarantee arbitrary game compatibility or end-to-end audio latency.
 
@@ -55,6 +56,6 @@ The old Python entry remains available for comparisons. Legacy generation-1 Hook
 
 ## Recording policy and deferred storage work
 
-Full PCM output and continuous fresh telemetry snapshots remain enabled for development debugging and review. This is intentional, not a bounded production logging mode. The default managed `sessions/` directory under `%LOCALAPPDATA%/NativeSpatialPipe` can grow by roughly 10–12 GB/hour for an observed 12-channel stream with about 140 objects; PCM alone is 8.29 GB/hour. Actual volume depends on active streams and snapshot size.
+Current defaults are `recording.pcm=false` and `recording.telemetrySnapshots=false`. Optional PCM recording copies pre-DSP samples to a separate bounded pool and file thread; playback handoff does not wait for recording. Snapshot archival has its own thread. A neutral or bypassed DSP does not scan/rewrite samples, while pool ownership and device checks remain.
 
-D15 storage governance is pending after D05 audio-interface playback is working. It will retain an explicit full-recording mode while adding lighter operation, configurable output directories/limits and protected retention. Telemetry selection must first stop depending on recording file growth, using non-real-time progress observations. This release does not enable automatic pruning, reduce snapshot frequency or change recording defaults. See the [current project overview](../README.md).
+Playback configuration defaults to `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`, with explicit custom paths supported. Remaining D15 work is quotas, retention and safe cleanup; recording isolation and memory-based telemetry selection are already implemented. ASIO remains active with silence during absent input, rather than applying legacy first-packet/rebuffer timeouts. See the [current project overview](../README.md) and [recording boundary](core/recording-isolation-20261024.md).

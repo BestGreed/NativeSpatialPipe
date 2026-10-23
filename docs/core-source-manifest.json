@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "e5e4bf33d4f21c827d1fcf89dfb5c527e5d260bb",
+  "sourceRevision": "930f8208128a1b8bbd109a1a532ce65dd13b748d",
   "hashNormalization": "CRLF to LF; all other bytes preserved",
   "files": [
     {
@@ -124,8 +124,18 @@
     },
     {
       "path": "docs/build.md",
-      "sha256": "c2971be99018912f1ede526374c90dcd68d280d414223f3150d863649bf026c4",
-      "sourceSha256": "c2971be99018912f1ede526374c90dcd68d280d414223f3150d863649bf026c4"
+      "sha256": "0d2a940891e0e5139f937b198d191d3355d1a71de4499372b69abe42abf588ef",
+      "sourceSha256": "0d2a940891e0e5139f937b198d191d3355d1a71de4499372b69abe42abf588ef"
+    },
+    {
+      "path": "docs/core/current-architecture.md",
+      "sha256": "05f549af8f4c27a3cd651cd457a3105f033800540c2d8e81f41ec3dd2094643b",
+      "sourceSha256": "05f549af8f4c27a3cd651cd457a3105f033800540c2d8e81f41ec3dd2094643b"
+    },
+    {
+      "path": "docs/core/native-enumeration-hook-20261024.md",
+      "sha256": "433a0bd166054041914cea52ed50ee67e0f0dc4f7d42f21dc3d449f9983c3b46",
+      "sourceSha256": "433a0bd166054041914cea52ed50ee67e0f0dc4f7d42f21dc3d449f9983c3b46"
     },
     {
       "path": "docs/core/output-layout-presets-20261023.md",
@@ -135,8 +145,8 @@
     },
     {
       "path": "docs/core/output-pool-processing-20261022.md",
-      "sha256": "5d12fcb7730e83068931e672e87fdff98ae40de39868870b24089260d8f2d3f6",
-      "sourceSha256": "04898a063b3ff3240aa6c408fb025ee779d27eebf78afe8e57d32cf31c83659f",
+      "sha256": "10c9d63f4ca148163b67ae91bab061a529372ab9d2321d4e3786b888f4621179",
+      "sourceSha256": "a0d55beb886b9c8c1df798f747d5052db4f515aa4088b2d552f99e0053bd1df2",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
@@ -162,6 +172,11 @@
       "sourceSha256": "1342c9c14df2eab00d4e45c34af526b93e17b79f483f802ac222ffd6354c9c19"
     },
     {
+      "path": "docs/core/stack-architecture-audit-20261024.md",
+      "sha256": "fcd98521539ee678cd32788fafd8e1e761839f27c183fc4b1424f58db0a630d6",
+      "sourceSha256": "fcd98521539ee678cd32788fafd8e1e761839f27c183fc4b1424f58db0a630d6"
+    },
+    {
       "path": "docs/decisions/asio-module-runtime-loading-20261023.md",
       "sha256": "1a2c42b8190740f890f895a33528311ba6a0652d5ca06df72e7c2e0a598b4fac",
       "sourceSha256": "83ccbc51fc1a17023738fd702fbe80ed17c746bc49e3408e91c75b6ca9adcb8e",
@@ -180,9 +195,15 @@
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
+      "path": "docs/history/native-architecture-baseline-20261024.md",
+      "sha256": "eb2be481b33256551e2881b295e02789da299545b9e5dfd659af668bf054c10f",
+      "sourceSha256": "3ad8aa7b36b11c41865e0e9947f06ac26362be16b654ac42c70e1eb5b52ceca2",
+      "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
+    },
+    {
       "path": "docs/scheduler.md",
-      "sha256": "8cddb3054e70fd911bfa592e697b4e32af95489fe1883afec2ae009bca6f1141",
-      "sourceSha256": "8cddb3054e70fd911bfa592e697b4e32af95489fe1883afec2ae009bca6f1141"
+      "sha256": "cb6bf0ba4c750def5ae55799897c5b1c45d1b02725fa4ebacdbdafbb758776d3",
+      "sourceSha256": "cb6bf0ba4c750def5ae55799897c5b1c45d1b02725fa4ebacdbdafbb758776d3"
     },
     {
       "path": "modules/audio-backends/CMakeLists.txt",
@@ -553,10 +574,25 @@
       "sourceSha256": "3b6193ff25c41f4c044d764a80113478d9f664f9795fb35b4111ddb157b526ba"
     },
     {
+      "path": "tools/edid-probe/edid_probe.py",
+      "sha256": "cead9e4218345a6c2d71cf4584977cb71934a9ada6f5cabd6f6e899a095e87f7",
+      "sourceSha256": "cead9e4218345a6c2d71cf4584977cb71934a9ada6f5cabd6f6e899a095e87f7"
+    },
+    {
+      "path": "tools/edid-probe/test_edid_probe.py",
+      "sha256": "723b42ea34f882333432aaf350d9998707fbd229faaa8a0b0dcf9b274cc0373b",
+      "sourceSha256": "723b42ea34f882333432aaf350d9998707fbd229faaa8a0b0dcf9b274cc0373b"
+    },
+    {
       "path": "tools/endpoint-probe/Build-CaptureScheduler.ps1",
       "sha256": "a4d30a9ebc7f43fabd64c075c43349cecc2451202215cb884c3c90dbc501d971",
       "sourceSha256": "a507883ce7e95000c58a75448e4f23545418757203c229168cd10524be88db4f",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
+    },
+    {
+      "path": "tools/endpoint-probe/Build-EndpointProbe.ps1",
+      "sha256": "6f48dba41ea575add726ff15d9167343d85194db897200c9026f5f53762b1aff",
+      "sourceSha256": "6f48dba41ea575add726ff15d9167343d85194db897200c9026f5f53762b1aff"
     },
     {
       "path": "tools/endpoint-probe/Build-NativeCapture.ps1",
@@ -603,8 +639,8 @@
     },
     {
       "path": "tools/endpoint-probe/Native-Hook-Control.c",
-      "sha256": "db10cfceccb3acc903648b07ecc2a56b6d7f8a1776963a9a3df60bbd1376479b",
-      "sourceSha256": "db10cfceccb3acc903648b07ecc2a56b6d7f8a1776963a9a3df60bbd1376479b"
+      "sha256": "b8b41648eb5a46cc71423b4048c5a85d4dbaf7cf8e0b2ee7a83e681a0de8e09a",
+      "sourceSha256": "b8b41648eb5a46cc71423b4048c5a85d4dbaf7cf8e0b2ee7a83e681a0de8e09a"
     },
     {
       "path": "tools/endpoint-probe/Native-Hook.c",
@@ -645,6 +681,16 @@
       "path": "tools/endpoint-probe/Packet-Descriptor.py",
       "sha256": "55c7c53a838f8445d3a5159cbeb044de13bb6400e1b365375bf55e2287120dbd",
       "sourceSha256": "55c7c53a838f8445d3a5159cbeb044de13bb6400e1b365375bf55e2287120dbd"
+    },
+    {
+      "path": "tools/endpoint-probe/PrivateBlockProbe.cs",
+      "sha256": "f93a5ae57feeef3986edc65f0326396fe248338cbb83681ec5f1275afb5d7666",
+      "sourceSha256": "f93a5ae57feeef3986edc65f0326396fe248338cbb83681ec5f1275afb5d7666"
+    },
+    {
+      "path": "tools/endpoint-probe/Probe.cs",
+      "sha256": "26ad9c685adee5cba92af8cb03a6351b6ea66c5c93d866b06ad6dc956c1bd9e8",
+      "sourceSha256": "26ad9c685adee5cba92af8cb03a6351b6ea66c5c93d866b06ad6dc956c1bd9e8"
     },
     {
       "path": "tools/endpoint-probe/Run-Native.py",
@@ -709,8 +755,8 @@
     },
     {
       "path": "tools/fsa-integration/Build-Integration.ps1",
-      "sha256": "94b23ef5a85cb0da55c246c44b174a22422d22eeb4f49e05f9234ecd48ffa19a",
-      "sourceSha256": "8f92bfc1984de4775d81f5b9319bc80393855cf8b38193b32b7005e2b4e5c9b5",
+      "sha256": "b332dfdba01888da07f5201ce395288e41ed2a62052d2450a7aade5015f9a69a",
+      "sourceSha256": "e094397921d315e0b5153b65a4ab3a7b80f955df25bb8c5976e3b414b115972e",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
@@ -726,8 +772,8 @@
     },
     {
       "path": "tools/fsa-integration/README.md",
-      "sha256": "b0682e968d7190400bc363f6c9dca3d8e69e61f38ecfe1dd997522dd159dda93",
-      "sourceSha256": "3904f7aa04ed02af711bc2c9efd3db1f7f485a6987ad27e43c07e152be7f5546",
+      "sha256": "3d79efbb28d2af34b729a086d579487012e5b9f8bc97aa4243fc8e11bc4a7521",
+      "sourceSha256": "0c9dcf76f22c95baf84c3d1205b7372a9c368fca96b10d659f97906c45079888",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
@@ -1030,9 +1076,34 @@
       "sourceSha256": "a06bbc9909bc4b943e3c41793e594d5cec9e390ee395ce706ba7aa542a2466f9"
     },
     {
+      "path": "tools/pipeline-init/Build-EnumHook.ps1",
+      "sha256": "ae39186d862ad6f05a79c491e53ed4e5b8e7603d205b641152289c50f0f8be7d",
+      "sourceSha256": "ae39186d862ad6f05a79c491e53ed4e5b8e7603d205b641152289c50f0f8be7d"
+    },
+    {
+      "path": "tools/pipeline-init/Enum-Fixture.c",
+      "sha256": "1ea157f7c2b7b2a79ca808efeb603a9a6cbf48cbe7b20f850a050c2c18c894d7",
+      "sourceSha256": "1ea157f7c2b7b2a79ca808efeb603a9a6cbf48cbe7b20f850a050c2c18c894d7"
+    },
+    {
+      "path": "tools/pipeline-init/Enum-FixtureHost.c",
+      "sha256": "93dc7fbe49536dcdd71e5effeff5475b2eb10de22dac05ae410a90314632dc5d",
+      "sourceSha256": "93dc7fbe49536dcdd71e5effeff5475b2eb10de22dac05ae410a90314632dc5d"
+    },
+    {
+      "path": "tools/pipeline-init/Enum-Hook.c",
+      "sha256": "99515376b978c94715e4eae47dfdc970349bb21ca7dd2550886fe343eb2d4616",
+      "sourceSha256": "99515376b978c94715e4eae47dfdc970349bb21ca7dd2550886fe343eb2d4616"
+    },
+    {
+      "path": "tools/pipeline-init/Enum-Hook.h",
+      "sha256": "e12ace8dd419a651096acf65fca0713400742a27bd68e38317b351d810d6d531",
+      "sourceSha256": "e12ace8dd419a651096acf65fca0713400742a27bd68e38317b351d810d6d531"
+    },
+    {
       "path": "tools/pipeline-init/README.md",
-      "sha256": "41111d37a44a12284b1a94505eec5de925996db0afc839e3a415990078139143",
-      "sourceSha256": "e2f271a345d90dffbc7b4ddca89a9b5eb46f2fc1b0d360fc0f43d37d1eca12af",
+      "sha256": "8ddf9180ac1ca717ea1141c408892cc23113e7d3c4a23a45fa745cf1cd856f69",
+      "sourceSha256": "07e40ea8369c0030fc91e5141df79805a9d44d47cce64a779a2b6f46cd91d09e",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
@@ -1066,6 +1137,11 @@
       "sourceSha256": "599c102cbbe384d43ae097b7515beec7c6c4660611d7502de4dd1b99fe6f8f0e"
     },
     {
+      "path": "tools/pipeline-init/Validate-NativeEnumeration.py",
+      "sha256": "61d1d2d5eb128420309dc98add1cd14fd400954998d59eb756ec10309d60749e",
+      "sourceSha256": "61d1d2d5eb128420309dc98add1cd14fd400954998d59eb756ec10309d60749e"
+    },
+    {
       "path": "tools/pipeline-init/Validate-NspLock.ps1",
       "sha256": "790a5e55c631d2c6903afd76f02d5439e089d3d76f0e049051878c4668d2ab67",
       "sourceSha256": "790a5e55c631d2c6903afd76f02d5439e089d3d76f0e049051878c4668d2ab67"
@@ -1079,11 +1155,6 @@
       "path": "tools/pipeline-init/Validate-Resident.ps1",
       "sha256": "a534b634ffc7e77446caad11ab7dfddfcd7e83107e8fc540a4aa3a735f04888d",
       "sourceSha256": "a534b634ffc7e77446caad11ab7dfddfcd7e83107e8fc540a4aa3a735f04888d"
-    },
-    {
-      "path": "tools/pipeline-init/agent.js",
-      "sha256": "f4494e3973110e6f3748a421572ccbc0f1e8861be90d1168e36553375206bf69",
-      "sourceSha256": "f4494e3973110e6f3748a421572ccbc0f1e8861be90d1168e36553375206bf69"
     },
     {
       "path": "tools/pipeline-init/edid.py",
@@ -1107,8 +1178,8 @@
     },
     {
       "path": "tools/pipeline-init/manager.py",
-      "sha256": "54912dce6bd9683c83996f6c4625110e9e698bffb83157c79fd8a6e3178f4e96",
-      "sourceSha256": "54912dce6bd9683c83996f6c4625110e9e698bffb83157c79fd8a6e3178f4e96"
+      "sha256": "d776b08e9b8dc5a915880b142823835b4687e62c4ec65e73e39e972edc8cca90",
+      "sourceSha256": "d776b08e9b8dc5a915880b142823835b4687e62c4ec65e73e39e972edc8cca90"
     },
     {
       "path": "tools/pipeline-init/memory_tag_test.c",
@@ -1119,6 +1190,11 @@
       "path": "tools/pipeline-init/model.py",
       "sha256": "708f8bd0b9265a561af502a27f047e416529d48ec3e8d6b1152ee22916cb9f69",
       "sourceSha256": "708f8bd0b9265a561af502a27f047e416529d48ec3e8d6b1152ee22916cb9f69"
+    },
+    {
+      "path": "tools/pipeline-init/native_enum.py",
+      "sha256": "c809b06284300c724a0029445641e222cdc9b339fd75155809c0c712f5322ac0",
+      "sourceSha256": "c809b06284300c724a0029445641e222cdc9b339fd75155809c0c712f5322ac0"
     },
     {
       "path": "tools/pipeline-init/pipeline.py",
@@ -1144,6 +1220,11 @@
       "path": "tools/pipeline-init/test_edid_transactions.py",
       "sha256": "0adc1c9a5714e05d38f599c50d0f070e9e73fb1ab3a6d9939b586be4211bde29",
       "sourceSha256": "0adc1c9a5714e05d38f599c50d0f070e9e73fb1ab3a6d9939b586be4211bde29"
+    },
+    {
+      "path": "tools/pipeline-init/test_native_enum.py",
+      "sha256": "ec3348fbd9a5d78dd6fe52cac96e4777448527263589f6cdddf7851b25817b34",
+      "sourceSha256": "ec3348fbd9a5d78dd6fe52cac96e4777448527263589f6cdddf7851b25817b34"
     },
     {
       "path": "tools/pipeline-init/test_pipeline.py",
@@ -1755,8 +1836,8 @@
     },
     {
       "path": "tools/zig-scheduler/README.md",
-      "sha256": "0632fc49bfc7b94c7c53b118a9617a6ed46f56353ccc27144f0461ae6caa860e",
-      "sourceSha256": "fb7258617a8f899f2f5aae9cec5795c99f15904b5a87cd66abb3ffc26d302e2c",
+      "sha256": "925419ff2fd31da5600c27d5c50118f2b4550371b88e61fcd8f65b387d1f654a",
+      "sourceSha256": "1fc77a6f0b6eead0f0a3b03f25592d8bfac511adee012d444b08d8c5d907bd56",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
@@ -1942,25 +2023,25 @@
     },
     {
       "path": "README.md",
-      "sha256": "0303803b8a99843f43c8c9ced2733116d3f0df41d6903d376893f1f9046816ac",
-      "sourceSha256": "0303803b8a99843f43c8c9ced2733116d3f0df41d6903d376893f1f9046816ac",
+      "sha256": "44ecc85ee9fab73b0ea73f305959d3603291b2f068792b3cf0fdfb5833dd57a4",
+      "sourceSha256": "44ecc85ee9fab73b0ea73f305959d3603291b2f068792b3cf0fdfb5833dd57a4",
       "sourcePath": "tools/public-source/README-alpha.md"
     },
     {
       "path": "docs/alpha-dev.md",
-      "sha256": "22eaf42b9b20094386f77c6332e9b2676839cba20be332126a53151035396bf6",
-      "sourceSha256": "22eaf42b9b20094386f77c6332e9b2676839cba20be332126a53151035396bf6",
+      "sha256": "7ad4a83878d2401bfca41a4851f3ec815428b50fcafe7dc6f7be7fffe1e48a6c",
+      "sourceSha256": "7ad4a83878d2401bfca41a4851f3ec815428b50fcafe7dc6f7be7fffe1e48a6c",
       "sourcePath": "tools/public-source/alpha-dev.md"
     },
     {
       "path": "tools/Build-Alpha.ps1",
-      "sha256": "7777506e97e529c37324bd75bb0dc910c8212ca6319b44aacfeb6fbd53ed06fa",
-      "sourceSha256": "7777506e97e529c37324bd75bb0dc910c8212ca6319b44aacfeb6fbd53ed06fa",
+      "sha256": "ec43219bc7393b1c1181b52249335a6ee92d9364baf047761fdd66e20824d97d",
+      "sourceSha256": "ec43219bc7393b1c1181b52249335a6ee92d9364baf047761fdd66e20824d97d",
       "sourcePath": "tools/public-source/Build-Alpha.ps1"
     },
     {
       "path": "docs/README.md",
-      "sha256": "5b2339611a1216b2f85d5dc2ad4a695b08bd6f79e1283740c88a98f088c49044",
+      "sha256": "fb031ea84a7d456da08e77573c2fe4e8974a14c04da81aa4c86d15a5612ccbf9",
       "generated": true
     }
   ]

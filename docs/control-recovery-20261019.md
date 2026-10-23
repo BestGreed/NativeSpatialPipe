@@ -1,5 +1,7 @@
 # FSA / NSp control recovery update
 
+> Historical 2026-10-19 validation record. Sonic-only menu details, the source revision below and that date's recovery scope do not override [current architecture](core/current-architecture.md), seven-mode FSA routing, the unified NSp toggle or current provenance manifest.
+
 The native Zig scheduler now bounds control-plane socket I/O, including idle
 browser preconnects, partial HTTP requests and unresponsive control servers.
 These changes do not add polling or blocking work to capture/render transport.

@@ -1,6 +1,10 @@
 # NSp 前置空间管线初始化
 
-入口为 `pipeline.py`，供 FSA、NSp 启动脚本和独立命令行调用。所有命令输出 JSON，失败返回非零。当前为本仓库集成模块，需要现有 Windows Python、`work/OemEndpointProbe.exe` 和 `work/oem-hook-deps/work/frida/package`。枚举 hook 和 EDID 写入需要管理员权限；模块不自行弹 UAC。
+入口为 `pipeline.py`，供 FSA、NSp 启动脚本和独立命令行调用。所有命令输出 JSON，失败返回非零。控制层使用现有 Windows Python；枚举注入由 `build/enum-hook/nsp_enum_control.exe` 和 `nsp_enum_hook.dll` 执行，与音频捕获共用固定版本 MinHook，不再加载 Frida 或 JS 注入代理。`inspect` 仍使用 `work/OemEndpointProbe.exe`。枚举 hook 和 EDID 写入需要管理员权限；模块不自行弹 UAC。
+
+运行 `powershell -File tools/pipeline-init/Build-EnumHook.ps1` 构建；公开构建可传 `-LlvmBin <LLVM-MinGW bin>`。完整 FSA 集成构建也会构建此模块。三处 AudioSrv 拦截仍独立于 audiodg 的 PCM 捕获拦截：统一的是原生注入和 MinHook 技术栈，不混合两者的生命周期或数据。见[原生枚举 Hook](../../docs/core/native-enumeration-hook-20261024.md)。
+
+显式 EDID `plan` / HT Support 的预检和 `inspect` 仍需旧 `work/OemEndpointProbe.exe`。它是 C# / Windows 自带 .NET Framework 工具，可运行 `powershell -File tools/endpoint-probe/Build-EndpointProbe.ps1` 构建；不要求 .NET 10/WPF，不属于逐包音频链。只读解析器在 `tools/edid-probe/edid_probe.py`，不使用 Frida。不要把这项既有准备依赖误标为仅供测试。
 
 ## FSA 接入
 
@@ -11,15 +15,15 @@ FSA 主菜单提供七种空间模式；点击会实际切换并读回验证，�
 | 子项 | 含义 | 配置字段 |
 | --- | --- | --- |
 | Expand Online | 退出 NSp/FSA 后继续维持枚举常驻 | PersistEnumerationHook |
-| Enum OLR | 耳机模式枚举 | HookHeadphones |
-| Enum OBR | 扬声器模式枚举 | HookSpeakers |
+| Enum OLR | 扬声器模式枚举 | HookSpeakers |
+| Enum OBR | 耳机模式枚举 | HookHeadphones |
 | Rec Hook | 关闭自动常驻并撤销枚举 hook | 停用 PersistEnumerationHook 并 recover |
 
 ### NSp Lock
 
 **高级 → NSp Lock** 在工作线程立即读取当前实际启用的空间格式，保存 `LockedFrontend`、`LockEndpoint`、`LockFormatGuid`、`LockHookMask`，再提交 `NSpLock=1`。空间音频关闭、格式未知或首选端点不匹配时拒绝锁定，不从旧的 FrontendFormat 猜测。
 
-依赖枚举的耳机格式补齐 Expand Online 和 Enum OLR，扬声器格式补齐 Expand Online 和 Enum OBR；Sonic 和家庭影院没有新增枚举需求。若对应枚举未开启、没有活跃 hook，服务原生声明仍支持当前格式，则记录零新增 hook 需求，不为原生已可用的 OEM／已许可模式额外注入。保留用户已经开启的其他组；健康且范围匹配的持久常驻直接复用。锁定期间这三个依赖开关由快照维持，Rec Hook 仍可恢复；再次启动会重申所需依赖。取消 NSp Lock 解除路由约束，保留当前会话和枚举设置，避免撤销仍在使用的依赖。
+依赖枚举的耳机格式补齐 Expand Online 和 Enum OBR，扬声器格式补齐 Expand Online 和 Enum OLR；Sonic 和家庭影院没有新增枚举需求。若对应枚举未开启、没有活跃 hook，服务原生声明仍支持当前格式，则记录零新增 hook 需求，不为原生已可用的 OEM／已许可模式额外注入。保留用户已经开启的其他组；健康且范围匹配的持久常驻直接复用。锁定期间这三个依赖开关由快照维持，Rec Hook 仍可恢复；再次启动会重申所需依赖。取消 NSp Lock 解除路由约束，保留当前会话和枚举设置，避免撤销仍在使用的依赖。
 
 主菜单的七种独立空间模式合并为唯一 NSp 入口：
 
@@ -124,7 +128,7 @@ FSA 必须同时核对一致序号、版本、就绪状态、心跳不超过三�
 
 hook 目前严格绑定 AudioSrv.dll SHA-256 `487e51035a76323032acd5996511c221c449cd244051d3b0e057eec70538ca97`（本机 10.0.26100.8875）。Windows 更新后若哈希不符会拒绝附着，需要重新分析地址。仅修改指定端点、指定格式的许可查询结果，不修改服务文件或内核驱动。
 
-常驻续租间隔约半秒；代理在五秒未续租后自行撤销。`recover` 请求退出并逐项比对被拦截函数的原始字节。宿主异常退出时，恢复命令等待租约到期，再只读核查同一 AudioSrv 进程实例；不会向新 PID 写入旧内存快照。无法确认恢复时返回失败，保留 `%LOCALAPPDATA%/NativeSpatialPipe/pipeline-init/resident.json` 证据。
+常驻续租间隔约半秒；原生 watchdog 在监督进程退出或五秒未续租后自行撤销。`recover` 请求退出并逐项比对三处函数的原始字节。宿主异常退出时，通过只读 `ReadProcessMemory` 核查同一 AudioSrv 进程实例，不重新注入运行时，也不向新 PID 写入旧内存快照。撤销后小型 Hook DLL 和禁用的 trampoline 留驻，以保护已进入原函数的调用。无法确认恢复时返回失败，保留 `%LOCALAPPDATA%/NativeSpatialPipe/pipeline-init/resident.json` 证据。
 
 ## 验证记录
 

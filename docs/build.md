@@ -1,12 +1,12 @@
 # Building the source export
 
 <!-- alpha-dev-status -->
-**2026-10-24 alpha-dev/main:** Seven output layouts, Web configuration, session-resident ASIO and optional isolated recording are integrated. Playback configuration defaults to the user directory; PCM and snapshot archives default off. Storage quotas, 6DoF implementation and long-term device validation remain pending. See [current progress](alpha-dev.md) and [source README](../README.md). Older validation below keeps its original scope.
+**2026-10-24 alpha-dev/main:** Seven output layouts, Web configuration, session-resident ASIO and optional isolated recording are integrated. Enumeration now uses native MinHook; preparation retains Python/PowerShell helpers. Earlier desktop, metering and recording paths are explicitly historical. Playback configuration defaults to the user directory; PCM and snapshot archives default off. Storage quotas, 6DoF implementation and long-term device validation remain pending. See [current progress](alpha-dev.md) and [source README](../README.md). Older validation below keeps its original scope.
 <!-- /alpha-dev-status -->
 
 Run commands from the repository root on Windows x64. Required tools: Git, Python 3.12, PowerShell, Rust `1.97.1-x86_64-pc-windows-gnullvm`, and an LLVM/MinGW distribution providing clang.exe and libunwind.dll. The baseline used llvm-mingw `20261006-ucrt-x86_64`. Toolchains and dependency sources are installed separately.
 
-The default managed control host additionally needs Zig 0.13.0 at build time. See [scheduler setup and validation](scheduler.md). Python remains required for telemetry.
+The default managed control host additionally needs Zig 0.13.0 at build time. See [scheduler setup and validation](scheduler.md). Python remains required for preparation supervision and telemetry. Existing PowerShell/WinRT helpers use Windows-provided managed interop; the product does not require the retired .NET 10/WPF desktop runtime.
 
 ## Dependency layout
 
@@ -33,6 +33,16 @@ cargo +1.97.1-x86_64-pc-windows-gnullvm fetch --locked --manifest-path tools/roa
 ```
 
 Subsequent builds use `--locked --offline`. `Build-Core.ps1` builds the following runtime targets. It does not download SDKs or run audio capture.
+
+For the current extracted LIRA/ASIO modules, native enumeration, Zig session/Web Host and their runtime dependencies, also run:
+
+```powershell
+./tools/Build-Alpha.ps1 -LlvmBin $env:NSP_LLVM_BIN -Zig C:/toolchains/zig-0.13.0/zig.exe
+```
+
+The enumeration artifacts are `build/enum-hook/nsp_enum_hook.dll` and `nsp_enum_control.exe`. They reuse the same pinned MinHook source as capture. A separate optional `tools/fsa-integration/Build-Integration.ps1 -FsaOnly` builds the native FSA UI after its prerequisites exist. These build steps do not deploy, inject Hook or restart FSA.
+
+Explicit EDID preflight/HT Support and `inspect` still require the legacy `work/OemEndpointProbe.exe`. Build it separately with `powershell -File tools/endpoint-probe/Build-EndpointProbe.ps1`; this uses Windows' .NET Framework x64 compiler and the included existing C# sources. It is not part of the audio path, does not require .NET 10/WPF, and the build does not run the probe or write EDID.
 
 | Runtime component | Output directory | Used by |
 |---|---|---|

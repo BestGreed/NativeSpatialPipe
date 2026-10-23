@@ -2,6 +2,12 @@
 
 Updated 2026-10-24. N03-N12 integration remains complete within its recorded scope. Current additions include manual HT preparation and FSA state fixes, independent read/save Web configuration, shared seven-layout output, ASIO session residency and module-local runtime loading, isolated optional recording and user-directory playback configuration.
 
+Extra enumeration is now native C/MinHook, sharing controller source and the pinned engine with capture. Preparation supervision remains Python; format operations retain Windows PowerShell/WinRT helpers. The old Frida injection agent is removed. Node is development tooling, the UI runs in the default browser, and the retired WPF/.NET 10 entry is not a product dependency. System-provided managed interop used by PowerShell is distinct from that retired desktop runtime.
+
+The [current architecture](core/current-architecture.md) and [stack/document audit](core/stack-architecture-audit-20261024.md) separate active modules from historical snapshots. WebView2, same-process metering, mandatory recording/staging paths and early FSA plans are marked superseded; native AoIP, ROAR OBR and 6DoF remain unimplemented, not implicit new dependencies.
+
+Export verification repaired a missing read-only EDID parser dependency. Explicit EDID preflight also still uses the legacy Windows Framework C# probe; its existing source and a separate build entry are included. This is distinct from retired .NET 10/WPF clients and is not loaded in audio processing.
+
 ROAR is a renderer backend; OLR is its currently integrated speaker mode. LIRA is a separate backend retaining room projection, clipping, smoothing and 512-frame inherent delay. Common input preserves raw metadata. Device clock matching and internal ASIO buffering remain device responsibilities.
 
 Both PCM recording and telemetry snapshot archival default off. The playback handoff does not perform recording IO; telemetry routing uses memory progress. Remaining storage work covers quotas, retention and cleanup. The 6DoF layout slot is inactive; 14/16-channel physical playback, long-term performance and native network output are not completed. Web runtime control is intentionally absent; FSA owns it.

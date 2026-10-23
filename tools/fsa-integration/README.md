@@ -8,7 +8,9 @@
 
 HT Support 为手动 EDID 入口；普通启动/枚举不自动注入，缺少能力的 HT 模式按可用性隐藏。过滤和 HT 勾选状态由 FSA 枚举负责，符合条件且缺能力时才调用准备模块，写入后重载/回验；安装入口尚未实现。见EDID 菜单（开发参考未随公开源码提供）。
 
-播放 JSON 已支持七布局、DSP、接线和两项 `recording` 开关。当前 Zig host 的 PCM/快照默认均不落盘；未填 `PlaybackConfig` 时不启用 ASIO，只运行捕获/遥测。旧 Python 对照和离线工具的录制合同单独保留。详见[播放配置](../../docs/core/playback-json-configuration-20261022.md)和[旁录隔离](../../docs/core/recording-isolation-20261024.md)。下面标日期段落为历史交付说明，不能覆盖本节。
+播放 JSON 已支持七布局、DSP、接线和两项 `recording` 开关。当前 Zig host 的 PCM/快照默认均不落盘；未填 `PlaybackConfig` 时先解析用户目录默认文件，并兼容旧安装目录默认文件，解析后仍没有配置才仅捕获/遥测。不能用 INI 字段空白推断 ASIO 未启用。旧 Python 对照和离线工具的录制合同单独保留。详见[播放配置](../../docs/core/playback-json-configuration-20261022.md)和[旁录隔离](../../docs/core/recording-isolation-20261024.md)。下面标日期段落为历史交付说明，不能覆盖本节。
+
+当前技术边界：FSA 为 C / Win32，默认调度为 Zig；Python 同时用于端点准备控制和独立遥测。额外枚举已迁移为 C / MinHook，不再调用 Frida。PowerShell/WinRT 仍是准备/选择/恢复辅助，不把它误称为逐包音频处理。见[当前架构](../../docs/core/current-architecture.md)。
 
 2026-10-18。基于本机 `Final_Spatial_Audio-published` 的 `decba9b`，来源为
 [BestGreed/Final_Spatial_Audio](https://github.com/BestGreed/Final_Spatial_Audio)。
