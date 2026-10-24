@@ -11,3 +11,5 @@ The `windows-development-bundle` artifact also retains compiled binaries in thei
 This checks buildability and isolated behavior. It does not open an ASIO driver, inject AudioSrv/audiodg, write EDID, restart display/audio services or establish real-device playback, acoustic latency or long-run acceptance. No binary release is published by this workflow.
 
 CI automation is maintained directly in the public repository. The provenance manifest continues to describe exported runtime source; public CI-only files do not claim a private source origin.
+
+Preparation regressions also check that the read-only default render endpoint helper is present in the exported tree. It is a runtime dependency of endpoint preparation, not just a test utility, and must accompany the binaries in the development bundle.

@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "66e733a06d9e538b01eb8b1ca3259e9659f59b6c",
+  "sourceRevision": "1a87f12b2ca86719c1118782e4857439d896f6f8",
   "hashNormalization": "CRLF to LF; all other bytes preserved",
   "files": [
     {
@@ -618,6 +618,11 @@
       "sourceSha256": "08443432d969f6481a1d4e40327a24a1fd481c2d41753286a373caa2f626f634"
     },
     {
+      "path": "tools/endpoint-probe/Get-DefaultRenderEndpoint.ps1",
+      "sha256": "369a6777c49ab43b98a91ae32d1c0ce007b5e1ea9fd49622a0b468d0d221bf8a",
+      "sourceSha256": "369a6777c49ab43b98a91ae32d1c0ce007b5e1ea9fd49622a0b468d0d221bf8a"
+    },
+    {
       "path": "tools/endpoint-probe/Host-Priority.py",
       "sha256": "e82ffec5755219cad795c67d2db9445d5a0cf1f567088b38bb65c297e7ec20a4",
       "sourceSha256": "e82ffec5755219cad795c67d2db9445d5a0cf1f567088b38bb65c297e7ec20a4"
@@ -1230,6 +1235,11 @@
       "path": "tools/pipeline-init/test_pipeline.py",
       "sha256": "d7ad9358b61f5812387d68bbe882a5e686a140088aa01ab5c1c5fccd8efbf956",
       "sourceSha256": "d7ad9358b61f5812387d68bbe882a5e686a140088aa01ab5c1c5fccd8efbf956"
+    },
+    {
+      "path": "tools/pipeline-init/test_runtime_dependencies.py",
+      "sha256": "2dd661a5a755950258c5fd80b2389ba174a71f8dfec7d08febf899d084fd7476",
+      "sourceSha256": "2dd661a5a755950258c5fd80b2389ba174a71f8dfec7d08febf899d084fd7476"
     },
     {
       "path": "tools/pipeline-init/windows.py",
