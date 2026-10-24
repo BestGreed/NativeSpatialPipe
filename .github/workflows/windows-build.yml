@@ -34,8 +34,18 @@ jobs:
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
-      - name: Prepare pinned tools and dependencies
-        run: ./tools/ci/Prepare-Windows.ps1
+      - name: Prepare pinned LLVM-MinGW
+        timeout-minutes: 10
+        run: ./tools/ci/Prepare-Windows.ps1 -Stage LLVM
+      - name: Prepare pinned Zig
+        timeout-minutes: 6
+        run: ./tools/ci/Prepare-Windows.ps1 -Stage Zig
+      - name: Install pinned Rust
+        timeout-minutes: 8
+        run: ./tools/ci/Prepare-Windows.ps1 -Stage Rust
+      - name: Fetch pinned source dependencies
+        timeout-minutes: 8
+        run: ./tools/ci/Prepare-Windows.ps1 -Stage Sources
       - name: Build core, renderers, output and scheduler
         run: |
           New-Item -ItemType Directory -Force build/ci-logs | Out-Null
