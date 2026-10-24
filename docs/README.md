@@ -1,5 +1,6 @@
 # Public source documentation
 
+- [Runtime details and validation limits](runtime-details.md)
 - [Alpha integration and provenance](alpha-dev.md)
 - [Current architecture](core/current-architecture.md)
 - [Stack and documentation audit](core/stack-architecture-audit-20261024.md)

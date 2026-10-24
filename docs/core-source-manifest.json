@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "930f8208128a1b8bbd109a1a532ce65dd13b748d",
+  "sourceRevision": "49ac1a2c89402ed5281d9c4059b70fed6b2079a8",
   "hashNormalization": "CRLF to LF; all other bytes preserved",
   "files": [
     {
@@ -2023,9 +2023,15 @@
     },
     {
       "path": "README.md",
-      "sha256": "44ecc85ee9fab73b0ea73f305959d3603291b2f068792b3cf0fdfb5833dd57a4",
-      "sourceSha256": "44ecc85ee9fab73b0ea73f305959d3603291b2f068792b3cf0fdfb5833dd57a4",
+      "sha256": "3279b2705fe3eaf9aa75950c0d2e8b7ad66505508f8086065e59c09d0015d5e9",
+      "sourceSha256": "3279b2705fe3eaf9aa75950c0d2e8b7ad66505508f8086065e59c09d0015d5e9",
       "sourcePath": "tools/public-source/README-alpha.md"
+    },
+    {
+      "path": "docs/runtime-details.md",
+      "sha256": "753efc39f9a71f6d4b9fe66854d35b3140506aba8c32955d6035b7a8843a5a8d",
+      "sourceSha256": "753efc39f9a71f6d4b9fe66854d35b3140506aba8c32955d6035b7a8843a5a8d",
+      "sourcePath": "tools/public-source/runtime-details.md"
     },
     {
       "path": "docs/alpha-dev.md",
@@ -2041,7 +2047,7 @@
     },
     {
       "path": "docs/README.md",
-      "sha256": "fb031ea84a7d456da08e77573c2fe4e8974a14c04da81aa4c86d15a5612ccbf9",
+      "sha256": "aad7256bd4bc0ef407cae7ff43f4519293a898a708b644f34d733de3f8bdbffa",
       "generated": true
     }
   ]

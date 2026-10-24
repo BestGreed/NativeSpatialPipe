@@ -1,60 +1,75 @@
 # Native Spatial Pipe
 
-Windows spatial-audio object capture, native rendering and real-time visualization. Updated 2026-10-24 for `alpha-dev` and `main`. This is a build-specific research implementation, not a registered Windows Spatial Sound Provider or a Dolby/DTS bitstream decoder.
+Capture Windows spatial-audio objects, render them for your speaker setup, and explore the sound through live visualization.
 
-## Current implementation
+NSP brings application audio capture, selectable renderers, device output and FSA session management into one configurable workflow. The project is currently in alpha development.
 
-Extra spatial-format enumeration now uses native C/MinHook and the same controller source as capture. The preparation supervisor still uses Python, but no longer loads Frida or a JavaScript injection agent. See [implementation and verification](docs/core/native-enumeration-hook-20261024.md).
+## Features
 
-See the [current architecture](docs/core/current-architecture.md) and [stack audit](docs/core/stack-architecture-audit-20261024.md) for runtime boundaries. Python preparation/telemetry and Windows PowerShell/WinRT helpers remain; browser JS does not require a Node service or a WebView2/WPF desktop. Earlier designs are explicitly historical, and native network output remains a future option.
+- Capture spatial-audio object streams from supported Windows audio modes.
+- Choose ROAR's OLR speaker rendering or the alternative LIRA renderer.
+- Output through ASIO with speaker routing, per-channel calibration and optional DSP.
+- Use **5.1.2, 5.1.4, 7.1.2, 7.1.4, 7.1.6, 9.1.4 or 9.1.6** speaker layouts.
+- View object positions, movement and channel activity in the browser.
+- Manage audio modes and sessions through FSA; edit playback settings in the Web configuration page.
+- Enable optional PCM recording and telemetry archives when needed; both default off.
 
-Explicit EDID preflight/HT Support and `inspect` also retain the legacy C# endpoint probe using Windows .NET Framework. Its source and separate `tools/endpoint-probe/Build-EndpointProbe.ps1` build are included; it is outside the audio path and does not require .NET 10. Preparation is not yet fully native.
+## Modules
 
-```text
-MinHook / C capture -> shared memory -> Rust receiver / common input
- -> ROAR (OLR mode) or C++ LIRA -> interleaved output pool
- -> in-place DSP / bypass -> leased pool blocks -> ASIO owner
-Optional pre-DSP copy -> bounded recording pool -> dedicated file writer
-Independent telemetry -> Python metering/history -> browser visualization
-Native FSA -> Zig session coordination and independent Web configuration host
-```
-
-Both renderers support **5.1.2, 5.1.4, 7.1.2, 7.1.4, 7.1.6, 9.1.4 and 9.1.6**, using common channel order and speaker-identity calibration/routing migration. ROAR's 6DoF measurement slot is reserved and cannot be selected yet. See [output layouts](docs/core/output-layout-presets-20261023.md).
-
-ASIO retains its device buffering, sample-rate conversion and clock matching. It remains active for the session and sends silence without input. DSP runs in the output pool; no Zig PCM staging queue or scratch copy is required before ASIO submission. The audio handoff thread does not write recording files.
-
-PCM recording and telemetry JSONL archival are independent and **disabled by default**:
-
-```json
-"recording": {"pcm": false, "telemetrySnapshots": false}
-```
-
-Enabling PCM recording copies pre-DSP audio into a dedicated 32-block pool. A slow or failed recorder drops recording blocks and reports them without retaining playback leases. Live telemetry and in-memory history continue without archival. See [recording isolation](docs/core/recording-isolation-20261024.md).
-
-## Configuration and entry points
-
-FSA starts a separate Zig Web API Host at `http://127.0.0.1:8767/`; triple-click its tray icon to open the default browser. The configuration page reads, validates and saves playback/backend JSON. Saving does not apply settings automatically. Start/stop, mode changes, Hook and EDID actions remain exclusively with FSA. Python telemetry stays read-only and separate. Standalone visual preview uses port 8765.
-
-Playback configuration defaults to `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`. Existing installation-adjacent `playback.json` is copied without deleting the original or overwriting an existing user file. Explicit custom `PlaybackConfig` paths remain supported. Default saves do not write the installation INI. See [migration](docs/core/playback-user-location-20261024.md) and [playback fields](docs/core/playback-json-configuration-20261022.md).
+| Module | Purpose |
+|---|---|
+| Capture and common input | Bring application object audio into a shared rendering pipeline. |
+| ROAR / OLR | The primary speaker-rendering path. |
+| LIRA | An alternative renderer with its own rendering behavior. |
+| Output and DSP | ASIO device output, channel routing, calibration and optional processing. |
+| FSA integration | Audio-mode selection, endpoint preparation and session control. |
+| Web configuration and visualization | Playback settings, status, object views and channel meters. |
 
 ## Build
 
-Prepare the pinned dependencies in [build instructions](docs/build.md), then run:
+Follow the [Windows build guide](docs/build.md) to prepare the pinned dependencies, then run:
 
 ```powershell
 ./tools/Build-Alpha.ps1 -LlvmBin C:/toolchains/llvm-mingw/bin -Zig C:/toolchains/zig-0.13.0/zig.exe
 ```
 
-Building does not open a driver, inject Hook, deploy or restart FSA. ASIO/LIRA modules require matching `libc++.dll` and `libunwind.dll` alongside them. C/Rust/C++ handle capture, adaptation, rendering and device output; Zig provides coordination, in-pool DSP and configuration. Python provides preparation supervision, telemetry and test tools; PowerShell/WinRT retains system interop. JavaScript runs in the browser. No .NET 10/WPF installation is required; existing Windows-managed interop helpers are distinct from the excluded desktop runtime.
+For the FSA application, follow the [FSA setup guide](tools/fsa-integration/README.md). Building creates the artifacts; deployment and starting an audio session are separate steps.
 
-## Validation and remaining work
+## Quick configuration
 
-Development validation includes bounded recording/failure checks, four archive combinations with an owned 140-slot capture fixture, seven-layout renderer checks, Web configuration tests and actual FSA/ASIO idle start/stop. Earlier DVS 48 kHz/128-frame 12-channel network return and classic Wwise HT tests retain their original scope. Private captures and evidence payloads are not distributed here.
+1. Start the configured FSA application and triple-click its tray icon to open the Web page in your default browser.
+2. Open **Configuration**, choose the renderer and speaker layout, then select your ASIO device and map the output channels to your wiring.
+3. Save the settings, then start NSp through FSA. To apply later changes, stop and start the session again.
 
-These checks do not establish all-layout physical playback, 14/16-channel network routing, acoustic latency or long-term stability. Storage quotas, retention/cleanup policies, 6DoF measurement handling, detailed startup error presentation and a native network output remain future work. Inferno is not integrated. ASIO-internal scheduling and latency optimization remain out of scope. An earlier output-session `OutputTimeout` still needs targeted sustained-input/stop validation; later idle success does not erase that evidence.
+The Web page is available at `http://127.0.0.1:8767/`. It saves settings and shows status; FSA handles runtime control.
 
-## Licensing and attribution
+The default configuration file is `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`. You can also edit it directly; see the [example configuration](tools/zig-scheduler/playback.example.json) and [configuration reference](docs/core/playback-json-configuration-20261022.md).
 
-Original NSP contributions retain Apache-2.0. LIRA keeps its original Apache notices. ASIO device code and SDK headers retain GPL-3.0-only scope; a combined program containing them must not be described as Apache-only. See [license scope](LICENSING.md), [third-party notices](THIRD_PARTY_NOTICES.md) and [module licensing](modules/audio-backends/LICENSING.md). FSA code and artwork retain their separate terms.
+## Direction
 
-Thanks to hikari-taritsu (rmj) for the Spatial ASIO / LIRA contributions. Original notices are preserved. Public `main` and `alpha-dev` carry the reviewed source export, without importing private Git history. See [provenance](docs/alpha-dev.md), [source manifest](docs/core-source-manifest.json) and [documentation index](docs/README.md).
+- Add native network-audio output alongside the current ASIO path.
+- Develop custom speaker layouts and 6DoF support.
+- Improve installation, configuration guidance and diagnostics.
+- Extend long-running validation and recording-storage management.
+
+These are planned directions, not currently available features. See [development status](docs/alpha-dev.md) for the current scope.
+
+## Documentation
+
+- [Build and prerequisites](docs/build.md)
+- [Configuration reference](docs/core/playback-json-configuration-20261022.md)
+- [Runtime details and validation limits](docs/runtime-details.md)
+- [Architecture and module boundaries](docs/core/current-architecture.md)
+- [Documentation index](docs/README.md)
+
+## Latest update
+
+<!-- Keep one brief entry here. Detailed progress belongs in docs/alpha-dev.md. -->
+
+**2026-10-24:** Unified native endpoint enumeration, refreshed architecture documentation, and completed user-directory playback configuration and optional recording controls.
+
+## License and credits
+
+Original NSP code uses **Apache-2.0**. The included ASIO device code and SDK headers have **GPL-3.0-only** scope; a combined program containing them is not Apache-only. FSA and artwork retain their separate terms. See [license scope](LICENSING.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
+
+Thanks to **hikari-taritsu (rmj)** for the Spatial ASIO / LIRA contributions. Original author and license notices are preserved; see [module licensing](modules/audio-backends/LICENSING.md) and [source provenance](docs/alpha-dev.md).
