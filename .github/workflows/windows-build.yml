@@ -1,0 +1,91 @@
+name: Windows source build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: powershell
+    env:
+      CARGO_HOME: ${{ github.workspace }}/work/rust/cargo
+      RUSTUP_HOME: ${{ github.workspace }}/work/rust/rustup
+      CARGO_TERM_COLOR: never
+    steps:
+      - name: Check out public source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Prepare pinned tools and dependencies
+        run: ./tools/ci/Prepare-Windows.ps1
+      - name: Build core, renderers, output and scheduler
+        run: |
+          New-Item -ItemType Directory -Force build/ci-logs | Out-Null
+          Start-Transcript build/ci-logs/alpha-build.txt
+          try { ./tools/Build-Alpha.ps1 -LlvmBin $env:NSP_LLVM_BIN -Zig $env:NSP_ZIG }
+          finally { Stop-Transcript }
+      - name: Build FSA and verify native contracts
+        run: |
+          Start-Transcript build/ci-logs/fsa-build.txt
+          try { ./tools/fsa-integration/Build-Integration.ps1 -FsaOnly }
+          finally { Stop-Transcript }
+      - name: Build preparation tools and run owned-process checks
+        run: |
+          Start-Transcript build/ci-logs/preparation-tests.txt
+          try {
+            ./tools/endpoint-probe/Build-EndpointProbe.ps1
+            ./tools/pipeline-init/Build-EnumHook.ps1 -LlvmBin $env:NSP_LLVM_BIN -TestFixtures
+            python -m unittest discover -s tools/pipeline-init -p 'test_*.py' -v
+            if ($LASTEXITCODE) { throw 'Preparation regression failed' }
+            python -m unittest discover -s tools/edid-probe -p 'test_*.py' -v
+            if ($LASTEXITCODE) { throw 'EDID parser regression failed' }
+            python tools/Check-MarkdownEncoding.py .
+            if ($LASTEXITCODE) { throw 'Markdown encoding check failed' }
+          } finally { Stop-Transcript }
+      - name: Verify expected artifacts
+        run: |
+          $expected = @(
+            'build/native-send/nsp_native_send.dll',
+            'build/native-capture/nsp_native_capture.dll',
+            'build/roar-native/release/nsp_roar_bridge.dll',
+            'build/native-receiver-routing/release/nsp_native_receiver.dll',
+            'build/spatial-renderer/NSP.SpatialRenderer.dll',
+            'build/audio-backends/NSP.AsioOutput.dll',
+            'build/enum-hook/nsp_enum_hook.dll',
+            'build/enum-hook/nsp_enum_control.exe',
+            'build/zig-scheduler/nsp-scheduler.exe',
+            'build/fsa-integration/bin/FinalSpatialAudio.exe',
+            'work/OemEndpointProbe.exe'
+          )
+          foreach ($path in $expected) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing artifact: $path" }
+          }
+          $expected | ForEach-Object { Get-FileHash -Algorithm SHA256 -LiteralPath $_ } |
+            Format-Table -AutoSize | Out-File build/ci-logs/artifact-hashes.txt -Encoding utf8
+          'Build and isolated checks passed. No real device playback, EDID write or AudioSrv injection was performed.' >> $env:GITHUB_STEP_SUMMARY
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: windows-build-logs
+          path: build/ci-logs/
+          if-no-files-found: warn
+          retention-days: 7
