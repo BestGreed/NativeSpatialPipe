@@ -31,7 +31,7 @@ See [build prerequisites](build.md), [native enumeration](core/native-enumeratio
 
 ## Configuration, control and recording
 
-FSA starts a separate Zig Web API Host at `http://127.0.0.1:8767/`; triple-click its tray icon to open the default browser. The page reads, validates and saves playback/backend JSON. Saving does not apply settings to a running session. Start/stop, mode changes, Hook and EDID actions remain with FSA. Python telemetry is read-only and separate; standalone visual preview uses port 8765.
+FSA starts a separate Zig Web API Host at `http://127.0.0.1:8767/`. Three clicks in quick succession on its tray icon open the page in the default browser; this is the only FSA UI shortcut, with no separate tray-menu item or additional button. Configuration is selected inside the opened Web page. The page reads, validates and saves playback/backend JSON. Saving does not apply settings to a running session. Start/stop, mode changes, Hook and EDID actions remain with FSA. Python telemetry is read-only and separate; standalone visual preview uses port 8765.
 
 Playback configuration defaults to `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`. The old installation-adjacent default is copied without deleting the original or overwriting an existing user file. Explicit custom paths remain supported; default saves do not write the installation INI.
 

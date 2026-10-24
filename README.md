@@ -37,11 +37,11 @@ For the FSA application, follow the [FSA setup guide](tools/fsa-integration/READ
 
 ## Quick configuration
 
-1. Start the configured FSA application and triple-click its tray icon to open the Web page in your default browser.
-2. Open **Configuration**, choose the renderer and speaker layout, then select your ASIO device and map the output channels to your wiring.
+1. With FSA running, **click its tray icon three times in quick succession**. This opens the Web page in your default browser.
+2. **On the opened Web page**, select **Configuration**, choose the renderer and speaker layout, then select your ASIO device and map the output channels to your wiring.
 3. Save the settings, then start NSp through FSA. To apply later changes, stop and start the session again.
 
-The Web page is available at `http://127.0.0.1:8767/`. It saves settings and shows status; FSA handles runtime control.
+Triple-clicking the tray icon is the only FSA UI shortcut for opening the page; there is no separate tray-menu item or additional button. The Web page saves settings and shows status; FSA handles runtime control.
 
 The default configuration file is `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`. You can also edit it directly; see the [example configuration](tools/zig-scheduler/playback.example.json) and [configuration reference](docs/core/playback-json-configuration-20261022.md).
 
