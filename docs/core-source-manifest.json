@@ -1,5 +1,5 @@
 {
-  "sourceRevision": "e9d37dd112379208c89bfedcaa9d3964baa485bd",
+  "sourceRevision": "66e733a06d9e538b01eb8b1ca3259e9659f59b6c",
   "hashNormalization": "CRLF to LF; all other bytes preserved",
   "files": [
     {
@@ -2041,8 +2041,8 @@
     },
     {
       "path": "tools/Build-Alpha.ps1",
-      "sha256": "ec43219bc7393b1c1181b52249335a6ee92d9364baf047761fdd66e20824d97d",
-      "sourceSha256": "ec43219bc7393b1c1181b52249335a6ee92d9364baf047761fdd66e20824d97d",
+      "sha256": "4b76cd117b1e32904e11e757a63ef78e3e1c746aded9ce9957d63c83aca0495d",
+      "sourceSha256": "4b76cd117b1e32904e11e757a63ef78e3e1c746aded9ce9957d63c83aca0495d",
       "sourcePath": "tools/public-source/Build-Alpha.ps1"
     },
     {
