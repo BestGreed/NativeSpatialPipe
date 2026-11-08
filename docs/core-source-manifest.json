@@ -2057,8 +2057,70 @@
     },
     {
       "path": "docs/README.md",
-      "sha256": "aad7256bd4bc0ef407cae7ff43f4519293a898a708b644f34d733de3f8bdbffa",
+      "sha256": "7d5a4dbd1806375a0392ad8f8296b25f6a0def605f66655999714604f0c1cdba",
       "generated": true
+    },
+    {
+      "path": "modules/audio-backends/Build-Wasapi.ps1",
+      "sourcePath": "modules/audio-backends/Build-Wasapi.ps1",
+      "exportPath": "modules/audio-backends/Build-Wasapi.ps1",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "e68e335bcd00735fd34c8e4163447e99af268c51d5aad3f37755df94fe5669db",
+      "sourceSha256": "e68e335bcd00735fd34c8e4163447e99af268c51d5aad3f37755df94fe5669db"
+    },
+    {
+      "path": "modules/audio-backends/src/wasapi_pool.cpp",
+      "sourcePath": "modules/audio-backends/src/wasapi_pool.cpp",
+      "exportPath": "modules/audio-backends/src/wasapi_pool.cpp",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "8d1251cb50ddde40d9e634aab36d6f5d0a13833753ec2b008bc590abb060012b",
+      "sourceSha256": "8d1251cb50ddde40d9e634aab36d6f5d0a13833753ec2b008bc590abb060012b"
+    },
+    {
+      "path": "modules/audio-backends/src/wasapi_trace.h",
+      "sourcePath": "modules/audio-backends/src/wasapi_trace.h",
+      "exportPath": "modules/audio-backends/src/wasapi_trace.h",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "665582206cbcb841b62856dced33322667c2e58aff7cb5e0d5bf50d4d0c04cfc",
+      "sourceSha256": "665582206cbcb841b62856dced33322667c2e58aff7cb5e0d5bf50d4d0c04cfc"
+    },
+    {
+      "path": "tools/endpoint-probe/Read-WasapiTrace.cpp",
+      "sourcePath": "tools/endpoint-probe/Read-WasapiTrace.cpp",
+      "exportPath": "tools/endpoint-probe/Read-WasapiTrace.cpp",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "3df92b4d0feb3eb744c3962f6fabf7f4de2b22fd98794ccfbc75d66154b1ad27",
+      "sourceSha256": "3df92b4d0feb3eb744c3962f6fabf7f4de2b22fd98794ccfbc75d66154b1ad27"
+    },
+    {
+      "path": "docs/wasapi-diagnostics.md",
+      "sha256": "24862e5ff8a47dfc6472de50439824118d5b577b773a56f0cd0f37bb84696023",
+      "generated": true
+    }
+  ],
+  "overlays": [
+    {
+      "name": "wasapi-device-diagnostics",
+      "publicBase": "e5de1ae68eee0e7ba168abe0799e6320e291a08f",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "files": [
+        {
+          "sourcePath": "modules/audio-backends/Build-Wasapi.ps1",
+          "exportPath": "modules/audio-backends/Build-Wasapi.ps1"
+        },
+        {
+          "sourcePath": "modules/audio-backends/src/wasapi_pool.cpp",
+          "exportPath": "modules/audio-backends/src/wasapi_pool.cpp"
+        },
+        {
+          "sourcePath": "modules/audio-backends/src/wasapi_trace.h",
+          "exportPath": "modules/audio-backends/src/wasapi_trace.h"
+        },
+        {
+          "sourcePath": "tools/endpoint-probe/Read-WasapiTrace.cpp",
+          "exportPath": "tools/endpoint-probe/Read-WasapiTrace.cpp"
+        }
+      ]
     }
   ]
 }

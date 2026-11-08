@@ -8,6 +8,7 @@
 - [Build and pinned dependencies](build.md)
 - [Playback JSON](core/playback-json-configuration-20261022.md)
 - [Output pool](core/output-pool-processing-20261022.md)
+- [WASAPI output and diagnostics](wasapi-diagnostics.md)
 - [Renderer boundary](core/renderer-backend-boundary-20261021.md)
 - [FSA / scheduler](scheduler.md)
 - [License scope](../LICENSING.md)
