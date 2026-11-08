@@ -5,6 +5,8 @@
 | 范围 | 许可与声明 |
 |---|---|
 | NSp 原创核心、公共转换/输出及控制代码 | Apache-2.0 |
+| LSAC 双声道后处理 | NSp 原创部分适用 Apache-2.0，Rust 依赖各自保留许可 |
+| FreeSurround 独立模块 | GPL-3.0-or-later，KissFFT 保留其 BSD 许可与版权声明 |
 | LIRA 与下游公共支持代码 | 保留原 Apache-2.0 与作者声明，见 modules/audio-backends/LICENSING.md |
 | ASIO 设备集成、设备配置、布局兼容与 C ABI，以及附带 SDK 头文件 | GPL-3.0-only 范围，见模块逐文件声明及 UPSTREAM-LICENSE、third_party/asio/LICENSE.txt |
 | FSA 集成源码 | tools/fsa-integration/LICENSE（Unlicense）；图标另有独立声明 |

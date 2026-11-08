@@ -9,6 +9,8 @@
 - [Playback JSON](core/playback-json-configuration-20261022.md)
 - [Output pool](core/output-pool-processing-20261022.md)
 - [WASAPI output and diagnostics](wasapi-diagnostics.md)
+- [LSAC stereo post-processing adapter](lsac-adapter.md)
+- [Standalone FreeSurround decoder](freesurround.md)
 - [Renderer boundary](core/renderer-backend-boundary-20261021.md)
 - [FSA / scheduler](scheduler.md)
 - [License scope](../LICENSING.md)

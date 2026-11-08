@@ -26,3 +26,9 @@ The small listener model and derived wire geometry originate from Kenney Furnitu
 ## Spatial ASIO / LIRA and ASIO device integration
 
 Source by hikari-taritsu (rmj), preserved from 0.2.7-preview.14 and adapted into modules/audio-backends. See its LICENSING.md, source-manifest.json, upstream notices and third_party license files. LIRA retains Apache-2.0; ASIO device code/SDK retain their GPL-3.0-only scope. libsamplerate coefficients retain their own license and ORIGIN. The full desktop/installer project is excluded. Root Apache terms do not replace these licenses.
+
+## Optional LSAC and FreeSurround components
+
+The standalone LSAC adapter is NSp source under Apache-2.0 and uses RustFFT and its transitive dependencies under their respective licenses. The crate lockfile records the exact package set.
+
+The standalone FreeSurround adapter and decoder use GPL-3.0-or-later. The decoder and channel maps originate from Kodi's adsp.freesurround at commit `03ec0899e1d45ff40c4184d17429b8a1bab65ccb`. The vendored [GPL text](modules/freesurround/vendor/LICENSE.md) and the [KissFFT copyright and BSD terms](modules/freesurround/vendor/kissfft/COPYING) accompany the source.

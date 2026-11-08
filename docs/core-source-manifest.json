@@ -9,8 +9,8 @@
     },
     {
       "path": "LICENSING.md",
-      "sha256": "20dec3a64996e133c62af6e6e99d5bd08d82082d1c282aacc246be846fe0a4c0",
-      "sourceSha256": "20dec3a64996e133c62af6e6e99d5bd08d82082d1c282aacc246be846fe0a4c0"
+      "sha256": "9fa22a73789156b4fd62c47d612a1176377efc0d10fe8956f43fd88f24aa91d0",
+      "generated": true
     },
     {
       "path": "NOTICE",
@@ -24,8 +24,8 @@
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
-      "sha256": "d3983503159b8718c5150326079823946b15ee799879277bebed7f3d80436599",
-      "sourceSha256": "d3983503159b8718c5150326079823946b15ee799879277bebed7f3d80436599"
+      "sha256": "4acf61080b3c57f1febfba450510473d6d673db12d9960f08859793dae698288",
+      "generated": true
     },
     {
       "path": "contracts/output-layouts.json",
@@ -2057,7 +2057,7 @@
     },
     {
       "path": "docs/README.md",
-      "sha256": "7d5a4dbd1806375a0392ad8f8296b25f6a0def605f66655999714604f0c1cdba",
+      "sha256": "473185b3435ba097bef843c00a13e4fa5393f5f642ab496d11f18a2789bd402c",
       "generated": true
     },
     {
@@ -2096,6 +2096,222 @@
       "path": "docs/wasapi-diagnostics.md",
       "sha256": "24862e5ff8a47dfc6472de50439824118d5b577b773a56f0cd0f37bb84696023",
       "generated": true
+    },
+    {
+      "path": "modules/lsac-adapter/Cargo.toml",
+      "sourcePath": "modules/lsac-adapter/Cargo.toml",
+      "exportPath": "modules/lsac-adapter/Cargo.toml",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "c47f8f7c52d999a036df524d582bf1e5e8d0b13728517583be892bf92615c9f4",
+      "sourceSha256": "c47f8f7c52d999a036df524d582bf1e5e8d0b13728517583be892bf92615c9f4"
+    },
+    {
+      "path": "modules/lsac-adapter/src/lib.rs",
+      "sourcePath": "modules/lsac-adapter/src/lib.rs",
+      "exportPath": "modules/lsac-adapter/src/lib.rs",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "057ad513fd4a39d2b1b7dc15489500227cbdacfe87f7f482719746eca6e10ff7",
+      "sourceSha256": "057ad513fd4a39d2b1b7dc15489500227cbdacfe87f7f482719746eca6e10ff7"
+    },
+    {
+      "path": "modules/lsac-adapter/src/loudness.rs",
+      "sourcePath": "modules/lsac-adapter/src/loudness.rs",
+      "exportPath": "modules/lsac-adapter/src/loudness.rs",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "4b8117b7ba14cb415e7df8cf298a6c4624db379a56253d1b023ccf5c65497d42",
+      "sourceSha256": "4b8117b7ba14cb415e7df8cf298a6c4624db379a56253d1b023ccf5c65497d42"
+    },
+    {
+      "path": "modules/lsac-adapter/src/virtual_bass.rs",
+      "sourcePath": "modules/lsac-adapter/src/virtual_bass.rs",
+      "exportPath": "modules/lsac-adapter/src/virtual_bass.rs",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "ef5566498edd724570ab3e9aa96c92730ece5767dfd5dc7b0b20801f6a90212c",
+      "sourceSha256": "ef5566498edd724570ab3e9aa96c92730ece5767dfd5dc7b0b20801f6a90212c"
+    },
+    {
+      "path": "modules/freesurround/Build.ps1",
+      "sourcePath": "modules/freesurround/Build.ps1",
+      "exportPath": "modules/freesurround/Build.ps1",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "eb19f93565b354a1126ebe44832c2fa19528193d7517bc84f4f7c0957c0a9f24",
+      "sourceSha256": "af028216a3514c2ff0177b3f6fb6f81b0f971ddd02fc0862d696b370e830746a",
+      "adaptation": "Explicit public LLVM toolchain path"
+    },
+    {
+      "path": "modules/freesurround/freesurround.cpp",
+      "sourcePath": "modules/freesurround/freesurround.cpp",
+      "exportPath": "modules/freesurround/freesurround.cpp",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "66990f731aa75c364bca636dce54c3a0e9e25d184e4d71f7e8492d0380adde49",
+      "sourceSha256": "66990f731aa75c364bca636dce54c3a0e9e25d184e4d71f7e8492d0380adde49"
+    },
+    {
+      "path": "modules/freesurround/vendor/ChannelMaps.cpp",
+      "sourcePath": "modules/freesurround/vendor/ChannelMaps.cpp",
+      "exportPath": "modules/freesurround/vendor/ChannelMaps.cpp",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "abbb8bce1021109b72569240d161c574173de1a8576d8823d9fa81c12b697977",
+      "sourceSha256": "abbb8bce1021109b72569240d161c574173de1a8576d8823d9fa81c12b697977"
+    },
+    {
+      "path": "modules/freesurround/vendor/ChannelMaps.h",
+      "sourcePath": "modules/freesurround/vendor/ChannelMaps.h",
+      "exportPath": "modules/freesurround/vendor/ChannelMaps.h",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "b3dbdb6a566b7d6c63121d660fefacdb8837b81c7b921f3331368f5835234537",
+      "sourceSha256": "b3dbdb6a566b7d6c63121d660fefacdb8837b81c7b921f3331368f5835234537"
+    },
+    {
+      "path": "modules/freesurround/vendor/FreeSurroundDecoder.cpp",
+      "sourcePath": "modules/freesurround/vendor/FreeSurroundDecoder.cpp",
+      "exportPath": "modules/freesurround/vendor/FreeSurroundDecoder.cpp",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "46fa7ceb81022339c0048f230144dcf330c157e1a6266e5c72fd700c82013625",
+      "sourceSha256": "46fa7ceb81022339c0048f230144dcf330c157e1a6266e5c72fd700c82013625"
+    },
+    {
+      "path": "modules/freesurround/vendor/FreeSurroundDecoder.h",
+      "sourcePath": "modules/freesurround/vendor/FreeSurroundDecoder.h",
+      "exportPath": "modules/freesurround/vendor/FreeSurroundDecoder.h",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "9d0b33a86c48cb349abe03a21a49de4efc4e1562ba94a0190175371fd3910e8f",
+      "sourceSha256": "9d0b33a86c48cb349abe03a21a49de4efc4e1562ba94a0190175371fd3910e8f"
+    },
+    {
+      "path": "modules/freesurround/vendor/LICENSE.md",
+      "sourcePath": "modules/freesurround/vendor/LICENSE.md",
+      "exportPath": "modules/freesurround/vendor/LICENSE.md",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "589ed823e9a84c56feb95ac58e7cf384626b9cbf4fda2a907bc36e103de1bad2",
+      "sourceSha256": "589ed823e9a84c56feb95ac58e7cf384626b9cbf4fda2a907bc36e103de1bad2"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/CHANGELOG",
+      "sourcePath": "modules/freesurround/vendor/kissfft/CHANGELOG",
+      "exportPath": "modules/freesurround/vendor/kissfft/CHANGELOG",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "103f9093677380c067e0265db63432ce1bee869018118212fcb8fd25cd6b2dfd",
+      "sourceSha256": "103f9093677380c067e0265db63432ce1bee869018118212fcb8fd25cd6b2dfd"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/COPYING",
+      "sourcePath": "modules/freesurround/vendor/kissfft/COPYING",
+      "exportPath": "modules/freesurround/vendor/kissfft/COPYING",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "ddd1400f963747b305bfa39e21206e58805a1c650451e2ee5ce81ed86bc0b1ab",
+      "sourceSha256": "ddd1400f963747b305bfa39e21206e58805a1c650451e2ee5ce81ed86bc0b1ab"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/README",
+      "sourcePath": "modules/freesurround/vendor/kissfft/README",
+      "exportPath": "modules/freesurround/vendor/kissfft/README",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "bf03a47ee04cac7092910f456c94e38737a2f6a721ca7379e7777e69757dae74",
+      "sourceSha256": "bf03a47ee04cac7092910f456c94e38737a2f6a721ca7379e7777e69757dae74"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/README.simd",
+      "sourcePath": "modules/freesurround/vendor/kissfft/README.simd",
+      "exportPath": "modules/freesurround/vendor/kissfft/README.simd",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "3d353443bf57108b11cc05fba84750a5306e94126d0f983fc9e9d0f8bf1b2087",
+      "sourceSha256": "3d353443bf57108b11cc05fba84750a5306e94126d0f983fc9e9d0f8bf1b2087"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/TIPS",
+      "sourcePath": "modules/freesurround/vendor/kissfft/TIPS",
+      "exportPath": "modules/freesurround/vendor/kissfft/TIPS",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "773135321775ae685691a89a3a8de6f82d0713535c298b3c00e0f0c30ebcc23d",
+      "sourceSha256": "773135321775ae685691a89a3a8de6f82d0713535c298b3c00e0f0c30ebcc23d"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/_kiss_fft_guts.h",
+      "sourcePath": "modules/freesurround/vendor/kissfft/_kiss_fft_guts.h",
+      "exportPath": "modules/freesurround/vendor/kissfft/_kiss_fft_guts.h",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "6cb852500622172409927f3c1f7e83166aa94a842953a50c5be5af793913fd6c",
+      "sourceSha256": "6cb852500622172409927f3c1f7e83166aa94a842953a50c5be5af793913fd6c"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/kiss_fft.c",
+      "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fft.c",
+      "exportPath": "modules/freesurround/vendor/kissfft/kiss_fft.c",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "f5d910af5294857807174e4eec2b30da3ac37bea8cab4cf0f15dfd4ba933ff31",
+      "sourceSha256": "f5d910af5294857807174e4eec2b30da3ac37bea8cab4cf0f15dfd4ba933ff31"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/kiss_fft.h",
+      "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fft.h",
+      "exportPath": "modules/freesurround/vendor/kissfft/kiss_fft.h",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "ea46779dfa63cc818c44009d7f7176ae344065579117226302a4b3c5d29fc756",
+      "sourceSha256": "ea46779dfa63cc818c44009d7f7176ae344065579117226302a4b3c5d29fc756"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/kiss_fftnd.c",
+      "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftnd.c",
+      "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftnd.c",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "0630f1b1fef53e9fcb3838708fa2a80e2d30be892736ea169c024241cdd0713d",
+      "sourceSha256": "0630f1b1fef53e9fcb3838708fa2a80e2d30be892736ea169c024241cdd0713d"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/kiss_fftnd.h",
+      "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftnd.h",
+      "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftnd.h",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "36d06fb694efa152732f12714a8b6853f1e72dbf0c879f1b08cf82e0f7e57012",
+      "sourceSha256": "36d06fb694efa152732f12714a8b6853f1e72dbf0c879f1b08cf82e0f7e57012"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/kiss_fftndr.c",
+      "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftndr.c",
+      "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftndr.c",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "968c7cdcead18e9301aedcda7cb673771cc62df421a2f63d030e15abd8a1dc0e",
+      "sourceSha256": "968c7cdcead18e9301aedcda7cb673771cc62df421a2f63d030e15abd8a1dc0e"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/kiss_fftndr.h",
+      "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftndr.h",
+      "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftndr.h",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "eadd5ccfe2b924f286ef6fb90afe2cd46c24c11db517c1d35308b2ae5f7670dd",
+      "sourceSha256": "eadd5ccfe2b924f286ef6fb90afe2cd46c24c11db517c1d35308b2ae5f7670dd"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/kiss_fftr.c",
+      "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftr.c",
+      "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftr.c",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "ce26108874f88e80c43c48da2030921f29be8fcba8af9a04663070c8eb146c66",
+      "sourceSha256": "ce26108874f88e80c43c48da2030921f29be8fcba8af9a04663070c8eb146c66"
+    },
+    {
+      "path": "modules/freesurround/vendor/kissfft/kiss_fftr.h",
+      "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftr.h",
+      "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftr.h",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "sha256": "4e3846cfb1ebe8bb255631acc34f34f39a970384a283ca5dcd70edab7be563ec",
+      "sourceSha256": "4e3846cfb1ebe8bb255631acc34f34f39a970384a283ca5dcd70edab7be563ec"
+    },
+    {
+      "path": "docs/lsac-adapter.md",
+      "sha256": "8f2f186eba65e7750565bf780a2b2f471a5fa6589ab7e723bc39a686a593b321",
+      "generated": true
+    },
+    {
+      "path": "docs/freesurround.md",
+      "sha256": "ea5db211803277811b0f5fcbd7d8bd241bd6ea50396dbbe61c70e02852674932",
+      "generated": true
+    },
+    {
+      "path": "modules/lsac-adapter/Cargo.lock",
+      "sha256": "512f2cac3664c92d27af8aa3312d37e4b0c365970c844eaa5c58f7b0fd56a870",
+      "generated": true
     }
   ],
   "overlays": [
@@ -2119,6 +2335,113 @@
         {
           "sourcePath": "tools/endpoint-probe/Read-WasapiTrace.cpp",
           "exportPath": "tools/endpoint-probe/Read-WasapiTrace.cpp"
+        }
+      ]
+    },
+    {
+      "name": "standalone-lsac-dsp-and-freesurround",
+      "publicBase": "262ef386ff9837ff0a84d54b3f6b273d949b5f80",
+      "sourceRevision": "880885b66361d7f8ee278697820967cc0bb80a46",
+      "files": [
+        {
+          "sourcePath": "modules/lsac-adapter/Cargo.toml",
+          "exportPath": "modules/lsac-adapter/Cargo.toml"
+        },
+        {
+          "sourcePath": "modules/lsac-adapter/src/lib.rs",
+          "exportPath": "modules/lsac-adapter/src/lib.rs"
+        },
+        {
+          "sourcePath": "modules/lsac-adapter/src/loudness.rs",
+          "exportPath": "modules/lsac-adapter/src/loudness.rs"
+        },
+        {
+          "sourcePath": "modules/lsac-adapter/src/virtual_bass.rs",
+          "exportPath": "modules/lsac-adapter/src/virtual_bass.rs"
+        },
+        {
+          "sourcePath": "modules/freesurround/Build.ps1",
+          "exportPath": "modules/freesurround/Build.ps1"
+        },
+        {
+          "sourcePath": "modules/freesurround/freesurround.cpp",
+          "exportPath": "modules/freesurround/freesurround.cpp"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/ChannelMaps.cpp",
+          "exportPath": "modules/freesurround/vendor/ChannelMaps.cpp"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/ChannelMaps.h",
+          "exportPath": "modules/freesurround/vendor/ChannelMaps.h"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/FreeSurroundDecoder.cpp",
+          "exportPath": "modules/freesurround/vendor/FreeSurroundDecoder.cpp"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/FreeSurroundDecoder.h",
+          "exportPath": "modules/freesurround/vendor/FreeSurroundDecoder.h"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/LICENSE.md",
+          "exportPath": "modules/freesurround/vendor/LICENSE.md"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/CHANGELOG",
+          "exportPath": "modules/freesurround/vendor/kissfft/CHANGELOG"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/COPYING",
+          "exportPath": "modules/freesurround/vendor/kissfft/COPYING"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/README",
+          "exportPath": "modules/freesurround/vendor/kissfft/README"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/README.simd",
+          "exportPath": "modules/freesurround/vendor/kissfft/README.simd"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/TIPS",
+          "exportPath": "modules/freesurround/vendor/kissfft/TIPS"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/_kiss_fft_guts.h",
+          "exportPath": "modules/freesurround/vendor/kissfft/_kiss_fft_guts.h"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fft.c",
+          "exportPath": "modules/freesurround/vendor/kissfft/kiss_fft.c"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fft.h",
+          "exportPath": "modules/freesurround/vendor/kissfft/kiss_fft.h"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftnd.c",
+          "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftnd.c"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftnd.h",
+          "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftnd.h"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftndr.c",
+          "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftndr.c"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftndr.h",
+          "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftndr.h"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftr.c",
+          "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftr.c"
+        },
+        {
+          "sourcePath": "modules/freesurround/vendor/kissfft/kiss_fftr.h",
+          "exportPath": "modules/freesurround/vendor/kissfft/kiss_fftr.h"
         }
       ]
     }
