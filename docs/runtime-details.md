@@ -19,6 +19,16 @@ ASIO retains internal device buffering, sample-rate conversion and clock matchin
 
 See [current architecture](core/current-architecture.md), [output layouts](core/output-layout-presets-20261023.md) and [output-pool processing](core/output-pool-processing-20261022.md).
 
+## Standalone components
+
+The default FSA session renders through ROAR or LIRA and sends audio to ASIO. The public tree also includes three standalone components.
+
+- [WASAPI output and tracing](wasapi-diagnostics.md) builds a stereo PCM sink and an optional trace reader.
+- [FreeSurround](freesurround.md) builds a stereo-to-7.1 decoder.
+- [LSAC DSP adapter](lsac-adapter.md) provides 7.1.4-to-stereo processing for hosts that supply their own filters and output.
+
+Build these components separately using their linked instructions.
+
 ## Runtime dependencies and preparation
 
 Extra AudioSrv enumeration now uses native C/MinHook and the same controller source and pinned engine as capture. The preparation supervisor remains Python, without a Frida/JavaScript injection agent. Python also runs isolated telemetry. PowerShell/WinRT helpers retain Windows system interop.

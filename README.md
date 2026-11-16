@@ -35,6 +35,14 @@ Follow the [Windows build guide](docs/build.md) to prepare the pinned dependenci
 
 For the FSA application, follow the [FSA setup guide](tools/fsa-integration/README.md). Building creates the artifacts; deployment and starting an audio session are separate steps.
 
+The default FSA session renders through ROAR or LIRA and sends audio to ASIO. The public tree also includes three standalone components.
+
+- [WASAPI output and tracing](docs/wasapi-diagnostics.md) builds a stereo PCM sink and an optional trace reader.
+- [FreeSurround](docs/freesurround.md) builds a stereo-to-7.1 decoder.
+- [LSAC DSP adapter](docs/lsac-adapter.md) provides 7.1.4-to-stereo processing for hosts that supply their own filters and output.
+
+Build these components separately using their linked instructions.
+
 ## Quick configuration
 
 1. With FSA running, **click its tray icon three times in quick succession**. This opens the Web page in your default browser.
@@ -66,7 +74,7 @@ These are planned directions, not currently available features. See [development
 
 <!-- Keep one brief entry here. Detailed progress belongs in docs/alpha-dev.md. -->
 
-**2026-10-24:** Unified native endpoint enumeration, refreshed architecture documentation, and completed user-directory playback configuration and optional recording controls.
+**2026-11-08:** Public DEV added standalone WASAPI output and tracing, FreeSurround, and the LSAC DSP adapter.
 
 ## License and credits
 

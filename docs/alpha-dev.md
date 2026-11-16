@@ -12,6 +12,16 @@ ROAR is a renderer backend; OLR is its currently integrated speaker mode. LIRA i
 
 Both PCM recording and telemetry snapshot archival default off. The playback handoff does not perform recording IO; telemetry routing uses memory progress. Remaining storage work covers quotas, retention and cleanup. The 6DoF layout slot is inactive; 14/16-channel physical playback, long-term performance and native network output are not completed. Web runtime control is intentionally absent; FSA owns it.
 
+## Public DEV additions
+
+The default FSA session renders through ROAR or LIRA and sends audio to ASIO. The public tree also includes three standalone components.
+
+- [WASAPI output and tracing](wasapi-diagnostics.md) builds a stereo PCM sink and an optional trace reader.
+- [FreeSurround](freesurround.md) builds a stereo-to-7.1 decoder.
+- [LSAC DSP adapter](lsac-adapter.md) provides 7.1.4-to-stereo processing for hosts that supply their own filters and output.
+
+Build these components separately using their linked instructions.
+
 ## Provenance
 
 The export combines NSP core development, hikari-taritsu (rmj)'s Spatial ASIO preview.13/preview.14 contributions, common conversion/output/control integration and subsequent ROAR optimization. Original author, license and upstream notices remain. The source repository is https://github.com/hikari-taritsu/spatial-asio . Private contribution commits are retained in a separate development contribution branch; they are not imported as public Git history.

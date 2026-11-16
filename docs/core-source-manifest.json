@@ -124,7 +124,7 @@
     },
     {
       "path": "docs/build.md",
-      "sha256": "0d2a940891e0e5139f937b198d191d3355d1a71de4499372b69abe42abf588ef",
+      "sha256": "677564f7715f98e134428eac353344fd3c91039821172515d99bd2ebefd6876c",
       "sourceSha256": "0d2a940891e0e5139f937b198d191d3355d1a71de4499372b69abe42abf588ef"
     },
     {
@@ -2033,19 +2033,19 @@
     },
     {
       "path": "README.md",
-      "sha256": "e6ac3b311ab5a5830c9af83ab74fce57baa14c2cb65e064af1ae4ea7c78a79b8",
+      "sha256": "12989f30ea44dc8069bd0c5b6fd2fad4c0e6f83c79b8f0e2286d0a071ee6050e",
       "sourceSha256": "e6ac3b311ab5a5830c9af83ab74fce57baa14c2cb65e064af1ae4ea7c78a79b8",
       "sourcePath": "tools/public-source/README-alpha.md"
     },
     {
       "path": "docs/runtime-details.md",
-      "sha256": "daeeae7c907d3c9805d04b3583d71f021022e7d008f5b17abf54fbd0b4cc9457",
+      "sha256": "9e547150f4c031034f15a25718b699ee5de3fb9bb7a6e60fe602a405f77b265e",
       "sourceSha256": "daeeae7c907d3c9805d04b3583d71f021022e7d008f5b17abf54fbd0b4cc9457",
       "sourcePath": "tools/public-source/runtime-details.md"
     },
     {
       "path": "docs/alpha-dev.md",
-      "sha256": "7ad4a83878d2401bfca41a4851f3ec815428b50fcafe7dc6f7be7fffe1e48a6c",
+      "sha256": "e5193634710dc2c9164ed741779d1f5e36e4f56791a4cc9dd5fc15d0fcedaf59",
       "sourceSha256": "7ad4a83878d2401bfca41a4851f3ec815428b50fcafe7dc6f7be7fffe1e48a6c",
       "sourcePath": "tools/public-source/alpha-dev.md"
     },

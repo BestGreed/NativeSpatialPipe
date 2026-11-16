@@ -58,6 +58,18 @@ Rust output directories also receive `libunwind.dll`. Keep that file beside the 
 
 The LLVM argument may point outside the checkout; the C and receiver scripts use `NSP_LLVM_BIN`, which Build-Core sets from that argument. Rust/Cargo and upstream checkouts still use the dependency layout above. Install Node.js separately only if you want to run frontend JavaScript development checks; the frontend preview itself needs Python and a WebGL2 browser, without npm installation.
 
+## Standalone components
+
+The default FSA session renders through ROAR or LIRA and sends audio to ASIO. The public tree also includes three standalone components.
+
+- [WASAPI output and tracing](wasapi-diagnostics.md) builds a stereo PCM sink and an optional trace reader.
+- [FreeSurround](freesurround.md) builds a stereo-to-7.1 decoder.
+- [LSAC DSP adapter](lsac-adapter.md) provides 7.1.4-to-stereo processing for hosts that supply their own filters and output.
+
+Build these components separately using their linked instructions.
+
+For CI development bundles and their file manifest, see [Windows CI build](ci.md).
+
 ## Owned-process tests
 
 ```powershell
