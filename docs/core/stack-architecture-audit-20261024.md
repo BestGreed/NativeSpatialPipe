@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+
 # 技术栈、运行入口与活跃文档复审
 
 2026-10-24，alpha-dev。范围为本地产品入口、构建清单及活跃说明的对应关系，不新增运行框架，不扩展设备/声学性能验收。当前架构唯一入口为[当前架构](current-architecture.md)。

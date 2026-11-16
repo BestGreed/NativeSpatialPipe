@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+
 # ASIO 输出随 NSp 会话常驻
 
 用户确认：ASIO 是设备输出后端，正确配置后跟随 NSp 会话运行，不按音源播放生命周期启停。去掉从有限播放场景继承的“无首包超时退出、重缓冲超时退出、累计欠载次数超限退出”策略。

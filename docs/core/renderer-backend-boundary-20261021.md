@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+
 # DEV16：渲染后端与模式边界更正
 
 2026-10-21，回溯修正 N03–N11 的术语、配置和实际分发。此前把 OLR 与 LIRA 放在同一 renderer 枚举中，混淆了后端和模式；这不是仅改界面文案。

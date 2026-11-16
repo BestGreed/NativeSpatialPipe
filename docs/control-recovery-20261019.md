@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](README.md).
+
 # FSA / NSp control recovery update
 
 > Historical 2026-10-19 validation record. Sonic-only menu details, the source revision below and that date's recovery scope do not override [current architecture](core/current-architecture.md), seven-mode FSA routing, the unified NSp toggle or current provenance manifest.

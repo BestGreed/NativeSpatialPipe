@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+
 # 播放配置迁移到用户目录
 
 2026-10-24：默认播放配置改为 `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`，与后端 `config.json` 同处用户目录；不再默认向 FSA 安装目录写配置。Web 配置保存不修改安装目录 INI，修订锁也在目标 JSON 同目录。

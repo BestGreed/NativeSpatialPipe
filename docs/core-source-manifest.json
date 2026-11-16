@@ -146,7 +146,7 @@
     },
     {
       "path": "docs/README.md",
-      "sha256": "2ba57677d03449c397f6ba469f676e9908160e5fb68dc664fadec7b344a44eba",
+      "sha256": "68512f5cba8d8ce15ce507bf969bc629c6a0fa75fec190e14a1d310282716495",
       "generated": true
     },
     {
@@ -157,7 +157,7 @@
     },
     {
       "path": "docs/architecture.md",
-      "sha256": "d85511a5a08f40b3eeb5effddafe6faa7450f7218d015b6b9470045f508eff97"
+      "sha256": "b7f130087e81c2043029dea0ab044e99588b6daa5c32ad7468e90ce3709484fe"
     },
     {
       "path": "docs/build.md",
@@ -166,76 +166,76 @@
     },
     {
       "path": "docs/ci.md",
-      "sha256": "32ceda6a2218a6b1ab13961b3d0550d1675f8e99b55c0532634ccc554b2d04cd"
+      "sha256": "ae996afea1de903e50b87de0f8298b7ef21b65941356c976a02447efa561d495"
     },
     {
       "path": "docs/control-recovery-20261019.md",
-      "sha256": "b0ecd13a5ceedac05bae05004293a7dcfafb872ad3f44aa079ca331c9816c4bb"
+      "sha256": "823848d62403e0d07b0c5ae5bdd9cc90ccac3f1ba3a9509cd047ed283d281cf2"
     },
     {
       "path": "docs/core/current-architecture.md",
-      "sha256": "05f549af8f4c27a3cd651cd457a3105f033800540c2d8e81f41ec3dd2094643b",
+      "sha256": "ebd961897a86e4689a9dfd178c54d06f64b089ae4cbe8465ba8c625305c2b6e4",
       "sourceSha256": "05f549af8f4c27a3cd651cd457a3105f033800540c2d8e81f41ec3dd2094643b"
     },
     {
       "path": "docs/core/native-enumeration-hook-20261024.md",
-      "sha256": "433a0bd166054041914cea52ed50ee67e0f0dc4f7d42f21dc3d449f9983c3b46",
+      "sha256": "120bdf03e838d07acfdf01bda93b9d4bb82c7e73c27276d91f5b62660cd59037",
       "sourceSha256": "433a0bd166054041914cea52ed50ee67e0f0dc4f7d42f21dc3d449f9983c3b46"
     },
     {
       "path": "docs/core/output-layout-presets-20261023.md",
-      "sha256": "93e86c3fbb6b30ebbc7e4e67075bbafeeb467e4046cbe33313194fcfaccec21a",
+      "sha256": "ab4565d197a414d23ba11ba1c36cec1fb09607b740d0d0347aad66a0484559cf",
       "sourceSha256": "4f8a10c71c124f82b2f2080d4823297681035c7c5b645e010da914ee0d498982",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
       "path": "docs/core/output-pool-processing-20261022.md",
-      "sha256": "10c9d63f4ca148163b67ae91bab061a529372ab9d2321d4e3786b888f4621179",
+      "sha256": "8bf302b779a13fd9ccd93d97ac8cb0d05e567c68357acc20f4461506a5b882e8",
       "sourceSha256": "a0d55beb886b9c8c1df798f747d5052db4f515aa4088b2d552f99e0053bd1df2",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
       "path": "docs/core/playback-json-configuration-20261022.md",
-      "sha256": "b6fdb49e0ad73e755ddc48af2b9d311fc60f9f752e577ba14c7fdd6ac2666ff0",
+      "sha256": "f5f4587d6d54b523b2284b851464b5ac8ecfdd549763114e66b2da4bbc19f4d9",
       "sourceSha256": "32a87d2ba3d3c496fda719dd6b0c8da68f5399de46eb7b2bc945a2f70b4935e8",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
       "path": "docs/core/playback-user-location-20261024.md",
-      "sha256": "dda1ea88992b861e0f430a110697fe090b674b28528eeb79fed7fc34d6d57bfe",
+      "sha256": "95c6ec75b922f4f7d6499d2aedf41248cc1877f6472a9f90f70082db2df35195",
       "sourceSha256": "dda1ea88992b861e0f430a110697fe090b674b28528eeb79fed7fc34d6d57bfe"
     },
     {
       "path": "docs/core/recording-isolation-20261024.md",
-      "sha256": "b08786031c6a4846d8b86d2641eb6c909295182702a1a793b1472e4a2cfb2ec8",
+      "sha256": "d34b263865c37bd91d087fd107c6aeebb9618b17baeae29f8d0505302a856cbd",
       "sourceSha256": "631a0f57c3bc830ff88a294d64cf02077322e7b5c4efe4bfc6c4054ed4693a96",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
       "path": "docs/core/renderer-backend-boundary-20261021.md",
-      "sha256": "1342c9c14df2eab00d4e45c34af526b93e17b79f483f802ac222ffd6354c9c19",
+      "sha256": "ed3168de4683459ca025943eef257876b6adbd423db8f1c0e2e836c76322abf6",
       "sourceSha256": "1342c9c14df2eab00d4e45c34af526b93e17b79f483f802ac222ffd6354c9c19"
     },
     {
       "path": "docs/core/stack-architecture-audit-20261024.md",
-      "sha256": "fcd98521539ee678cd32788fafd8e1e761839f27c183fc4b1424f58db0a630d6",
+      "sha256": "67d81585730448f348221433d43d4fc2d315d14ea12fd8df5d668501e66ef9eb",
       "sourceSha256": "fcd98521539ee678cd32788fafd8e1e761839f27c183fc4b1424f58db0a630d6"
     },
     {
       "path": "docs/decisions/asio-module-runtime-loading-20261023.md",
-      "sha256": "1a2c42b8190740f890f895a33528311ba6a0652d5ca06df72e7c2e0a598b4fac",
+      "sha256": "61294d256daafbe81d5f51445d9a9e5fbe0169669a176a507216b8c48bff0bfb",
       "sourceSha256": "83ccbc51fc1a17023738fd702fbe80ed17c746bc49e3408e91c75b6ca9adcb8e",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
       "path": "docs/decisions/asio-session-lifetime-20261023.md",
-      "sha256": "58670474f4acaee3bfa3c6179432e6bca5021c0a875d253a6414cf54806cb236",
+      "sha256": "007c5c534277bfeb878a10849bbf5328f9a860f47e62a6781ceeb17a9f148e8e",
       "sourceSha256": "39222b41b6f04677289d0628ddd6f69993aeaeffdfed0d07206628d2b7a88db7",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
       "path": "docs/decisions/web-configuration-host-20261023.md",
-      "sha256": "6e6e1089c8e9b55e7219b9ec74189669837a6b47494363d9a681cd26ac178299",
+      "sha256": "eeb9e97ad6bb25190eb91879e51b4b62a1020b41dd6740d8a979c7a460a5cc22",
       "sourceSha256": "3b114933f00bb841a94ed528b7c6aa69c94fa7a0fa6178e759fe24f11ac36178",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
@@ -246,13 +246,13 @@
     },
     {
       "path": "docs/history/native-architecture-baseline-20261024.md",
-      "sha256": "68ca81a3f145a677f29422ebecc34824c340dcf17f704d0381e1ef3e38db920a",
+      "sha256": "9e31068a2743e687605082ac726f471ee31a290433a2338bc75df95d5a9c51cb",
       "sourceSha256": "3ad8aa7b36b11c41865e0e9947f06ac26362be16b654ac42c70e1eb5b52ceca2",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
     {
       "path": "docs/license-choice.md",
-      "sha256": "691538193aa07271d9b015b9ca8eb29abf5dfdeb0c56c12e4ba3c16a26a26d87"
+      "sha256": "48382da50fe0d6cf0fb0f2faeaa538e6f8cad27ac7a5e8aad049c8013f2a1426"
     },
     {
       "path": "docs/lsac-adapter.md",
@@ -261,7 +261,11 @@
     },
     {
       "path": "docs/receiver-startup.md",
-      "sha256": "a919f2a5a9ee007d4a0c68849b5f68ba0d679c7615aac537d2bedb8917c4ebd5"
+      "sha256": "485567df561f37b4fefa52f24d484b5ed7f2ed2862c1f0775b3313b796296071"
+    },
+    {
+      "path": "docs/retired.md",
+      "sha256": "31d1bb31bb467bc4f4c470ed590adf0c07611b916a2aa301a926e0488dce29c2"
     },
     {
       "path": "docs/runtime-details.md",
@@ -271,12 +275,12 @@
     },
     {
       "path": "docs/scheduler.md",
-      "sha256": "cb6bf0ba4c750def5ae55799897c5b1c45d1b02725fa4ebacdbdafbb758776d3",
+      "sha256": "bac4490aabefb46aa6fb1007a88aee9911e7077c2b1b0a657176d630dc5a70d9",
       "sourceSha256": "cb6bf0ba4c750def5ae55799897c5b1c45d1b02725fa4ebacdbdafbb758776d3"
     },
     {
       "path": "docs/telemetry-visualization.md",
-      "sha256": "fc4991c40283444d222d6f55dedd72b81153a66a1c942aa1d28353658388a932"
+      "sha256": "997982e481337fa684a4fa771efd4f13546ba699656e526133e9c125d9a032da"
     },
     {
       "path": "docs/wasapi-diagnostics.md",

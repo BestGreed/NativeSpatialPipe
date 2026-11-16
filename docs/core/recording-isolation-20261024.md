@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+
 # PCM 旁录与实时播放解耦
 
 后续同日更新：播放 JSON 的[用户目录默认与兼容迁移](playback-user-location-20261024.md)已实现；本文“目录迁移待做”仅属于当时阶段，容量与保留策略仍待做。

@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+
 # ASIO 模块依赖部署与启动修复
 
 2026-10-23：布局更新后的实际 FSA 启动暴露了 ASIO 模块部署问题。失败会话 `<development-session>` 在 Hook 注入前退出，`host-stderr.txt` 为 `NSp Zig scheduler: FileNotFound`；外围随后报告 `Observer not ready` 和未确认正常停止。这些是主机启动失败的后果。

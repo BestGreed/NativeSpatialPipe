@@ -1,11 +1,14 @@
 # Native Spatial Pipe documentation
 
-- [Product build and dependencies](build.md)
-- [Runtime architecture and validation](runtime-details.md)
-- [Source provenance](alpha-dev.md)
+- [Project goals, progress and performance](../README.md)
+- [Windows product build](build.md)
+- [Architecture and validation scope](architecture.md)
+- [FSA, scheduler and playback configuration](scheduler.md)
+- [Telemetry and web visualization](telemetry-visualization.md)
+- [Build automation status](ci.md)
 - [WASAPI output and diagnostics](wasapi-diagnostics.md)
 - [FreeSurround](freesurround.md)
 - [LSAC stereo DSP adapter](lsac-adapter.md)
+- [Source provenance](alpha-dev.md)
 - [License scope](../LICENSING.md)
-
-The dated design notes and earlier CI instructions describe previous development builds.
+- [Retired documentation](retired.md)

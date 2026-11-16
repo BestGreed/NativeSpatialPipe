@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+
 # Web 配置与状态 Host
 
 2026-10-23。按用户确认实现：本轮不加 Web → FSA 控制。独立 Web API Host 随 FSA 启动，提供状态读取、现有 JSON 配置读取与保存，复用原 Web 前端增加配置页。FSA 仍拥有启停、空间模式、Hook、端点互验、HT Support 与急停。

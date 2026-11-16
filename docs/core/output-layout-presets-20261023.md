@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+
 # 输出布局预设与 ROAR 6DoF 插槽
 
 2026-10-23：已接入当前 `alpha-dev` 工作区。布局选择属于渲染输出配置，与捕获端点的 12 声道 bed 和动态对象数量无关。

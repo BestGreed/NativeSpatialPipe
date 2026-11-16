@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](README.md).
+
 # Receiver startup diagnostics
 
 > Historical, narrowly scoped startup evidence. The AppContainer diagnosis remains useful; old DLL paths and build status are not current deployment instructions. See [current architecture](core/current-architecture.md).

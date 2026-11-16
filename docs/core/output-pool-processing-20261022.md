@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+
 # 公共输出池 DSP 与租借交接
 
 2026-10-24 更新：本文描述的“writer 先写盘再处理/交付”已被[独立可选旁录](recording-isolation-20261024.md)替代。当前实时交付不执行文件 IO；PCM 旁录与遥测存档默认关闭，流选择改为读取内存进度。下文保留当时改造边界作为历史说明。

@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+
 # 额外端点枚举迁移到原生 MinHook
 
 2026-10-24，替换 `tools/pipeline-init/manager.py` 的 Frida 注入路径，移除产品用 `agent.js`。不改变七种模式、两组额外枚举开关、FSA 活跃内存标签或 HT/EDID 显式入口；不修改 PCM 捕获、渲染、DSP 或 ASIO。

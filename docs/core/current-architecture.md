@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+
 # 当前架构与技术栈边界
 
 2026-10-24。本页描述当前产品运行入口；历史设计、诊断工具和将来规划均不能替换本页的运行路径。核对细项见[技术栈与文档复审](stack-architecture-audit-20261024.md)。

@@ -1,3 +1,5 @@
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](README.md).
+
 # License choice
 
 > Scope update, 2026-10-24: the Apache rationale below applies to original NSP contributions. The current source also contains extracted GPL-3.0-only ASIO/device SDK scope and separate FSA/artwork terms. It is not an Apache-only combination. The authoritative file/module inventory is [LICENSING.md](../LICENSING.md); preserve all source notices. This update does not change those licenses.
