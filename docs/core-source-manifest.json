@@ -40,7 +40,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "86153fa248c569d31a0e4fa4a2b6e3709d946892fdfc17c600c63ea073b396bb",
+      "sha256": "45db9ca039a00950740b0ed60593c14820da87d16a5b4c67a5222a60d3f31971",
       "sourceSha256": "e6ac3b311ab5a5830c9af83ab74fce57baa14c2cb65e064af1ae4ea7c78a79b8",
       "sourcePath": "tools/public-source/README-alpha.md"
     },

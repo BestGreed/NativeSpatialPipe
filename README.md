@@ -1,8 +1,37 @@
-# Native Spatial Pipe product build
+# Native Spatial Pipe
 
-The product build stages the FSA session manager, Zig scheduler, web frontend,
-native capture and receiver, and Croksor runtime. Croksor links the patched ROAR
-1.1 renderer and Inferno AoIP. The build also produces LIRA and ASIO backends.
+Native Spatial Pipe (NSP) is a Windows spatial audio pipeline for routing
+application audio to a multichannel speaker system. It captures spatial
+objects with their metadata, accepts PCM alongside object streams, and
+renders the resulting scene to a configured output. Final Spatial Audio
+(FSA) manages sessions, while a local web interface exposes configuration
+and live audio telemetry.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    FSA["FSA session manager"] --> Zig["Zig scheduler"]
+    Zig -->|"session control"| Runtime["Capture, receiver, and Croksor"]
+    Spatial["Windows spatial audio"] --> Capture["Native capture and Rust receiver"]
+    Media["Optional Media Foundation decoder"] --> Spatial
+    PCM["Optional PCM capture and upmix"] --> Mix["Croksor input handoff"]
+    Capture --> Mix
+    Mix --> Render["ROAR 1.1 or LIRA"]
+    Render --> Output["Configured output backend"]
+    Output --> AoIP["Inferno AoIP"]
+    Output --> ASIO["ASIO"]
+    Output --> WASAPI["WASAPI where supported"]
+    Runtime --> Telemetry["Telemetry and web visualization"]
+```
+
+Croksor coordinates input handoff, rendering, and output delivery. The product
+build combines the patched ROAR 1.1 renderer and Inferno AoIP in the Croksor
+runtime. LIRA and ASIO build as separate backends. Optional components are
+built with explicit switches and enabled through playback configuration.
+See the [runtime architecture](docs/runtime-details.md) for validation scope.
+
+## Build
 
 Run from the source root with an explicit Windows x64 Python executable:
 
