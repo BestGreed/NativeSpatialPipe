@@ -1,0 +1,60 @@
+diff --git a/src/renderer/olr/object_renderer.rs b/src/renderer/olr/object_renderer.rs
+index 145d32c..c509793 100644
+--- a/src/renderer/olr/object_renderer.rs
++++ b/src/renderer/olr/object_renderer.rs
+@@ -141,6 +141,11 @@ impl AudioRenderer for ObjectRenderer {
+         }
+ 
+         output.fill(0.0);
++        // With one object, adding its scratch buffer to an initially zero
++        // output is redundant. Keep the original accumulation order for
++        // multiple objects: metadata boundary overlap can contribute twice
++        // to a sample and fusing their sums changes float32 rounding.
++        let single_object = inputs.num_channels() == 1;
+ 
+         let mut global_chan_idx = 0;
+         for &id in &self.sorted_element_ids {
+@@ -153,8 +158,6 @@ impl AudioRenderer for ObjectRenderer {
+                     let input_channel = inputs.channel(global_chan_idx);
+                     global_chan_idx += 1;
+ 
+-                    // TODO(b/525080422): Optimize by passing the output buffer directly into
+-                    // process to avoid scratch buffer overhead and accumulation copy loop.
+                     self.channel_out_buffer[..required_size].fill(0.0);
+                     element.channels[local_idx].process(
+                         self.sample_rate,
+@@ -163,19 +166,27 @@ impl AudioRenderer for ObjectRenderer {
+                         &mut self.channel_out_buffer[..required_size],
+                     )?;
+ 
+-                    // Accumulate into output channel-by-channel
+-                    for out_idx in 0..self.output_channels {
+-                        let out_slice = output.channel_mut(out_idx);
+-                        let temp_start = out_idx * samples;
+-                        let temp_slice = &self.channel_out_buffer[temp_start..temp_start + samples];
+-                        for (dst, src) in out_slice.iter_mut().zip(temp_slice.iter()) {
+-                            *dst += src;
++                    if !single_object {
++                        for out_idx in 0..self.output_channels {
++                            let start = out_idx * samples;
++                            for (dst, src) in output.channel_mut(out_idx).iter_mut()
++                                .zip(self.channel_out_buffer[start..start + samples].iter()) {
++                                *dst += src;
++                            }
+                         }
+                     }
+                 }
+             }
+         }
+ 
++        if single_object {
++            for out_idx in 0..self.output_channels {
++                let start = out_idx * samples;
++                output.channel_mut(out_idx)
++                    .copy_from_slice(&self.channel_out_buffer[start..start + samples]);
++            }
++        }
++
+         self.offset += samples as u64;
+         Ok(())
+     }

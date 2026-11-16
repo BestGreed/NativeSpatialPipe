@@ -1,0 +1,1019 @@
+{
+  "date": "2026-10-28",
+  "description": "Exact local source snapshot before NSP integration; .gitmodules excluded because dependencies are flattened.",
+  "repositories": [
+    {
+      "path": ".",
+      "head": "0e770093b85c6f8b1fa6b1db0c4b7c7756ed9a8e",
+      "remotes": [
+        "origin\thttps://github.com/BestGreed/inferno.git (fetch)",
+        "origin\thttps://github.com/BestGreed/inferno.git (push)",
+        "upstream\thttps://github.com/teodly/inferno.git (fetch)",
+        "upstream\thttps://github.com/teodly/inferno.git (push)"
+      ],
+      "status": [
+        " M Cargo.lock",
+        " M WINDOWS-TESTING.md",
+        " M inferno_aoip/Cargo.toml",
+        " M inferno_aoip/examples/windows_loopback.rs",
+        " M inferno_aoip/src/device_server/channels_subscriber.rs",
+        " M inferno_aoip/src/device_server/flows_control_server.rs",
+        " M inferno_aoip/src/device_server/flows_rx.rs",
+        " M inferno_aoip/src/device_server/flows_tx.rs",
+        " M inferno_aoip/src/device_server/info_mcast_server.rs",
+        " M inferno_aoip/src/device_server/mod.rs",
+        " M inferno_aoip/src/device_server/settings.rs",
+        " M inferno_aoip/src/util/os.rs",
+        " M inferno_aoip/src/windows_clock.rs",
+        " M windows-clock/README.md",
+        " M windows-clock/src/follower.rs",
+        " M windows-clock/src/lib.rs",
+        " M windows-clock/src/local.rs",
+        " M windows-clock/src/ptp.rs",
+        " M windows-clock/tests/loopback.rs",
+        "?? inferno_aoip/src/device_server/windows_network_stats.rs",
+        "?? windows-clock/examples/",
+        "?? windows-clock/src/envelope.rs"
+      ]
+    },
+    {
+      "path": "alsa-sys-all/",
+      "head": "83324fc89b831f3da107e6d704bc7149f08b4e0f",
+      "remotes": [
+        "origin\thttps://gitlab.com/lumifaza/alsa-sys-all (fetch)",
+        "origin\thttps://gitlab.com/lumifaza/alsa-sys-all (push)"
+      ],
+      "status": []
+    },
+    {
+      "path": "searchfire/",
+      "head": "ccb19023aaaae6e5cc7e812e32453e106814ea0c",
+      "remotes": [
+        "origin\thttps://gitlab.com/lumifaza/searchfire (fetch)",
+        "origin\thttps://gitlab.com/lumifaza/searchfire (push)"
+      ],
+      "status": []
+    },
+    {
+      "path": "usrvclock-rs/",
+      "head": "7d847750d5ddbe969d34dbc5875a03b95c2ce16e",
+      "remotes": [
+        "origin\thttps://gitlab.com/lumifaza/usrvclock-rs (fetch)",
+        "origin\thttps://gitlab.com/lumifaza/usrvclock-rs (push)"
+      ],
+      "status": []
+    }
+  ],
+  "files": [
+    {
+      "path": ".dockerignore",
+      "bytes": 73,
+      "sha256": "7faed27dda30eb47ca618e3dd279ab6a9109aa2e3b18f86023c91a0c7707d7fb"
+    },
+    {
+      "path": ".gitignore",
+      "bytes": 9,
+      "sha256": "f61c42065f048ea8fa74560cdb2ce376ca780b0904950df8b77d7a1156185c7f"
+    },
+    {
+      "path": "Cargo.lock",
+      "bytes": 59442,
+      "sha256": "14ffd175608769e06875a1468ba31e95fc886fa45fea422f30a39937186c519c"
+    },
+    {
+      "path": "Cargo.toml",
+      "bytes": 517,
+      "sha256": "6ee4f16c4528617c104a36a62e4671c0dbf5e8406470de27e458a76d1b211d9d"
+    },
+    {
+      "path": "Dockerfile.alpine-alsa",
+      "bytes": 669,
+      "sha256": "89a9cb86c6d0bf30606f409a9215da35e6f8c66be7f698f524f0c47e17ccb03a"
+    },
+    {
+      "path": "Dockerfile.alpine-i2pipe",
+      "bytes": 531,
+      "sha256": "3cc9515a6be76d8aa0a628be56762ca0fcb3e800d792c13f9da0fcb760e69772"
+    },
+    {
+      "path": "Dockerfile.debian-alsa",
+      "bytes": 1011,
+      "sha256": "c0a20bb109af192217e14ef4e0c9d754e935bc297fee04090299187c874d2192"
+    },
+    {
+      "path": "Dockerfile.fedora-alsa",
+      "bytes": 603,
+      "sha256": "b4ea30ca787bd0a22aa8b466ff8a319c94f312d6da50db97283e70bbb4106dbb"
+    },
+    {
+      "path": "LICENSE",
+      "bytes": 20,
+      "sha256": "d851a5d7dd259c57d6a47f1a99faaca4363c6e7a38e6efdad2b353098804406e"
+    },
+    {
+      "path": "README.md",
+      "bytes": 29289,
+      "sha256": "726fe52544671bccceaeafb31af438768dfd0f7f7e7b58a23147d2a9ff203a49"
+    },
+    {
+      "path": "WINDOWS-TESTING.md",
+      "bytes": 3756,
+      "sha256": "2875278e06f88de247337f0578742ae4b3129d0366ca4cb0c15ac70e1f743d25"
+    },
+    {
+      "path": "alsa-sys-all/.gitignore",
+      "bytes": 31,
+      "sha256": "5e9b9a855015e44ecb8add29066bf8b54e1c56db140b42e8ca5b255c200976d2"
+    },
+    {
+      "path": "alsa-sys-all/Cargo.toml",
+      "bytes": 894,
+      "sha256": "3acc99e9478ba1f6199d1486c5b0f207c1c72809f79f2d2cf044905133884bd9"
+    },
+    {
+      "path": "alsa-sys-all/LICENSE",
+      "bytes": 1083,
+      "sha256": "6ece8b8726eb82483feb56ab750333dc25fe3d17d5dc681f55d7cfe0a61d7790"
+    },
+    {
+      "path": "alsa-sys-all/README.md",
+      "bytes": 656,
+      "sha256": "e629d9cbc9728c8a857f03a11da2b775c93b3d6312350a741a5c949f3304cab9"
+    },
+    {
+      "path": "alsa-sys-all/build.rs",
+      "bytes": 2157,
+      "sha256": "4e74a93e1b2eba6218190d138cc40884e7b77198a87decc5fb88d78a957b2cb2"
+    },
+    {
+      "path": "alsa-sys-all/regenerate_bindings.rs",
+      "bytes": 357,
+      "sha256": "2a6ec9bea5679fbca7863ed0269d1bd8c709562f58edd3e28b5fab3f0b6b309d"
+    },
+    {
+      "path": "alsa-sys-all/regenerate_bindings.sh",
+      "bytes": 75,
+      "sha256": "bbe44e1839fa3484c9fca00275278ec99b44f1ba5e9ebb5fa898b46738ea6d5e"
+    },
+    {
+      "path": "alsa-sys-all/src/generated.rs",
+      "bytes": 366248,
+      "sha256": "e6deea5c494ff81a28dde8b10c6b5ae2f76b27673dfa85a49045a8419d591954"
+    },
+    {
+      "path": "alsa-sys-all/src/lib.rs",
+      "bytes": 1436,
+      "sha256": "fc9b11184d40159ac62de5a3336ce47f2f4067decb0749cb86d5d5f3599a5fec"
+    },
+    {
+      "path": "alsa-sys-all/wrapper.h",
+      "bytes": 410,
+      "sha256": "e045ef0883173c4ebf7843b22f5127421c2d6d02dd6a510067e2cea4f2bf8d92"
+    },
+    {
+      "path": "alsa_pcm_inferno/Cargo.lock",
+      "bytes": 43806,
+      "sha256": "3f219b8d69b667df3bc7bb3e0a411659d6303345a6aaaaba74c95d7606f96dbc"
+    },
+    {
+      "path": "alsa_pcm_inferno/Cargo.toml",
+      "bytes": 533,
+      "sha256": "e7e42a576ed2c529591daccbe69fc11365f1a575f86a27ee3b5f5d2a9e033200"
+    },
+    {
+      "path": "alsa_pcm_inferno/README.md",
+      "bytes": 7284,
+      "sha256": "0aee1abfce6475456705f2e450da7a5516fa2d1637dfb67636e0f05e34394130"
+    },
+    {
+      "path": "alsa_pcm_inferno/asoundrc",
+      "bytes": 986,
+      "sha256": "8ccf86c41ac1aaa08ec3edd5e5348bf2cd5eed1ccd76ce2c1f780ad623df2dd5"
+    },
+    {
+      "path": "alsa_pcm_inferno/restart_pw",
+      "bytes": 177,
+      "sha256": "039e5d7f00b2698510e47a911cc8a20ea3e7483bb48c76f808e0a385466411f6"
+    },
+    {
+      "path": "alsa_pcm_inferno/src/lib.rs",
+      "bytes": 33516,
+      "sha256": "c6ec6f57897e7117194b826042aff58c42a4fa3ce4608c6ba0571e037b6d6982"
+    },
+    {
+      "path": "alsa_pcm_inferno/start_pipewire_sink",
+      "bytes": 351,
+      "sha256": "f96c8cd5530b6184bd0c9304d917dccc7b8abf70250788117accc5dbc00517d0"
+    },
+    {
+      "path": "alsa_pcm_inferno/start_pipewire_source",
+      "bytes": 422,
+      "sha256": "baf74c25b09c44514b8a9cbb06d8d2d3b37f48de871a935c1aac5e8ba638933d"
+    },
+    {
+      "path": "alsa_pcm_inferno/stop_pipewire_nodes",
+      "bytes": 160,
+      "sha256": "0fb4e58568fa712be947b56ce6d79d07903152e6783c6711535c0e7dd928caf5"
+    },
+    {
+      "path": "alsa_pcm_inferno/test_capture.sh",
+      "bytes": 191,
+      "sha256": "098c16097508ff2b7920dc70737f82c1a3f0673dbd50deed79a0c16b37e12f75"
+    },
+    {
+      "path": "alsa_pcm_inferno/test_effect_processor.sh",
+      "bytes": 224,
+      "sha256": "543c64355f8d1f9599726f2f8cf1e70e430c42083cd98ffc1fcbe62f5dc7c1c4"
+    },
+    {
+      "path": "alsa_pcm_inferno/test_playback.sh",
+      "bytes": 220,
+      "sha256": "ce8dcbbd37772fbd92cffdb41f9fc9f88286f059670bd203aeb145eb6b4b759d"
+    },
+    {
+      "path": "devtools/hexstream_to_array.py",
+      "bytes": 173,
+      "sha256": "8f17f50b46d30edbdde9a560a8dc71490b90fca2becd66be2d83dc39d00b8f8f"
+    },
+    {
+      "path": "devtools/i2pipe_detect_silence.sh",
+      "bytes": 789,
+      "sha256": "a21586f0a45bbd1b563ace9763c274e2e7b31af17470b7a64e129d45199d8074"
+    },
+    {
+      "path": "devtools/sinegen.sh",
+      "bytes": 50,
+      "sha256": "57c2274c75175336d2c4279f0f776081821a3dd7e85b15a5a4578440a457be9b"
+    },
+    {
+      "path": "inferno2pipe/.editorconfig",
+      "bytes": 102,
+      "sha256": "f9cdde19ff641b04e849a4e08853900a63dde169ed415e5a2f11f418f8757820"
+    },
+    {
+      "path": "inferno2pipe/.gitignore",
+      "bytes": 9,
+      "sha256": "f61c42065f048ea8fa74560cdb2ce376ca780b0904950df8b77d7a1156185c7f"
+    },
+    {
+      "path": "inferno2pipe/Cargo.toml",
+      "bytes": 384,
+      "sha256": "eda6681b567f9e3c3d67fb94f71451c54533568cda290669ce0ff5829d424812"
+    },
+    {
+      "path": "inferno2pipe/LICENSE",
+      "bytes": 23,
+      "sha256": "b07cde74f906c3f0bf0e4ffffec0b0beefd26b0f032172e43f96be4a38bf004a"
+    },
+    {
+      "path": "inferno2pipe/README.md",
+      "bytes": 562,
+      "sha256": "7b4d2468a1d0d18e71e3e34ca182eece4baf04d878e204a1c32fe9b4ab537264"
+    },
+    {
+      "path": "inferno2pipe/save_to_file",
+      "bytes": 893,
+      "sha256": "12b4aeaad7abec3fb3025c01898760ecec9d7c82abb1f5544e3b1efe87181c40"
+    },
+    {
+      "path": "inferno2pipe/src/main.rs",
+      "bytes": 3173,
+      "sha256": "00d97149b9481bfcb999a9821cb74be0d9e74b437e2518ee448211e531b47020"
+    },
+    {
+      "path": "inferno_aoip/.editorconfig",
+      "bytes": 117,
+      "sha256": "b97036661b987c782b4c40ab90544fa4e7d5db225e188a4df3ed6056c6625758"
+    },
+    {
+      "path": "inferno_aoip/Cargo.toml",
+      "bytes": 1644,
+      "sha256": "3a6de74835fc59d94d347f602ab4fd9d318cbf8d943169cde9bb8b71a6645d67"
+    },
+    {
+      "path": "inferno_aoip/LICENSE",
+      "bytes": 176,
+      "sha256": "223d7d051886755df967e1828743f4c9c5abdcd45fde528bbc24fa7387a410f2"
+    },
+    {
+      "path": "inferno_aoip/LICENSE-AGPL",
+      "bytes": 35184,
+      "sha256": "e0eedba615d5cd1b986afb6c5b3a4b1ae33713e7e9dc74d19daec5e3221f9d2e"
+    },
+    {
+      "path": "inferno_aoip/LICENSE-GPL",
+      "bytes": 35831,
+      "sha256": "3f54a34fb7ffd40004c9c817ea21b0693ec86c1fa32db1d2ed8a6d35fa9e0165"
+    },
+    {
+      "path": "inferno_aoip/examples/windows_loopback.rs",
+      "bytes": 4588,
+      "sha256": "e990a626e6a419b2063f19b8d67979e1c2768c4ccfadc825b134de5afa9fd50f"
+    },
+    {
+      "path": "inferno_aoip/rustfmt.toml",
+      "bytes": 210,
+      "sha256": "437697d6eb510a876855f799ead72d7a11a30454f82288a9d58aeb6a88ed9f62"
+    },
+    {
+      "path": "inferno_aoip/src/common.rs",
+      "bytes": 1914,
+      "sha256": "7d7e16601617a44cf6c8041018a17e30c30f096a55e5fc1d85c1e0553f0f774c"
+    },
+    {
+      "path": "inferno_aoip/src/device_info.rs",
+      "bytes": 3270,
+      "sha256": "bb100197bd82aa3cd6b673f5ab08f4ee83364f8ad1cacef7448636777e9bf63b"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/arc_server.rs",
+      "bytes": 32496,
+      "sha256": "f9438d1ffe1cfb674e1a9dda87c0d895e39afeeb77127b311f2d0645b2936234"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/channels_subscriber.rs",
+      "bytes": 50796,
+      "sha256": "c519bbd15eb49c5675d973f960d80d527d04b03cf14a49893bca5756d2365d45"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/cmc_server.rs",
+      "bytes": 1815,
+      "sha256": "d72e964e9c20b6e23c4c2fd25af68b2681932bb2a4f4a72c7b9813875552524b"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/flows_control_server.rs",
+      "bytes": 7996,
+      "sha256": "f5b5c29c9d6d39c15b1b6de030353cfcdb06667252cd415206e3db653972adf1"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/flows_rx.rs",
+      "bytes": 23629,
+      "sha256": "d43f563f389bb83ee0e5b8d1d279e040c45e9981a869d9368bf24fba9676e0e6"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/flows_tx.rs",
+      "bytes": 38591,
+      "sha256": "1e54a0f4bb59bfca0bb501f33b90f661dd9e615c847a9f2a6e99b8f079348e30"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/info_mcast_server.rs",
+      "bytes": 17741,
+      "sha256": "dd30e9e5fcb6649fe1b54d06c21fd833279fe17e36c76ea2ff63dc2e698c8d07"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/mdns_server.rs",
+      "bytes": 9849,
+      "sha256": "da4ec2d687bf8c5ae88f013afaa2d1adb4afe0a8d21628f62a1c37ce04a5066d"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/mod.rs",
+      "bytes": 16509,
+      "sha256": "55c2558b1c400cd1026703036286ad831d449056c2803802a1a0d567a4b153ee"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/peaks.rs",
+      "bytes": 501,
+      "sha256": "622a6d3cdb17ba2e4547adfe965127c1bf2a824a53a6ac6b0e79e168439d212d"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/samples_collector.rs",
+      "bytes": 13555,
+      "sha256": "7b6cb9beac76e4576582a1b5b509baf315faf1e711824b38e6e997942d0fd710"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/samples_utils.rs",
+      "bytes": 6065,
+      "sha256": "e2b377365cacc1194733caa24c1a39d8b40ad3ed2e68d7addcabc460243af29a"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/saved_settings.rs",
+      "bytes": 2490,
+      "sha256": "b7f853b72a155e897ef4ab9bf52d806c4d9bfc424c09d6c8f673d9fb4c9a989f"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/settings.rs",
+      "bytes": 7735,
+      "sha256": "5dd0f3935d05cfec81acedbdfdfa63695baac609762497f4ced29cf42f983d98"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/tx_multicasts.rs",
+      "bytes": 13163,
+      "sha256": "106157d077077ee68f808181b21292d2d8150c06377843545a960421c6c78bc7"
+    },
+    {
+      "path": "inferno_aoip/src/device_server/windows_network_stats.rs",
+      "bytes": 2868,
+      "sha256": "b8d416e15252972314926c10a56fa28eca0764ec75f030b82d59693db7a5d350"
+    },
+    {
+      "path": "inferno_aoip/src/lib.rs",
+      "bytes": 4209,
+      "sha256": "441cc8bc24035a64889d2c571eda8760f4037a841d31fc5db4151499feef45ef"
+    },
+    {
+      "path": "inferno_aoip/src/mdns_client.rs",
+      "bytes": 10527,
+      "sha256": "0dec0f0921f66caeb37f61cce1b49846c4573479beb79ecce9c34f1772b6fe41"
+    },
+    {
+      "path": "inferno_aoip/src/media_clock.rs",
+      "bytes": 7368,
+      "sha256": "493e560a7da0d40ab0578888f488995a096b7c5b7a52b61fc782ff3d66ace8cf"
+    },
+    {
+      "path": "inferno_aoip/src/protocol/flows_control.rs",
+      "bytes": 8369,
+      "sha256": "33e0432be97fab66a4328508a2136a2b9149b5338cefca3c28dac5d3d72a2ee7"
+    },
+    {
+      "path": "inferno_aoip/src/protocol/mcast.rs",
+      "bytes": 3864,
+      "sha256": "7aa31b5eedb49266d0c97f99835eea347a60ef458b502851e1f4bf9c4974f5cd"
+    },
+    {
+      "path": "inferno_aoip/src/protocol/mod.rs",
+      "bytes": 99,
+      "sha256": "71a8be7090276d6325ddf2e9f7524383fab648ef2e05681c2f5f594f01eed727"
+    },
+    {
+      "path": "inferno_aoip/src/protocol/proto_arc.rs",
+      "bytes": 19776,
+      "sha256": "783535b1b42223fc9823737e7439276c659daf20fee7addcdc62569d5f1e65ed"
+    },
+    {
+      "path": "inferno_aoip/src/protocol/proto_cmc.rs",
+      "bytes": 2789,
+      "sha256": "6284886da6eabbd90a73a7b6e72bf1fdc2517f10886ec98aee7af07a03d9502c"
+    },
+    {
+      "path": "inferno_aoip/src/protocol/req_resp.rs",
+      "bytes": 3325,
+      "sha256": "862b914afe80ea7c34c6110e3481368438e63201b3499ede5c70559dd07346f7"
+    },
+    {
+      "path": "inferno_aoip/src/ring_buffer.rs",
+      "bytes": 41269,
+      "sha256": "5d8e19aed0bc80ae43e3aef19f95aa4cbe84633b926a162fea175d1f89b73f66"
+    },
+    {
+      "path": "inferno_aoip/src/state_storage.rs",
+      "bytes": 3951,
+      "sha256": "b229eeb5211d9745b5c0c6b89996426343bfef0597f3d127f6e74282bcd2d94f"
+    },
+    {
+      "path": "inferno_aoip/src/util/bytes.rs",
+      "bytes": 5303,
+      "sha256": "70a68b4ba25084953debe9bb46fc847dd737f5642c4f9d112523d1bf350ebe8a"
+    },
+    {
+      "path": "inferno_aoip/src/util/mod.rs",
+      "bytes": 92,
+      "sha256": "960dc2a36fe684b296e6ae17328b7f2d42c04c881e554b55328b4bd4f698e6d3"
+    },
+    {
+      "path": "inferno_aoip/src/util/net.rs",
+      "bytes": 3096,
+      "sha256": "adca37eac09bb8f7711f9ee8572a39c6c9060bb5583af4ceb21c33bb5a4bb5e3"
+    },
+    {
+      "path": "inferno_aoip/src/util/os.rs",
+      "bytes": 2272,
+      "sha256": "ef6c4f3b10042dbd0cb7d9e9165f71e74f01e9a1df97539dcec3e22444f8ce75"
+    },
+    {
+      "path": "inferno_aoip/src/util/real_time_box_channel.rs",
+      "bytes": 2072,
+      "sha256": "353c8b17404927403b371f0ac3323e061ab1bae6ed4c92aab4ae071fcc1b769d"
+    },
+    {
+      "path": "inferno_aoip/src/util/thread.rs",
+      "bytes": 552,
+      "sha256": "24347b94f452dc5bcea7d6ee04620fcf615e8c846d909f22fbdd5a1c4b40bca6"
+    },
+    {
+      "path": "inferno_aoip/src/windows_clock.rs",
+      "bytes": 4611,
+      "sha256": "c550676af4ed5f6c52aee8b83521fdb38f60f0293e4d1725b0e0b0bc9210089f"
+    },
+    {
+      "path": "inferno_aoip/tests/loopback_trx.rs",
+      "bytes": 9222,
+      "sha256": "8c15ed5ae25bd0cf6f10034e5402e53ef06d79c1031a3271fb796ff3f4db6575"
+    },
+    {
+      "path": "os_integration/systemd_allow_clock.conf",
+      "bytes": 36,
+      "sha256": "5eb307048f2fb3623b635b9433267f09c3cd15d5b1c84b2b07af2c25b783c213"
+    },
+    {
+      "path": "searchfire/.editorconfig",
+      "bytes": 204,
+      "sha256": "d6c4c6982488cb96c05fb7b38a833503bf1c736c437d9b196f37c8b1c4ee5384"
+    },
+    {
+      "path": "searchfire/.github/workflows/ci.yml",
+      "bytes": 903,
+      "sha256": "11467944bb52532c8a69118640c9fcb86f7638577e4bece1be5dd4d69488b847"
+    },
+    {
+      "path": "searchfire/.github/workflows/publish.yml",
+      "bytes": 275,
+      "sha256": "bbc97a4dc4951772283730cc5f6f0fbedfe700124f9e6e576c7c98328f4ad890"
+    },
+    {
+      "path": "searchfire/.gitignore",
+      "bytes": 22,
+      "sha256": "c22bb7057a31e035c225f1d07f96c2b9e84d7936f97c2d9928196d2fdd571061"
+    },
+    {
+      "path": "searchfire/.vscode/settings.json",
+      "bytes": 37,
+      "sha256": "26dea4574bc11a6f061d7a0aaa1114d07f2e9eb4098680f2be61d4da7c83ddb0"
+    },
+    {
+      "path": "searchfire/Cargo.toml",
+      "bytes": 1013,
+      "sha256": "d70a676f1d5f986377681e7314476869709949f13a44f3fa5abead6de92c151e"
+    },
+    {
+      "path": "searchfire/LICENSE-APACHE",
+      "bytes": 11046,
+      "sha256": "b8601fc79bdf8d8088f0938bea861ffc63ed0eebbedf25f44ab2cf2e85bd7edc"
+    },
+    {
+      "path": "searchfire/LICENSE-MIT",
+      "bytes": 1081,
+      "sha256": "3a6cef57e1310fc6069cf04e4bbf68f7fb6f757a15e42ae3cc6671efcb499ebc"
+    },
+    {
+      "path": "searchfire/README.md",
+      "bytes": 5803,
+      "sha256": "ec480f9c7a07b0cec5b5586690bb57aee6f375825c9888ea13ec642feb4328f1"
+    },
+    {
+      "path": "searchfire/examples/broadcast.rs",
+      "bytes": 1240,
+      "sha256": "68de2a15ac127309896496dd4b57869ca7302259ffbdd25ef855c6e90973f757"
+    },
+    {
+      "path": "searchfire/examples/discovery.rs",
+      "bytes": 1278,
+      "sha256": "ead1cc60c1159bbbb97e6615809a69954bed74996998d7702e51357f2e42e2d8"
+    },
+    {
+      "path": "searchfire/rustfmt.toml",
+      "bytes": 341,
+      "sha256": "e788431499037405845e5d95e4608638538126ffbcc4681a262c26cff6dca808"
+    },
+    {
+      "path": "searchfire/src/broadcast.rs",
+      "bytes": 6527,
+      "sha256": "45d261455b87a79b80a97a540d86b3bc499f92710dca04551d8f6e7fef7a3204"
+    },
+    {
+      "path": "searchfire/src/broadcast/builder.rs",
+      "bytes": 3079,
+      "sha256": "88ebfcce0d364a7d2a3d231dc6be1a0d8c308d26fac3949c5728fcb74bf70138"
+    },
+    {
+      "path": "searchfire/src/broadcast/errors.rs",
+      "bytes": 1224,
+      "sha256": "b8ff6c92fdb57f90bc06f58526606763f1240e8212a4dd0e266c0d40ca2996a9"
+    },
+    {
+      "path": "searchfire/src/broadcast/handle.rs",
+      "bytes": 4374,
+      "sha256": "0abb2d2796a8bc451a9768aa4247df21e79402e79401b590253fb5121b7a371c"
+    },
+    {
+      "path": "searchfire/src/broadcast/service.rs",
+      "bytes": 11253,
+      "sha256": "42629701207ccd216f7e5999b20ed0d7728714287a1f21c51118607aa53820a1"
+    },
+    {
+      "path": "searchfire/src/discovery.rs",
+      "bytes": 11184,
+      "sha256": "1e4386d27c7151341f3acd26f4a328d5fe3530a39bfdf56dd594c0815a2a5d06"
+    },
+    {
+      "path": "searchfire/src/discovery/builder.rs",
+      "bytes": 3489,
+      "sha256": "b4215add955af1e32d2738882625aae499792f5952f66441131199e15a95fc71"
+    },
+    {
+      "path": "searchfire/src/discovery/errors.rs",
+      "bytes": 296,
+      "sha256": "7346b108877f2a9bd8347eeb40c287e4513d1d358a082cf5e8cfa399e3409c2e"
+    },
+    {
+      "path": "searchfire/src/discovery/event.rs",
+      "bytes": 826,
+      "sha256": "7d45081aae3b1a8a396cfe293f923533678e75e9ad661c1a636b29153fb25844"
+    },
+    {
+      "path": "searchfire/src/discovery/handle.rs",
+      "bytes": 1625,
+      "sha256": "a483af9dc7a4c47f0d251d5a8710fc7c5f40100a4d4e4098a80b1d41b46da288"
+    },
+    {
+      "path": "searchfire/src/discovery/presence.rs",
+      "bytes": 2214,
+      "sha256": "3636b67ff4f8c11e5177925ffaa9cc51b541c3b2bd2c0db7be4fa8ca3a0d2b26"
+    },
+    {
+      "path": "searchfire/src/errors.rs",
+      "bytes": 1770,
+      "sha256": "33eefad7246f5263962ae8e473f8fa2e3c90c44d34caa51832cb88e3c7c21d3f"
+    },
+    {
+      "path": "searchfire/src/lib.rs",
+      "bytes": 3984,
+      "sha256": "bcf53a446a1742bf955d7ed1d6e852559612caf22ea5fae92f1e2740e32e2c04"
+    },
+    {
+      "path": "searchfire/src/net.rs",
+      "bytes": 5729,
+      "sha256": "d5726f065a68f787c44010df50236c0736b1335d3ee182fe4239c8500d0a00b9"
+    },
+    {
+      "path": "searchfire/src/socket.rs",
+      "bytes": 12686,
+      "sha256": "3655e1d2ba215814bf87064e03d628126cb7c33db5486a7f2b76bf24a4b31603"
+    },
+    {
+      "path": "searchfire/src/tests.rs",
+      "bytes": 1107,
+      "sha256": "6aa54f406c16ce882c3aa80af908a54542c066fb4f0b17b97fe45e015f7c9ca1"
+    },
+    {
+      "path": "searchfire/src/util.rs",
+      "bytes": 906,
+      "sha256": "5a05f93b395b4cfb80e6942ece513bec9080c9afa7a32b2f86245e4ee7aa1023"
+    },
+    {
+      "path": "searchfire/tests/client_and_server.rs",
+      "bytes": 3706,
+      "sha256": "12bf426c1b10588783523c1ea89aa85bd4fbb9998362c6405ff91bff9d569b98"
+    },
+    {
+      "path": "test/dockerized_trx/LICENSE",
+      "bytes": 1253,
+      "sha256": "4feb95b7580b66cce8de050f93ddedaaf6c67683335d980aac8b25bea2bdf12c"
+    },
+    {
+      "path": "test/dockerized_trx/README.md",
+      "bytes": 497,
+      "sha256": "58ee02a014e08f97b259eb866b731a057037c3e409b4b094c32a34068231bce7"
+    },
+    {
+      "path": "test/dockerized_trx/alpine_aplay_arecord/Dockerfile",
+      "bytes": 134,
+      "sha256": "f98d771ecc122f964a2d94e0f15fb38655ae370ceec2d42244c3e6ee2dff0820"
+    },
+    {
+      "path": "test/dockerized_trx/alpine_aplay_arecord/alsa_duplex.sh",
+      "bytes": 990,
+      "sha256": "da2ed69727bbd0dc7eb15f223859201a2c3858a8858c7bcc8b6aec20ffe86a6e"
+    },
+    {
+      "path": "test/dockerized_trx/alpine_i2pipe/Dockerfile",
+      "bytes": 84,
+      "sha256": "9f351fde4a6f2f13dbc824d487814db3fa4c49b637fda6f174baf20d02709c6e"
+    },
+    {
+      "path": "test/dockerized_trx/alpine_i2pipe/capture.sh",
+      "bytes": 477,
+      "sha256": "fac8a62c1b84a76bd240e12d8a4e55da42259c8337648639ce60bf156da69e1c"
+    },
+    {
+      "path": "test/dockerized_trx/alpine_jack/Dockerfile",
+      "bytes": 418,
+      "sha256": "7c76d2ffc904d75b45d2f36e5b5639df32e107074079c99a65ea7baccd3960e4"
+    },
+    {
+      "path": "test/dockerized_trx/alpine_jack/jack_duplex.sh",
+      "bytes": 719,
+      "sha256": "ec7425c15fccb18e903e1a504421ee1b7f5d50730db879ecae7e0da677097866"
+    },
+    {
+      "path": "test/dockerized_trx/control_and_test/Dockerfile",
+      "bytes": 339,
+      "sha256": "5c11a0bc923b9650bf467b42ef1c34125b7de0206d2a269f4a957067dcdac99f"
+    },
+    {
+      "path": "test/dockerized_trx/control_and_test/control_and_test.sh",
+      "bytes": 5380,
+      "sha256": "9e0ea714b3f9289b36cc9104a06d54e4af24c7487acd190e4081cc5693f6a609"
+    },
+    {
+      "path": "test/dockerized_trx/debian_jack/Dockerfile",
+      "bytes": 205,
+      "sha256": "eb3f444f5d0f2968c2530e0bc7182deee78cd0436da2b1a8b1b16671def2ca48"
+    },
+    {
+      "path": "test/dockerized_trx/debian_jack/jack_duplex.sh",
+      "bytes": 709,
+      "sha256": "fdfcb91737497b14c2c782641d3782493eb9de30453f8f7b3ccaaae94646e8b0"
+    },
+    {
+      "path": "test/dockerized_trx/docker-compose.yml",
+      "bytes": 3205,
+      "sha256": "73d80aae46b9456f7586e2c3a2edbced2153e3ce10e06d39a6ecc7c46824dd56"
+    },
+    {
+      "path": "test/dockerized_trx/fake_usrvclock_server/Dockerfile",
+      "bytes": 223,
+      "sha256": "f227e462445fe3422d20972c5e93fab71b4330ecaa7a7d67d4689c280f8bdc64"
+    },
+    {
+      "path": "test/dockerized_trx/fake_usrvclock_server/LICENSE",
+      "bytes": 1253,
+      "sha256": "4feb95b7580b66cce8de050f93ddedaaf6c67683335d980aac8b25bea2bdf12c"
+    },
+    {
+      "path": "test/dockerized_trx/fake_usrvclock_server/fake_usrvclock_server.c",
+      "bytes": 5592,
+      "sha256": "c492187d4378bc31e9cf8ab5852fd2d07eabf14e7e3a21ef404db4fd77459cfa"
+    },
+    {
+      "path": "test/dockerized_trx/fedora_pipewire/Dockerfile",
+      "bytes": 209,
+      "sha256": "2d34474f96fd85a27ea5c68630acf171f9591f075a81c13ce9186402fc91a6d8"
+    },
+    {
+      "path": "test/dockerized_trx/fedora_pipewire/pipewire_duplex.sh",
+      "bytes": 1360,
+      "sha256": "19c7770f522f9a9c9e3d53c046697f880d32da3c62d3edb435c77e57f787506d"
+    },
+    {
+      "path": "test/dockerized_trx/inferno.env",
+      "bytes": 122,
+      "sha256": "b4b78f502075628447b42cbb73a739d4928eb14cf912a3b2f412bb4d3f63015c"
+    },
+    {
+      "path": "test/dockerized_trx/run_test.sh",
+      "bytes": 775,
+      "sha256": "f94a002b369481ab94644ea7d37607a2867f55bb332558b12dbfb66490aae7f1"
+    },
+    {
+      "path": "usrvclock-rs/.gitignore",
+      "bytes": 9,
+      "sha256": "f61c42065f048ea8fa74560cdb2ce376ca780b0904950df8b77d7a1156185c7f"
+    },
+    {
+      "path": "usrvclock-rs/Cargo.lock",
+      "bytes": 10529,
+      "sha256": "440a0e694acb4f28bbac87bd9bdd8452f311b12bd30870675a3c193dbd9f2e1f"
+    },
+    {
+      "path": "usrvclock-rs/Cargo.toml",
+      "bytes": 563,
+      "sha256": "fce2675778d4f40102d3d2085b6e4d5388b4ec936cd3ce08f40cb2a2062411d8"
+    },
+    {
+      "path": "usrvclock-rs/LICENSE-APACHE",
+      "bytes": 11051,
+      "sha256": "1ac50a5abd5cff5331d59928d83369b66b0099a88f0111dc2175526b3c666dec"
+    },
+    {
+      "path": "usrvclock-rs/LICENSE-MIT",
+      "bytes": 1083,
+      "sha256": "47c82232848517e38749f498799005cf3c8f7b2c4af3eef34c372f5f9ec4bbbc"
+    },
+    {
+      "path": "usrvclock-rs/README.md",
+      "bytes": 591,
+      "sha256": "24b538aae4b72aaede62c69629c6e6c66d504c6846053bf53cb6f314b17b644a"
+    },
+    {
+      "path": "usrvclock-rs/src/lib.rs",
+      "bytes": 27897,
+      "sha256": "b64b3e8a7e99be0f3a8869e4d702fc1e7f5a33565eca375d43286ec60bb2e0da"
+    },
+    {
+      "path": "vendor/netdev/Cargo.toml",
+      "bytes": 2275,
+      "sha256": "abd7ea55dd50129750fb76937569dc925e60f3e539d717d18dbf1fb5756b66f3"
+    },
+    {
+      "path": "vendor/netdev/Cargo.toml.orig",
+      "bytes": 1406,
+      "sha256": "ae674e6f4c499769325719bb1526e4c6cc901fead03ec99283cd38ae233091d1"
+    },
+    {
+      "path": "vendor/netdev/LICENSE",
+      "bytes": 1065,
+      "sha256": "cf142f7cb1d81730c5060ade1ec657af1ec6978cc553f86bee6b096bd8b3b762"
+    },
+    {
+      "path": "vendor/netdev/PATCH.md",
+      "bytes": 531,
+      "sha256": "c1977f0601f91702ce2fab352b193d94f4fd3e71b69ea68d001770c4b9012378"
+    },
+    {
+      "path": "vendor/netdev/README.md",
+      "bytes": 1788,
+      "sha256": "83b954d12e8ad13876361bcb64a378a9cf99a13b96579e281851030adf8a2dcc"
+    },
+    {
+      "path": "vendor/netdev/examples/default_gateway.rs",
+      "bytes": 445,
+      "sha256": "d91c6ac6a120d1dfd6f52f51616cb8125eb588268af3ae73dbe73c7cc32fc491"
+    },
+    {
+      "path": "vendor/netdev/examples/default_interface.rs",
+      "bytes": 2172,
+      "sha256": "b37a9a8b1ab62ed9c5efbf23a6902c07ab775859a6acd76d47cecafc686e56c7"
+    },
+    {
+      "path": "vendor/netdev/examples/list_interfaces.rs",
+      "bytes": 1956,
+      "sha256": "7e36e2a21f3f6899d57dc984c9620cb57841122b92fc6b4cfb3d6fa214b32757"
+    },
+    {
+      "path": "vendor/netdev/examples/serialize.rs",
+      "bytes": 488,
+      "sha256": "03e79c3bcf05849aae60a3e1f099dd0533fa12b748b2c62ae09173261c244750"
+    },
+    {
+      "path": "vendor/netdev/src/db/mod.rs",
+      "bytes": 13,
+      "sha256": "1ab12310c2de27c5e8b37656872f626a7a024c1361af9ef9ffddd03f8701e79b"
+    },
+    {
+      "path": "vendor/netdev/src/db/oui.rs",
+      "bytes": 1105,
+      "sha256": "36356b0def5d37d7880e596f727bbfa0267128e3805885fa74050b7e1ff4fb78"
+    },
+    {
+      "path": "vendor/netdev/src/device.rs",
+      "bytes": 757,
+      "sha256": "f1cc164bff315d8ace5b36961a147b892eb0caf4d364f7566cff45509102aaad"
+    },
+    {
+      "path": "vendor/netdev/src/gateway/bsd.rs",
+      "bytes": 13549,
+      "sha256": "d123fa321415c553d7ad1d551592ee856325470c2231ae64f1ff84a5f3b11a90"
+    },
+    {
+      "path": "vendor/netdev/src/gateway/linux.rs",
+      "bytes": 4772,
+      "sha256": "f3982e8fb586a9e1fe768494351d4cd7ce24ad408fde542a853fa4be80691bc6"
+    },
+    {
+      "path": "vendor/netdev/src/gateway/macos.rs",
+      "bytes": 14029,
+      "sha256": "46858a44dc9d29e8904cdb6081b6328765094947333c1e3ae5dcd3ae18c2dc4a"
+    },
+    {
+      "path": "vendor/netdev/src/gateway/mod.rs",
+      "bytes": 1492,
+      "sha256": "e50092676ea89e502dd269ceba700860b4bba52f4e0b86924bc8acc047ead589"
+    },
+    {
+      "path": "vendor/netdev/src/gateway/windows.rs",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "vendor/netdev/src/interface/android.rs",
+      "bytes": 10356,
+      "sha256": "7bc52d468d9de0178b47b5486a1bb980b437caa23726e5a0ade93553546f0229"
+    },
+    {
+      "path": "vendor/netdev/src/interface/linux.rs",
+      "bytes": 2656,
+      "sha256": "5df0cc8c62a5a1bc1c3f7e1bf3c8eb18912f0a3fde4256a9ce8a7719c557bf53"
+    },
+    {
+      "path": "vendor/netdev/src/interface/macos.rs",
+      "bytes": 1666,
+      "sha256": "ecb1a48b480ac397a3bbae3f50c458d296dcca04bf096868e165127d5ce2ca96"
+    },
+    {
+      "path": "vendor/netdev/src/interface/mod.rs",
+      "bytes": 6658,
+      "sha256": "61d8d42c8458ac3e52866765e400af3266116d9fe86285a9c9f0200c4cfb039c"
+    },
+    {
+      "path": "vendor/netdev/src/interface/shared.rs",
+      "bytes": 1787,
+      "sha256": "3e7dea34ea71a092f8d9f4cc4af6ddbd4f82fba0a0462af02ad16f4cf710aa7c"
+    },
+    {
+      "path": "vendor/netdev/src/interface/types.rs",
+      "bytes": 12722,
+      "sha256": "b7af17c41b4d6d2cc8fd755a72095f618a04546a6a53ea502ee9793210d06a3e"
+    },
+    {
+      "path": "vendor/netdev/src/interface/unix.rs",
+      "bytes": 14900,
+      "sha256": "1c6593e1e81913d85465bb595e84927bd22e45616759fbc8b54caaba5c95870f"
+    },
+    {
+      "path": "vendor/netdev/src/interface/windows.rs",
+      "bytes": 10545,
+      "sha256": "1204156bb653460730a3b7ff45054c655dbac50cd1fe1cd9380727c30cd5776e"
+    },
+    {
+      "path": "vendor/netdev/src/lib.rs",
+      "bytes": 274,
+      "sha256": "94f84e181a4f80606aeb450eaa7fef51ca1ca2711f2ea2ebd040667e8b5c5df0"
+    },
+    {
+      "path": "vendor/netdev/src/mac.rs",
+      "bytes": 5999,
+      "sha256": "7b44f3ef4f50f1f70f7486e903122ea39128397383fde6c5eea55b2e956279ed"
+    },
+    {
+      "path": "vendor/netdev/src/sys/linux.rs",
+      "bytes": 886,
+      "sha256": "d169301b378fc0f6559d46f33e496e9000278a60e98becb934583ce27de56a63"
+    },
+    {
+      "path": "vendor/netdev/src/sys/mod.rs",
+      "bytes": 351,
+      "sha256": "f43980dc7db03940481f8e76aa1a0e03a3a71f7132959712955fa625e0515093"
+    },
+    {
+      "path": "vendor/netdev/src/sys/unix.rs",
+      "bytes": 2260,
+      "sha256": "646c27887c41335fc7a1b69c9a7a5660f9d8f25d7188a868df8a4a65c79452e0"
+    },
+    {
+      "path": "vendor/netdev/src/sys/windows.rs",
+      "bytes": 291,
+      "sha256": "d3adddb8aab4cddcf74fee6bcb7150947894ee94d113c63d1cfc32fe378332ef"
+    },
+    {
+      "path": "windows-clock/.gitignore",
+      "bytes": 9,
+      "sha256": "306fd52e74fca6746e12acc750f232de15e71da917756a1270d74c91f5eb7368"
+    },
+    {
+      "path": "windows-clock/Cargo.toml",
+      "bytes": 213,
+      "sha256": "212e2562d1903129831a8f0b45dd959816a8863659c396723c7f9f3fb6ca292b"
+    },
+    {
+      "path": "windows-clock/README.md",
+      "bytes": 6118,
+      "sha256": "35bc34c5791878fb6f73674778eb63f421e1f126fa003837db0408068a1253cf"
+    },
+    {
+      "path": "windows-clock/examples/udp_echo_probe.rs",
+      "bytes": 6781,
+      "sha256": "7dce6ef602704bac6a4a81756647a6abed950dd2803fdc0a5a0b2de964fe2f94"
+    },
+    {
+      "path": "windows-clock/examples/wait_probe.rs",
+      "bytes": 871,
+      "sha256": "a7643fc3f7504d23b464a40cf44bb50bbabda4149bf5de218f45f993b072b2fb"
+    },
+    {
+      "path": "windows-clock/src/envelope.rs",
+      "bytes": 11787,
+      "sha256": "407d07e43800b45a6667be948dd2efaf54b703db099ba2c12aa9d910add12d38"
+    },
+    {
+      "path": "windows-clock/src/follower.rs",
+      "bytes": 10304,
+      "sha256": "4405fb32aad3a9bde32f62b5264954e014482fbfe36177ed4e2cc46b8709d067"
+    },
+    {
+      "path": "windows-clock/src/lib.rs",
+      "bytes": 184,
+      "sha256": "b281a86433770355634460325978aa3378dd269dad6c285e802e0afb8f6d1830"
+    },
+    {
+      "path": "windows-clock/src/local.rs",
+      "bytes": 3292,
+      "sha256": "731fb12544fb9b69e0a1341163800a0d071f8302ba3aa6f882ff785cd0734364"
+    },
+    {
+      "path": "windows-clock/src/main.rs",
+      "bytes": 5415,
+      "sha256": "bbac69616d756594e3b6d9138855a6e6623d22e2dff6debc0887ea1110d33f9e"
+    },
+    {
+      "path": "windows-clock/src/net.rs",
+      "bytes": 4066,
+      "sha256": "77250b6d5b127f59a47da480f5d6cb5fb64466749f1041dc60105802ffe72271"
+    },
+    {
+      "path": "windows-clock/src/ptp.rs",
+      "bytes": 14224,
+      "sha256": "a6182e7f4e0e97f53db50e5441f9303842d5b3a44323ac9ae2066ceb6724a218"
+    },
+    {
+      "path": "windows-clock/src/servo.rs",
+      "bytes": 15328,
+      "sha256": "22356ac9c4be93eec7ff60248bcaae552fbd27a27adcec0491aab33243a589b0"
+    },
+    {
+      "path": "windows-clock/tests/loopback.rs",
+      "bytes": 4415,
+      "sha256": "de9397137b5ead06fe0e1912de29e7cd4ef0d446ec4590b023ade7c390757f79"
+    }
+  ]
+}

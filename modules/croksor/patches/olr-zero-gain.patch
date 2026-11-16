@@ -1,0 +1,35 @@
+diff --git a/src/renderer/olr/processing_block.rs b/src/renderer/olr/processing_block.rs
+--- a/src/renderer/olr/processing_block.rs
++++ b/src/renderer/olr/processing_block.rs
+@@ -78,6 +78,11 @@ impl FixedGainsBlock {
+ 
+         for i in 0..self.num_gains {
+             let gain = self.gains[i];
++            // NSP validates finite PCM before rendering. Exact zero contributes
++            // no signal; retain every nonzero coefficient, including subnormals.
++            if gain == 0.0 {
++                continue;
++            }
+             for j in samples_range.clone() {
+                 for k in 0..channels {
+                     output[i * num_samples + j] += input[k * num_samples + j] * gain;
+@@ -161,6 +166,9 @@ impl InterpGainsBlock {
+         if self.has_start {
+             for i in 0..self.num_gains {
+                 let g_start = self.gains_start[i];
++                if g_start == 0.0 {
++                    continue;
++                }
+                 for (m, j) in (states_range.start..).zip(samples_range.clone()) {
+                     let interp_val = m as f32 * inv_transition_len;
+                     let weight = 1.0 - interp_val;
+@@ -177,6 +185,9 @@ impl InterpGainsBlock {
+         if self.has_end {
+             for i in 0..self.num_gains {
+                 let g_end = self.gains_end[i];
++                if g_end == 0.0 {
++                    continue;
++                }
+                 for (m, j) in (states_range.start..).zip(samples_range.clone()) {
+                     let interp_val = m as f32 * inv_transition_len;
+                     for k in 0..channels {

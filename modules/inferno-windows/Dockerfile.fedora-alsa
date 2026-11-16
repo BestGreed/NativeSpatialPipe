@@ -1,0 +1,24 @@
+FROM fedora:42 AS builder
+
+RUN dnf install -y alsa-lib-devel cargo
+
+WORKDIR /build
+COPY . .
+
+ARG BUILD_FLAGS=--release
+ARG BUILD_TYPE=release
+
+RUN --mount=type=cache,target=/root/.local/cargo/registry --mount=type=cache,target=/build/target \
+    mkdir /out && \
+    cargo build $BUILD_FLAGS -p alsa_pcm_inferno && \
+    cp target/$BUILD_TYPE/libasound_module_pcm_inferno.so /out/
+
+
+FROM fedora:42
+
+RUN dnf install -y alsa-lib
+
+# TODO: what if not 64?
+COPY --from=builder /out/libasound_module_pcm_inferno.so /usr/lib64/alsa-lib/
+
+COPY alsa_pcm_inferno/asoundrc /etc/asound.conf

@@ -1,0 +1,20 @@
+FROM rust:1.92-alpine3.23 AS builder
+
+RUN apk add build-base
+WORKDIR /build
+COPY . .
+
+ENV RUSTFLAGS="-C target-feature=-crt-static"
+ARG BUILD_FLAGS=--release
+ARG BUILD_TYPE=release
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/build/target \
+    mkdir /out && \
+    cargo build $BUILD_FLAGS -p inferno2pipe && \
+    cp target/$BUILD_TYPE/inferno2pipe /out/
+
+
+FROM alpine:3.23
+
+RUN apk add --no-cache libgcc
+
+COPY --from=builder /out/inferno2pipe /usr/local/bin/inferno2pipe

@@ -1,0 +1,31 @@
+--- a/src/renderer/olr/processing_block.rs
++++ b/src/renderer/olr/processing_block.rs
+@@ -70,6 +70,8 @@
+             return Err(OarError::InvalidParameter);
+         }
+ 
++        if silent_overlap(input,num_samples,channels,&samples_range) {return Ok(());}
++
+         for i in 0..self.num_gains {
+             let gain = self.gains[i];
+             // NSP validates finite PCM before rendering. Exact zero contributes
+@@ -151,6 +153,8 @@
+             return Err(OarError::InvalidParameter);
+         }
+ 
++        if silent_overlap(input,num_samples,channels,&samples_range) {return Ok(());}
++
+         let transition_len = (self.last_sample - self.first_sample) as f32;
+         let inv_transition_len = if transition_len > 0.0 { 1.0 / transition_len } else { 0.0 };
+ 
+@@ -292,3 +296,10 @@
+         expect_that!(output[4], near(0.4, EPSILON));
+     }
+ }
++
++// Exact zero only, checked on the contributing overlap after shape validation.
++// Metadata interpretation and queue/time advancement remain in the caller.
++fn silent_overlap(input:&[f32], samples:usize, channels:usize, range:&std::ops::Range<usize>)->bool {
++    if channels.checked_mul(samples).is_none_or(|n| n>input.len()) {return false;}
++    (0..channels).all(|c| input[c*samples+range.start..c*samples+range.end].iter().all(|v|*v==0.0))
++}

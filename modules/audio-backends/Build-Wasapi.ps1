@@ -1,4 +1,4 @@
-param([string]$TargetDirectory='build/audio-backends/wasapi-exclusive-v1',[string]$LlvmBin='work/lsac-toolchain/llvm-mingw-20261006-ucrt-x86_64/bin',[switch]$DiagnosticTrace)
+param([string]$TargetDirectory='build/audio-backends/wasapi-exclusive-v1',[string]$LlvmBin='work/rust-bootstrap/llvm-fast/llvm-mingw-20261006-ucrt-x86_64/bin',[switch]$DiagnosticTrace)
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path "$PSScriptRoot/../..").Path
 $out=if([IO.Path]::IsPathRooted($TargetDirectory)){$TargetDirectory}else{Join-Path $root $TargetDirectory}

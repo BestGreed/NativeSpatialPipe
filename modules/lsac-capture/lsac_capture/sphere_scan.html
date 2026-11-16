@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23132724'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%2364e0bd' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%2364e0bd'/%3E%3C/svg%3E">
+  <title>LSAC · 球面扫描工作台</title>
+  <link rel="stylesheet" href="/sphere_scan.css">
+  <script src="/sphere_scan.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">◉</span><div><strong>LSAC <span>/</span> 球面扫描</strong><small>空间测量工作台</small></div></div>
+      <div class="session-pills"><span id="mode-badge" class="pill neutral">正在连接</span><span id="source-badge" class="pill neutral"><i></i>等待位姿</span><span id="session-badge" class="session-label">尚未开始采集</span></div>
+      <div class="top-actions"><button id="demo-toggle" class="button ghost compact" type="button">演示工具</button><button id="export-button" class="button ghost compact" type="button" disabled>导出记录 <span aria-hidden="true">↗</span></button><button id="fullscreen-button" class="button icon-button" type="button" aria-label="进入全屏（F）" title="全屏 F"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button></div>
+    </header>
+
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden><span id="notice-text"></span><button id="notice-close" type="button" aria-label="关闭提示">×</button></div>
+    <div id="demo-panel" class="demo-panel" hidden><div><strong>演示模式</strong><span>仅用于预览操作与导航，不包含真实测量。</span></div><div class="demo-actions"><button id="demo-calibration" class="button ghost compact" type="button">载入演示标定</button><button id="demo-autopath" class="button ghost compact" type="button" aria-pressed="false">自动演示轨迹</button></div></div>
+
+    <main class="workspace">
+      <aside class="left-panel panel">
+        <section class="panel-section calibration-section">
+          <div class="section-heading"><div><span class="eyebrow">01 / 建立坐标</span><h1>六面快标定</h1></div><span id="calibration-count" class="count-badge">0 / 6</span></div>
+          <p id="calibration-hint" class="section-description">将标定 Tracker A 的接触面依次贴合箱体六面，建立尺寸与参考坐标。</p>
+          <div id="face-list" class="face-list" aria-label="六面标定步骤"></div>
+          <div id="face-instruction" class="instruction"><span class="instruction-icon" aria-hidden="true">⌖</span><div><strong id="face-current-title">等待测量源</strong><p id="face-current-help">连接后可开始标定。</p></div></div>
+          <button id="capture-face" class="button primary full-width" type="button" disabled><span aria-hidden="true">＋</span> 记录当前面 <kbd>空格</kbd></button>
+          <div class="button-row calibration-footer"><button id="calibration-reset" class="button ghost compact" type="button" disabled>重新标定</button><button id="calibration-finish" class="button subtle compact" type="button" disabled>确认坐标 <span aria-hidden="true">→</span></button></div>
+          <div id="dimensions-card" class="dimensions-card" hidden><span>箱体尺寸 · 宽 × 高 × 深</span><strong id="box-dimensions">—</strong><small id="calibration-status">几何尺寸尚未确认</small></div>
+        </section>
+
+        <section class="panel-section contact-section">
+          <details id="contact-details" open>
+            <summary><span>Tracker A 接触配置</span><span id="contact-status" class="tiny-label">待确认</span></summary>
+            <p class="field-help">填写接触平面原点相对 Tracker A 的偏移。贴合箱体时，所选法向必须朝向箱体外。</p>
+            <form id="contact-form">
+              <div class="three-fields"><label>X <span>mm</span><input id="contact-x" name="x" type="number" step="0.1" value="0" required></label><label>Y <span>mm</span><input id="contact-y" name="y" type="number" step="0.1" value="0" required></label><label>Z <span>mm</span><input id="contact-z" name="z" type="number" step="0.1" value="0" required></label></div>
+              <label class="inline-field" for="contact-normal">接触法向<select id="contact-normal" name="normal"><option value="+Z">+Z</option><option value="-Z">−Z</option><option value="+X">+X</option><option value="-X">−X</option><option value="+Y">+Y</option><option value="-Y">−Y</option></select></label>
+              <label class="check-field"><input id="contact-verified" type="checkbox"><span>已核对实际安装的偏移与法向</span></label>
+              <button id="contact-save" class="button subtle full-width compact" type="submit" disabled>应用接触配置</button>
+            </form>
+          </details>
+        </section>
+        <div class="sidebar-footnote"><span class="status-dot"></span>独立追踪器模式<span class="muted">无需头显</span></div>
+      </aside>
+
+      <section class="viewport-panel" aria-label="三层球面扫描三维视图">
+        <canvas id="scan-canvas" tabindex="0" aria-label="球面扫描三维视图，可拖动旋转，滚轮缩放"></canvas>
+        <div class="viewport-heading"><div class="view-title"><span class="eyebrow">实时几何</span><h2>三层球面</h2><p id="view-subtitle">拖动旋转 · 滚轮缩放</p></div><div class="view-tools"><button id="camera-reset" class="button icon-button" type="button" aria-label="恢复默认视角" title="恢复视角"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/><circle cx="12" cy="12" r="2"/></svg></button><button id="camera-front" class="button ghost compact" type="button">正视</button><button id="camera-top" class="button ghost compact" type="button">俯视</button></div></div>
+        <div id="connection-overlay" class="connection-overlay"><div class="connection-symbol" aria-hidden="true">⌁</div><strong id="connection-title">正在连接测量工作台</strong><p id="connection-help">等待服务端状态与位姿。</p></div>
+        <div class="viewport-legend"><span><i class="legend-line history"></i>已扫轨迹</span><span><i class="legend-line proposed"></i>推荐短弧</span><span><i class="legend-dot probe"></i>探针</span></div>
+        <div class="gain-legend"><span id="map-label">几何补扫收益</span><div class="gain-gradient"></div><div><span>低</span><span>高</span></div><small>几何建议 ≠ 声学置信度</small></div>
+        <div id="probe-readout" class="probe-readout"><span class="status-dot"></span><span id="probe-position">X —　Y —　Z —</span><span id="probe-speed" class="muted">— m/s</span></div>
+        <div class="viewport-bottom"><div class="layer-selector" role="group" aria-label="选择扫描球层"><button type="button" data-layer="0" class="active"><i></i>内层 <span id="layer-radius-0">—</span></button><button type="button" data-layer="1"><i></i>中层 <span id="layer-radius-1">—</span></button><button type="button" data-layer="2"><i></i>外层 <span id="layer-radius-2">—</span></button></div><div class="view-switches"><label><input id="show-shells" type="checkbox" checked><span>球壳</span></label><label><input id="show-history" type="checkbox" checked><span>轨迹</span></label><label><input id="show-gain" type="checkbox" checked><span>收益</span></label></div></div>
+      </section>
+
+      <aside class="right-panel panel">
+        <section class="panel-section capture-section">
+          <div class="section-heading"><div><span class="eyebrow">02 / 连续采集</span><h2>扫描控制</h2></div><span id="capture-status" class="pill neutral small">未开始</span></div>
+          <div class="capture-timer"><span id="capture-timer">00:00</span><small>当前分段</small><span id="recording-dot" class="recording-dot" hidden></span></div>
+          <div class="capture-buttons"><button id="segment-start" class="button primary" type="button" disabled><span aria-hidden="true">●</span> 开始分段</button><button id="segment-pause" class="button subtle" type="button" disabled>暂停</button></div>
+          <button id="segment-finish" class="button ghost full-width compact" type="button" disabled>结束本轮并保存 <span aria-hidden="true">✓</span></button>
+          <button id="new-scan" class="button subtle full-width compact" type="button" hidden disabled title="开启新的扫描计划，已有原始录音与分段记录保留">开始新一轮</button>
+          <div class="capture-summary"><span>已完成 <strong id="segment-count">0</strong> 段</span><span>轨迹长度 <strong id="trajectory-length">0.00</strong> m</span></div>
+          <p id="capture-note" class="quality-note">演示采集不会开启录音设备或播放激励。</p>
+        </section>
+
+        <section class="panel-section navigation-section">
+          <div class="section-heading"><div><span class="eyebrow">03 / 下一段路径</span><h2>补扫导航</h2></div><span id="navigation-layer" class="tiny-label">内层</span></div>
+          <div class="navigation-card"><div class="navigation-symbol" aria-hidden="true">↗</div><div><strong id="navigation-title">先建立箱体坐标</strong><p id="navigation-description">完成标定后生成可达的补扫短弧。</p></div></div>
+          <div class="navigation-metrics"><div><span>建议长度</span><strong id="navigation-length">—<small> m</small></strong></div><div><span>几何收益</span><strong id="navigation-gain">—</strong></div></div>
+          <div class="button-row"><button id="navigation-skip" class="button subtle compact full-width" type="button" disabled>换一段建议 <span aria-hidden="true">↻</span></button></div>
+        </section>
+
+        <section class="panel-section quality-section">
+          <div class="section-heading"><div><span class="eyebrow">扫描质量</span><h2>覆盖与质量</h2></div><span id="quality-badge" class="tiny-label">等待数据</span></div>
+          <div id="coverage-bars" class="coverage-bars"></div>
+          <div class="quality-grid"><div><span>已记录空间格</span><strong id="quality-points">0</strong></div><div><span>位姿更新</span><strong id="quality-pose-age">—<small> ms</small></strong></div></div>
+          <p id="quality-note" class="quality-note">覆盖量用于几何导航，不能代替声学验证。</p>
+        </section>
+
+        <section class="panel-section plan-section"><details id="plan-details"><summary><span>球面与可达范围</span><span class="tiny-label">m</span></summary><form id="plan-form"><p class="field-help">半径由箱体大小生成。高度相对箱体参考中心，留空表示不限制。</p><div class="three-fields"><label>内层<input id="plan-radius-0" type="number" min="0.05" max="10" step="0.01" required></label><label>中层<input id="plan-radius-1" type="number" min="0.05" max="10" step="0.01" required></label><label>外层<input id="plan-radius-2" type="number" min="0.05" max="10" step="0.01" required></label></div><div class="two-fields"><label>最低高度<input id="plan-min-height" type="number" step="0.01" placeholder="不限制"></label><label>最高高度<input id="plan-max-height" type="number" step="0.01" placeholder="不限制"></label></div><div class="two-fields"><label>几何球谐阶数<input id="plan-order" type="number" min="1" max="12" step="1" value="3" required></label><label>建议分段时长 · 秒<input id="plan-seconds" type="number" min="10" max="3600" step="10" value="120" required></label></div><button id="plan-save" class="button subtle full-width compact" type="submit" disabled>应用扫描范围</button></form></details></section>
+      </aside>
+    </main>
+
+    <footer class="statusbar"><div><span id="service-dot" class="status-dot warning"></span><span id="service-status">连接中</span><span class="status-separator"></span><span id="status-message">正在读取扫描状态</span></div><div><span id="fullscreen-hint"><kbd>F</kbd> 全屏</span><span class="status-separator"></span><span>拖动旋转 · 滚轮缩放</span></div></footer>
+  </div>
+</body>
+</html>

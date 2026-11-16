@@ -1,0 +1,38 @@
+{
+  "outputBackend": "wasapi",
+  "renderer": "roar",
+  "mode": "olr",
+  "outputLayout": "7.1.4",
+  "bridgeDll": "C:\\NSP\\nsp_croksor.dll",
+  "wasapi": {
+    "dllPath": "C:\\NSP\\NSP.WasapiOutput.dll",
+    "endpointId": "{0.0.0.00000000}.{77b2c5f3-cf42-4d93-8770-8528e102135e}",
+    "mode": "shared",
+    "periodFrames": 480
+  },
+  "sampleRate": 48000,
+  "sourcePolicy": "unified",
+  "unifiedSlotProfile": "standard",
+  "unifiedPrimaryPolicy": "legacy",
+  "sourceStream": 0,
+  "positionMapping": {
+    "mode": "direction",
+    "reference": 1
+  },
+  "master": 0.251188643150958,
+  "drainTimeoutMs": 5000,
+  "recording": {
+    "pcm": false,
+    "telemetrySnapshots": false
+  },
+  "lsac": {
+    "enabled": true,
+    "filterFile": "C:/NSP/Measured-7.1.4-to-stereo.nbf"
+  },
+  "mediaFoundation": {
+    "enabled": false
+  },
+  "wasapiUpmix": {
+    "enabled": false
+  }
+}

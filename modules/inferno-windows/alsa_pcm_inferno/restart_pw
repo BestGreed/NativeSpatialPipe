@@ -1,0 +1,8 @@
+#!/bin/bash
+
+cargo build
+systemctl --user restart pipewire.service
+#./start_pipewire_sink
+#./start_pipewire_source
+./start_dante
+journalctl --user -efu pipewire.service

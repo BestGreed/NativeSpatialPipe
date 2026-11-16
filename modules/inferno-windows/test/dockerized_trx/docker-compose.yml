@@ -1,0 +1,149 @@
+version: "3.8"
+
+# All configs and scripts in this test suite are dedicated to the public domain.
+# Feel free to adapt for your software without giving attribution.
+
+volumes:
+  shared:
+
+services:
+  init:
+    image: alpine:3.22
+    volumes:
+      - shared:/shared
+    command: ["/bin/sh", "-c", "rm -rf /shared/* ; true"]
+
+  clock_source:
+    build: fake_usrvclock_server
+    environment:
+      - USRVCLOCK_SOCKET=/shared/usrvclock
+    volumes:
+      - shared:/shared
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      #control_and_test:
+      #  condition: service_started
+
+  jack1:
+    build: alpine_jack
+    env_file: inferno.env
+    environment:
+      - INFERNO_NAME=jack1
+    networks:
+      - audio_net
+    volumes:
+      - shared:/shared
+    ulimits:
+      memlock: 200000000
+    shm_size: 200m
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      clock_source:
+        condition: service_started
+
+  jack2:
+    build: debian_jack
+    platform: linux/386
+    env_file: inferno.env
+    environment:
+      - INFERNO_NAME=jack2
+    networks:
+      - audio_net
+    volumes:
+      - shared:/shared
+    ulimits:
+      memlock: 200000000
+    shm_size: 200m
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      clock_source:
+        condition: service_started
+
+  aplayrec1:
+    build: alpine_aplay_arecord
+    env_file: inferno.env
+    environment:
+      - INFERNO_NAME=aplayrec1
+    networks:
+      - audio_net
+    volumes:
+      - shared:/shared
+    ulimits:
+      memlock: 200000000
+    shm_size: 200m
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      clock_source:
+        condition: service_started
+
+  aplayrec2:
+    build: alpine_aplay_arecord
+    env_file: inferno.env
+    environment:
+      - INFERNO_NAME=aplayrec2
+    networks:
+      - audio_net
+    volumes:
+      - shared:/shared
+    ulimits:
+      memlock: 200000000
+    shm_size: 200m
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      clock_source:
+        condition: service_started
+
+  pipewire1:
+    build: fedora_pipewire
+    env_file: inferno.env
+    environment:
+      - INFERNO_NAME=pipewire1
+    networks:
+      - audio_net
+    volumes:
+      - shared:/shared
+    ulimits:
+      memlock: 200000000
+    shm_size: 200m
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      clock_source:
+        condition: service_started
+
+  i2pipe1:
+    build: alpine_i2pipe
+    env_file: inferno.env
+    environment:
+      - INFERNO_NAME=i2pipe1
+    networks:
+      - audio_net
+    volumes:
+      - shared:/shared
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      clock_source:
+        condition: service_started
+
+  control_and_test:
+    build: control_and_test
+    env_file: inferno.env
+    networks:
+      - audio_net
+    volumes:
+      - shared:/shared
+    depends_on:
+      - jack1
+      - jack2
+      - aplayrec1
+      - aplayrec2
+
+networks:
+  audio_net:
+    driver: bridge

@@ -1,0 +1,37 @@
+--- a/src/renderer/olr/processing_block.rs
++++ b/src/renderer/olr/processing_block.rs
+@@ -158,7 +158,33 @@
+         let transition_len = (self.last_sample - self.first_sample) as f32;
+         let inv_transition_len = if transition_len > 0.0 { 1.0 / transition_len } else { 0.0 };
+ 
+-        // TODO(b/525080422): Optimize by merging the has_start and has_end loops when both are true
++        // Preserve the two original per-sample sums, including their order.
++        if self.has_start && self.has_end {
++            for i in 0..self.num_gains {
++                let g_start=self.gains_start[i];let g_end=self.gains_end[i];
++                if g_start==0.0 && g_end==0.0 {continue;}
++                if g_start!=0.0 && g_end!=0.0 {
++                    for (m,j) in (states_range.start..).zip(samples_range.clone()) {
++                        let interp_val=m as f32*inv_transition_len;let weight=1.0-interp_val;
++                        for k in 0..channels {output[i*num_samples+j]+=input[k*num_samples+j]*weight*g_start;}
++                        for k in 0..channels {output[i*num_samples+j]+=input[k*num_samples+j]*interp_val*g_end;}
++                    }
++                } else if g_start!=0.0 {
++                    for (m,j) in (states_range.start..).zip(samples_range.clone()) {
++                        let weight=1.0-m as f32*inv_transition_len;
++                        for k in 0..channels {output[i*num_samples+j]+=input[k*num_samples+j]*weight*g_start;}
++                    }
++                } else {
++                    for (m,j) in (states_range.start..).zip(samples_range.clone()) {
++                        let interp_val=m as f32*inv_transition_len;
++                        for k in 0..channels {output[i*num_samples+j]+=input[k*num_samples+j]*interp_val*g_end;}
++                    }
++                }
++            }
++            return Ok(());
++        }
++
++        // Both-endpoint case handled above, single endpoints retain their original loops.
+         // to reduce loop overhead and redundant multiplication operations.
+         if self.has_start {
+             for i in 0..self.num_gains {

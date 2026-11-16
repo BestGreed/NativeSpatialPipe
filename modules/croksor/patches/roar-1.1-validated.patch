@@ -1,0 +1,995 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index a1372f1..d0c20ff 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -29,3 +29,6 @@ path = "bin/generate_binaural_filters.rs"
+ [dev-dependencies]
+ googletest = "0.14.4"
+ rstest = "0.17.0"
++
++[features]
++nsp-olr-batch-experiment = []
+diff --git a/src/common/config.rs b/src/common/config.rs
+index 619efcb..a85d68d 100644
+--- a/src/common/config.rs
++++ b/src/common/config.rs
+@@ -137,6 +137,14 @@ pub struct ObjectBasedConfig {
+ }
+ 
+ impl ObjectBasedConfig {
++    /// NSP probe-only constructor. Not a supported IAMF/C/OBR contract.
++    #[cfg(feature = "nsp-olr-batch-experiment")]
++    pub fn new_nsp_olr_batch(num_objects: usize) -> Result<Self, OarError> {
++        if !(1..=128).contains(&num_objects) {
++            return Err(OarError::InvalidParameter);
++        }
++        Ok(Self { num_objects: ChannelCount::new(num_objects).unwrap(), rendering_config: None })
++    }
+     /// Creates a new `ObjectBasedConfig` if `num_objects` is 1 or 2.
+     pub fn new(
+         num_objects: usize,
+diff --git a/src/common/layout.rs b/src/common/layout.rs
+index 36a2f7d..791c64d 100644
+--- a/src/common/layout.rs
++++ b/src/common/layout.rs
+@@ -257,6 +257,10 @@ pub enum OutputLayout {
+     Layout312,
+     /// 9.1.6 surround sound layout.
+     Layout916,
++    /// NSP output-only extension.
++    Layout716,
++    /// NSP output-only extension.
++    Layout914,
+     /// 22.2 surround sound layout (10.2.9.3 / A293).
+     LayoutA293,
+     /// 7.1.5.4 surround sound layout.
+@@ -299,6 +303,8 @@ impl OutputLayout {
+             return input_layout.speakers();
+         }
+         match self {
++            Self::Layout716 => Some(&[SP_MP030, SP_MM030, SP_MP000, SP_LFE1, SP_MP090, SP_MM090, SP_MP135, SP_MM135, SP_UP045, SP_UM045, SP_UP135, SP_UM135, SP_UP090, SP_UM090]),
++            Self::Layout914 => Some(&[SP_MP060, SP_MM060, SP_MP000, SP_LFE1, SP_MP135, SP_MM135, SP_MP030, SP_MM030, SP_MP090, SP_MM090, SP_UP045, SP_UM045, SP_UP135, SP_UM135]),
+             Self::SoundSystemE451 => Some(&[
+                 SP_MP030, SP_MM030, SP_MP000, SP_LFE, SP_MP110, SP_MM110, SP_UP030, SP_UM030,
+                 SP_UP110, SP_UM110, SP_BP000,
+@@ -561,7 +567,7 @@ impl TryFrom<OutputLayout> for InputLayout {
+             OutputLayout::LayoutA293 => Ok(Self::LayoutA293),
+             OutputLayout::Layout7154 => Ok(Self::Layout7154),
+             OutputLayout::Binaural => Ok(Self::Binaural),
+-            OutputLayout::SoundSystemE451
++            OutputLayout::Layout716 | OutputLayout::Layout914 | OutputLayout::SoundSystemE451
+             | OutputLayout::SoundSystemF370
+             | OutputLayout::SoundSystemG490 => Err(OarError::InvalidParameter),
+         }
+diff --git a/src/renderer/audio_elements_renderer.rs b/src/renderer/audio_elements_renderer.rs
+index a19bfe5..f9bd850 100644
+--- a/src/renderer/audio_elements_renderer.rs
++++ b/src/renderer/audio_elements_renderer.rs
+@@ -56,6 +56,7 @@ pub struct AudioElementsRenderer {
+     active_elements: HashMap<u32, AudioElementConfig>,
+     positions_queues: BTreeMap<u32, ElementPositionsContext>,
+     sub_frame_samples: Option<Samples>,
++    fixed_block_samples: Option<Samples>,
+     sub_out_buffer: Vec<f32>,
+     num_out_channels: ChannelCount,
+     /// Underlying spatial rendering backend (e.g. `ObjectRenderer`, `EarRenderer`).
+@@ -83,6 +84,7 @@ impl Clone for AudioElementsRenderer {
+             active_elements: self.active_elements.clone(),
+             positions_queues: self.positions_queues.clone(),
+             sub_frame_samples: self.sub_frame_samples,
++            fixed_block_samples: self.fixed_block_samples,
+             sub_out_buffer: Vec::new(),
+             num_out_channels: self.num_out_channels,
+             sub_renderer: None,
+@@ -115,6 +117,7 @@ impl AudioElementsRenderer {
+             active_elements: HashMap::new(),
+             positions_queues: BTreeMap::new(),
+             sub_frame_samples,
++            fixed_block_samples: None,
+             sub_out_buffer: vec![0.0; req_size],
+             num_out_channels,
+             sub_renderer: None,
+@@ -150,14 +153,29 @@ impl AudioElementsRenderer {
+             active_elements: HashMap::new(),
+             positions_queues: BTreeMap::new(),
+             sub_frame_samples,
++            fixed_block_samples: None,
+             sub_out_buffer: vec![0.0; req_size],
+             num_out_channels,
+             sub_renderer: Some(sub),
+         }
+     }
+ 
++    /// Configure a backend whose caller always renders the configured block size.
++    pub(crate) fn with_fixed_block_backend(
++        sub: Box<dyn AudioRenderer>,
++        channels: ChannelCount,
++        block_samples: Samples,
++        metadata_samples: Samples,
++    ) -> Self {
++        let mut renderer = Self::with_backend(sub, channels, None);
++        renderer.fixed_block_samples = Some(block_samples);
++        renderer.set_sub_frame_samples(Some(metadata_samples));
++        renderer
++    }
++
+     /// Sets or updates the sub-frame block size in samples.
+     pub fn set_sub_frame_samples(&mut self, samples: Option<Samples>) {
++        let samples = samples.filter(|size| Some(*size) != self.fixed_block_samples);
+         self.sub_frame_samples = samples;
+         let samples_val = samples.map(|s| s.value() as usize).unwrap_or(0);
+         let req_size = self.num_out_channels.get() * samples_val;
+@@ -224,6 +242,24 @@ impl AudioElementsRenderer {
+             return Err(OarError::InvalidParameter);
+         }
+ 
++        if self.fixed_block_samples == Some(duration) && self.sub_frame_samples.is_none()
++            && self.positions_queues.get(&id).is_some_and(|context| context.positions.is_empty())
++        {
++            let position = match positions {
++                ObjectPosition::Cartesian(values) if values.len() == 1 => {
++                    Some(cartesian_to_polar_sector_float32(values[0])?)
++                }
++                ObjectPosition::Polar(values) if values.len() == 1 => Some(values[0]),
++                _ => None,
++            };
++            if let (Some(position), Some(sub)) = (position, self.sub_renderer.as_mut()) {
++                match sub.update_single_olr_position(id, position, duration) {
++                    Err(OarError::NotSupported) => {}
++                    result => return result,
++                }
++            }
++        }
++
+         // Convert cartesian to polar before sending to sub-renderers.
+         let safe_positions = match positions {
+             ObjectPosition::Cartesian(cart_coords) => {
+@@ -508,6 +544,15 @@ impl AudioRenderer for AudioElementsRenderer {
+         self.remove_element(id)
+     }
+ 
++    fn reset_olr_element(&mut self, id: u32) -> Result<(), OarError> {
++        let context = self.positions_queues.get_mut(&id).ok_or(OarError::InvalidParameter)?;
++        self.sub_renderer.as_mut().ok_or(OarError::NotSupported)?.reset_olr_element(id)?;
++        context.positions.clear();
++        context.start = 0;
++        context.duration = 0;
++        Ok(())
++    }
++
+     fn update_element_gain(
+         &mut self,
+         id: u32,
+diff --git a/src/renderer/audio_renderer_api.rs b/src/renderer/audio_renderer_api.rs
+index cdb4592..f494980 100644
+--- a/src/renderer/audio_renderer_api.rs
++++ b/src/renderer/audio_renderer_api.rs
+@@ -17,7 +17,7 @@
+ 
+ use crate::common::definitions::{
+     AudioElementConfig, DownmixMode, Gain, OarError, ObjectPosition, PlanarBufferMut,
+-    PlanarBufferRef, Quaternion, Samples,
++    PlanarBufferRef, PolarCoordinate, Quaternion, Samples,
+ };
+ 
+ /// A trait representing a polymorphic audio renderer backend.
+@@ -56,6 +56,18 @@ pub trait AudioRenderer: Send + Sync {
+         Err(OarError::NotSupported)
+     }
+ 
++    /// Clear an independently prepared OLR object's history in place.
++    fn reset_olr_element(&mut self, _id: u32) -> Result<(), OarError> {
++        Err(OarError::NotSupported)
++    }
++
++    /// Submit one fixed-block OLR position without constructing a position Vec.
++    fn update_single_olr_position(
++        &mut self, _id: u32, _position: PolarCoordinate, _duration: Samples,
++    ) -> Result<(), OarError> {
++        Err(OarError::NotSupported)
++    }
++
+     /// Updates dynamic gain parameters.
+     fn update_element_gain(
+         &mut self,
+diff --git a/src/renderer/ear/ear_renderer.rs b/src/renderer/ear/ear_renderer.rs
+index 89b6374..39053bd 100644
+--- a/src/renderer/ear/ear_renderer.rs
++++ b/src/renderer/ear/ear_renderer.rs
+@@ -17,7 +17,7 @@
+ //! High-Order Ambisonics to multi-channel rendering to channel-based
+ //! and scene-based audio elements according to target loudspeaker layouts.
+ 
+-use crate::common::definitions::{
++use crate::common::definitions::{InputLayout,
+     AudioElementConfig, OarError, OutputLayout, PlanarBufferMut, PlanarBufferRef,
+     MAX_OUTPUT_CHANNEL_COUNT,
+ };
+@@ -58,6 +58,8 @@ pub enum EarRenderingMode {
+     },
+     /// High-Order Ambisonics to multichannel matrix.
+     Scene(AmbisonicToChannelRenderer),
++    /// NSP exact 7.1.4 bed routing into extended output geometry.
++    NspBed(Vec<usize>, usize),
+ }
+ 
+ impl EarRenderer {
+@@ -83,6 +85,14 @@ impl AudioRenderer for EarRenderer {
+     fn add_element(&mut self, _id: u32, config: &AudioElementConfig) -> Result<(), OarError> {
+         self.active_mode = None;
+         let out_system = self.target_layout;
++        if matches!(out_system, OutputLayout::Layout716 | OutputLayout::Layout914) {
++            if matches!(config, AudioElementConfig::ChannelBased(cb) if cb.layout == InputLayout::Layout714) {
++                let map=if out_system==OutputLayout::Layout716 {(0..12).collect()} else {vec![6,7,2,3,8,9,4,5,10,11,12,13]};
++                self.active_mode=Some(EarRenderingMode::NspBed(map,14));
++                return Ok(());
++            }
++            return Err(OarError::NotSupported);
++        }
+ 
+         match *config {
+             AudioElementConfig::ChannelBased(cb) => {
+@@ -124,6 +134,7 @@ impl AudioRenderer for EarRenderer {
+             }
+             Some(EarRenderingMode::ChannelCustom { matrix, .. }) => (matrix.m, matrix.n),
+             Some(EarRenderingMode::Scene(ambi_to_chan)) => (ambi_to_chan.m, ambi_to_chan.channels),
++            Some(EarRenderingMode::NspBed(map,count)) => (map.len(),*count),
+             None => return Err(OarError::NotSupported),
+         };
+         if inputs.num_channels() != expected_in_channels
+@@ -144,6 +155,11 @@ impl AudioRenderer for EarRenderer {
+             Some(EarRenderingMode::Scene(ambi_to_chan)) => {
+                 element_renderer_render_ambi_to_chan(ambi_to_chan, inputs, output)
+             }
++            Some(EarRenderingMode::NspBed(map,_)) => {
++                output.fill(0.0);
++                for (source,&destination) in map.iter().enumerate(){output.channel_mut(destination).copy_from_slice(inputs.channel(source));}
++                Ok(())
++            },
+             None => Err(OarError::NotSupported),
+         }
+     }
+diff --git a/src/renderer/olr/block_processing_channel.rs b/src/renderer/olr/block_processing_channel.rs
+index f5df902..9b73d28 100644
+--- a/src/renderer/olr/block_processing_channel.rs
++++ b/src/renderer/olr/block_processing_channel.rs
+@@ -22,6 +22,7 @@ use crate::common::definitions::{
+ };
+ use crate::renderer::olr::gain_calculator::GainCalculator;
+ use crate::renderer::olr::interpret_object_metadata::InterpretObjectMetadata;
++use crate::renderer::olr::processing_block::GainOutput;
+ use crate::renderer::olr::processing_block::ProcessingBlockVariant;
+ use std::collections::VecDeque;
+ use std::sync::Arc;
+@@ -60,6 +61,14 @@ impl BlockProcessingChannel {
+         }
+     }
+ 
++    pub(crate) fn reset(&mut self) {
++        self.metadata_blocks.clear();
++        self.processing_queue.clear();
++        self.accumulated_duration = 0;
++        self.current_render_offset = 0;
++        self.interpreter.reset();
++    }
++
+     /// Queues a new dynamic metadata update block for this channel.
+     ///
+     /// # Parameters
+@@ -138,6 +147,16 @@ impl BlockProcessingChannel {
+         offset: u64,
+         input: &[f32],
+         output: &mut [f32],
++    ) -> Result<(), OarError> {
++        self.process_output(_sample_rate, offset, input, output)
++    }
++
++    pub(crate) fn process_output<O: GainOutput + ?Sized>(
++        &mut self,
++        _sample_rate: SampleRate,
++        offset: u64,
++        input: &[f32],
++        output: &mut O,
+     ) -> Result<(), OarError> {
+         let start_sample = offset;
+         let num_samples = input.len();
+@@ -152,7 +171,7 @@ impl BlockProcessingChannel {
+             let last_sample = self.processing_queue.front().unwrap().last_sample();
+             let block = self.processing_queue.front_mut().unwrap();
+ 
+-            block.process(start_sample, input, num_samples, 1, output)?;
++            block.process_output(start_sample, input, num_samples, 1, output)?;
+ 
+             if last_sample < end_sample {
+                 self.processing_queue.pop_front();
+diff --git a/src/renderer/olr/custom_gain_calculator.rs b/src/renderer/olr/custom_gain_calculator.rs
+index 4982e96..2301cbf 100644
+--- a/src/renderer/olr/custom_gain_calculator.rs
++++ b/src/renderer/olr/custom_gain_calculator.rs
+@@ -349,6 +349,7 @@ fn linalg_norm(v: &[f32]) -> f32 {
+ }
+ 
+ impl GainCalculator for CustomGainCalculator {
++    fn reuse_safe(&self)->bool {true}
+     fn calculate_gains(
+         &self,
+         azimuth: Degrees,
+diff --git a/src/renderer/olr/gain_calculator.rs b/src/renderer/olr/gain_calculator.rs
+index 3eb1d6a..dcb61ac 100644
+--- a/src/renderer/olr/gain_calculator.rs
++++ b/src/renderer/olr/gain_calculator.rs
+@@ -38,6 +38,8 @@ pub trait GainCalculator: std::fmt::Debug + Send + Sync {
+ 
+     /// Returns the number of output gains this calculator produces.
+     fn gains_count(&self) -> usize;
++    /// Only immutable geometry calculators opt in to exact-coordinate reuse.
++    fn reuse_safe(&self)->bool {false}
+ 
+     /// Returns the indices of the speakers this calculator maps to.
+     fn speaker_indices(&self) -> &[usize];
+diff --git a/src/renderer/olr/interpret_object_metadata.rs b/src/renderer/olr/interpret_object_metadata.rs
+index 76496c0..2ff60f0 100644
+--- a/src/renderer/olr/interpret_object_metadata.rs
++++ b/src/renderer/olr/interpret_object_metadata.rs
+@@ -47,21 +47,28 @@ pub struct InterpretObjectMetadata {
+     last_block_gains_from: Option<GainsBuffer>,
+     last_block_gains_to: Option<GainsBuffer>,
+     gains_scratch: GainsBuffer,
++    reuse_pool:Option<GainReusePool>,
+ }
+ 
+ impl InterpretObjectMetadata {
+     /// Creates a new `InterpretObjectMetadata` instance.
+     pub fn new(gain_calculator: Arc<dyn GainCalculator>) -> Self {
+         let n = gain_calculator.gains_count();
++        let reuse_pool=gain_calculator.reuse_safe().then(||GainReusePool::new(n));
+         InterpretObjectMetadata {
+             gain_calculator,
+             last_block_end: u64::MAX,
+             last_block_gains_from: None,
+             last_block_gains_to: None,
+             gains_scratch: GainsBuffer::new(n),
++            reuse_pool,
+         }
+     }
+ 
++    pub(crate) fn reset(&mut self) {
++        *self = Self::new(Arc::clone(&self.gain_calculator));
++    }
++
+     /// Processes object metadata for a given object and time range, returning a processing block.
+     pub fn process(
+         &mut self,
+@@ -88,12 +95,17 @@ impl InterpretObjectMetadata {
+             self.last_block_gains_from = None;
+         }
+ 
++        let key=[coordinate.azimuth().value().to_bits(),coordinate.elevation().value().to_bits(),coordinate.distance().value().to_bits()];
++        let cached=self.reuse_pool.as_mut().and_then(|pool|pool.lookup(key));
++        if let Some(gains)=cached {self.gains_scratch=gains;} else {
+         self.gain_calculator.calculate_gains(
+             coordinate.azimuth(),
+             coordinate.elevation(),
+             coordinate.distance(),
+             self.gains_scratch.as_slice_mut(),
+         )?;
++            if let Some(pool)=&mut self.reuse_pool {pool.insert(key,self.gains_scratch);}
++        }
+ 
+         self.last_block_end = end_sample;
+         self.last_block_gains_to = Some(self.gains_scratch);
+@@ -165,3 +177,33 @@ mod test {
+         expect_eq!(block.last_sample(), 16);
+     }
+ }
++
++const REUSE_CAPACITY:usize=4;
++const REUSE_WINDOW:u8=64;
++#[derive(Debug,Clone,Copy)]
++struct GainReuseEntry {key:Option<[u32;3]>,gains:GainsBuffer,score:u8}
++#[derive(Debug)]
++struct GainReusePool {entries:[GainReuseEntry;REUSE_CAPACITY],requests:u8,hits:u8}
++impl GainReusePool {
++ fn new(n:usize)->Self {Self{entries:[GainReuseEntry{key:None,gains:GainsBuffer::new(n),score:0};REUSE_CAPACITY],requests:0,hits:0}}
++ fn lookup(&mut self,key:[u32;3])->Option<GainsBuffer>{
++  let mut found=None;
++  for e in &mut self.entries {if e.key==Some(key){e.score=e.score.saturating_add(2);self.hits+=1;found=Some(e.gains);break;}}
++  self.requests+=1;
++  if self.requests==REUSE_WINDOW {
++   for e in &mut self.entries {e.score>>=1;}
++   // At most one hit-rate-driven eviction, with four bounded comparisons.
++   if self.hits<REUSE_WINDOW/8 {
++    if let Some(index)=(0..REUSE_CAPACITY).filter(|i|self.entries[*i].key.is_some()).min_by_key(|i|self.entries[*i].score){
++     self.entries[index].key=None;self.entries[index].score=0;
++    }
++   }
++   self.requests=0;self.hits=0;
++  }
++  found
++ }
++ fn insert(&mut self,key:[u32;3],gains:GainsBuffer){
++  let index=self.entries.iter().position(|e|e.key.is_none()).unwrap_or_else(||(0..REUSE_CAPACITY).min_by_key(|i|self.entries[*i].score).unwrap());
++  self.entries[index]=GainReuseEntry{key:Some(key),gains,score:1};
++ }
++}
+diff --git a/src/renderer/olr/object_renderer.rs b/src/renderer/olr/object_renderer.rs
+index ddf8632..f35a6ac 100644
+--- a/src/renderer/olr/object_renderer.rs
++++ b/src/renderer/olr/object_renderer.rs
+@@ -17,16 +17,26 @@
+ //! gains (via VBAP or DBAP), and rendering them to a target loudspeaker layout.
+ 
+ use crate::common::definitions::{
+-    AudioElementConfig, OarError, ObjectPosition, OutputLayout, PlanarBufferMut, PlanarBufferRef,
++    AudioElementConfig, OarError, ObjectPosition, OutputLayout, PlanarBufferMut, PlanarBufferRef, PolarCoordinate,
+     SampleRate, Samples,
+ };
+ use crate::renderer::audio_renderer_api::AudioRenderer;
+ use crate::renderer::olr::block_processing_channel::BlockProcessingChannel;
+ use crate::renderer::olr::custom_gain_calculator::CustomGainCalculator;
+ use crate::renderer::olr::gain_calculator::GainCalculator;
++use crate::renderer::olr::processing_block::GainOutput;
+ use std::collections::HashMap;
+ use std::sync::Arc;
+ 
++impl GainOutput for PlanarBufferMut<'_, '_> {
++    fn has_shape(&self, channels: usize, samples: usize) -> bool {
++        self.num_channels() >= channels && self.num_samples() == samples
++    }
++    fn channel_slice(&mut self, channel: usize, _samples: usize) -> &mut [f32] {
++        self.channel_mut(channel)
++    }
++}
++
+ #[derive(Debug)]
+ struct ObjectElement {
+     channels: Vec<BlockProcessingChannel>,
+@@ -45,6 +55,7 @@ pub struct ObjectRenderer {
+     sample_rate: SampleRate,
+     elements: HashMap<u32, ObjectElement>,
+     channel_out_buffer: Vec<f32>,
++    max_block_samples: usize,
+     sorted_element_ids: Vec<u32>,
+     output_channels: usize,
+     offset: u64,
+@@ -62,14 +73,28 @@ impl ObjectRenderer {
+         max_block_size: Samples,
+     ) -> Result<Self, OarError> {
+         let gain_calculator = Arc::new(CustomGainCalculator::new(output_layout)?);
++        Self::with_gain_calculator(output_layout, sample_rate, max_block_size, gain_calculator)
++    }
++
++    /// Reuses immutable geometry from the owning rendering context only.
++    pub(crate) fn with_gain_calculator(
++        output_layout: OutputLayout,
++        sample_rate: SampleRate,
++        max_block_size: Samples,
++        gain_calculator: Arc<dyn GainCalculator>,
++    ) -> Result<Self, OarError> {
+         let output_channels = gain_calculator.gains_count();
+-        let initial_scratch_size = output_channels * max_block_size.value() as usize;
++        if output_channels != output_layout.channels().get() {
++            return Err(OarError::InvalidParameter);
++        }
++        let max_block_samples = max_block_size.value() as usize;
+         Ok(ObjectRenderer {
+             output_layout,
+             gain_calculator,
+             sample_rate,
+             elements: HashMap::new(),
+-            channel_out_buffer: vec![0.0; initial_scratch_size],
++            channel_out_buffer: Vec::new(),
++            max_block_samples,
+             sorted_element_ids: Vec::new(),
+             output_channels,
+             offset: 0,
+@@ -81,6 +106,16 @@ impl AudioRenderer for ObjectRenderer {
+     fn add_element(&mut self, id: u32, config: &AudioElementConfig) -> Result<(), OarError> {
+         match config {
+             AudioElementConfig::ObjectBased(cfg) => {
++                // Reserve only for multi-object accumulation, before rendering.
++                // One scratch block is reused across objects in the original order.
++                let other_objects: usize = self.elements.iter()
++                    .filter(|(existing, _)| **existing != id)
++                    .map(|(_, element)| element.channels.len()).sum();
++                let required_size = self.output_channels * self.max_block_samples;
++                if other_objects + cfg.num_objects().get() > 1
++                    && self.channel_out_buffer.len() < required_size {
++                    self.channel_out_buffer.resize(required_size, 0.0);
++                }
+                 let mut channels = Vec::new();
+                 for _ in 0..cfg.num_objects().get() {
+                     channels.push(BlockProcessingChannel::new(Arc::clone(&self.gain_calculator)));
+@@ -96,6 +131,28 @@ impl AudioRenderer for ObjectRenderer {
+         }
+     }
+ 
++    fn reset_olr_element(&mut self, id: u32) -> Result<(), OarError> {
++        if self.elements.len() != 1 {
++            return Err(OarError::NotSupported);
++        }
++        let element = self.elements.get_mut(&id).ok_or(OarError::InvalidParameter)?;
++        for channel in &mut element.channels {
++            channel.reset();
++        }
++        self.offset = 0;
++        Ok(())
++    }
++
++    fn update_single_olr_position(
++        &mut self, id: u32, position: PolarCoordinate, duration: Samples,
++    ) -> Result<(), OarError> {
++        let element = self.elements.get_mut(&id).ok_or(OarError::InvalidParameter)?;
++        if element.channels.len() != 1 {
++            return Err(OarError::NotSupported);
++        }
++        element.channels[0].add_metadata(self.sample_rate, position, duration)
++    }
++
+     fn update_element_positions(
+         &mut self,
+         id: u32,
+@@ -136,11 +193,17 @@ impl AudioRenderer for ObjectRenderer {
+             return Err(OarError::InvalidParameter);
+         }
+ 
+-        if self.channel_out_buffer.len() < required_size {
++        if samples > self.max_block_samples {
+             return Err(OarError::InvalidParameter);
+         }
+ 
+         output.fill(0.0);
++        // Direct single-object accumulation keeps all processing-block additions
++        // in their original order. Two or more objects retain isolated sums.
++        let single_object = inputs.num_channels() == 1;
++        if !single_object && self.channel_out_buffer.len() < required_size {
++            return Err(OarError::InvalidParameter);
++        }
+ 
+         let mut global_chan_idx = 0;
+         for &id in &self.sorted_element_ids {
+@@ -153,23 +216,24 @@ impl AudioRenderer for ObjectRenderer {
+                     let input_channel = inputs.channel(global_chan_idx);
+                     global_chan_idx += 1;
+ 
+-                    // TODO(b/525080422): Optimize by passing the output buffer directly into
+-                    // process to avoid scratch buffer overhead and accumulation copy loop.
+-                    self.channel_out_buffer[..required_size].fill(0.0);
+-                    element.channels[local_idx].process(
+-                        self.sample_rate,
+-                        self.offset,
+-                        input_channel,
+-                        &mut self.channel_out_buffer[..required_size],
+-                    )?;
+-
+-                    // Accumulate into output channel-by-channel
+-                    for out_idx in 0..self.output_channels {
+-                        let out_slice = output.channel_mut(out_idx);
+-                        let temp_start = out_idx * samples;
+-                        let temp_slice = &self.channel_out_buffer[temp_start..temp_start + samples];
+-                        for (dst, src) in out_slice.iter_mut().zip(temp_slice.iter()) {
+-                            *dst += src;
++                    if single_object {
++                        element.channels[local_idx].process_output(
++                            self.sample_rate, self.offset, input_channel, output,
++                        )?;
++                    } else {
++                        self.channel_out_buffer[..required_size].fill(0.0);
++                        element.channels[local_idx].process(
++                            self.sample_rate,
++                            self.offset,
++                            input_channel,
++                            &mut self.channel_out_buffer[..required_size],
++                        )?;
++                        for out_idx in 0..self.output_channels {
++                            let start = out_idx * samples;
++                            for (dst, src) in output.channel_mut(out_idx).iter_mut()
++                                .zip(self.channel_out_buffer[start..start + samples].iter()) {
++                                *dst += src;
++                            }
+                         }
+                     }
+                 }
+diff --git a/src/renderer/olr/processing_block.rs b/src/renderer/olr/processing_block.rs
+index 8f71696..4f50e32 100644
+--- a/src/renderer/olr/processing_block.rs
++++ b/src/renderer/olr/processing_block.rs
+@@ -14,6 +14,18 @@
+ 
+ use crate::common::definitions::{OarError, MAX_OUTPUT_CHANNEL_COUNT};
+ 
++/// Safe output abstraction; channel slices need not be contiguous in memory.
++pub(crate) trait GainOutput {
++    fn has_shape(&self, channels: usize, samples: usize) -> bool;
++    fn channel_slice(&mut self, channel: usize, samples: usize) -> &mut [f32];
++}
++impl GainOutput for [f32] {
++    fn has_shape(&self, channels: usize, samples: usize) -> bool { self.len() >= channels * samples }
++    fn channel_slice(&mut self, channel: usize, samples: usize) -> &mut [f32] {
++        &mut self[channel * samples..(channel + 1) * samples]
++    }
++}
++
+ fn get_overlap(
+     first_sample: u64,
+     last_sample: u64,
+@@ -59,6 +71,17 @@ impl FixedGainsBlock {
+         num_samples: usize,
+         channels: usize,
+         output: &mut [f32],
++    ) -> Result<(), OarError> {
++        self.process_output(start_sample, input, num_samples, channels, output)
++    }
++
++    pub(crate) fn process_output<O: GainOutput + ?Sized>(
++        &mut self,
++        start_sample: u64,
++        input: &[f32],
++        num_samples: usize,
++        channels: usize,
++        output: &mut O,
+     ) -> Result<(), OarError> {
+         let (samples_range, _) =
+             match get_overlap(self.first_sample, self.last_sample, start_sample, num_samples) {
+@@ -66,15 +89,23 @@ impl FixedGainsBlock {
+                 None => return Ok(()),
+             };
+ 
+-        if output.len() < self.num_gains * num_samples {
++        if !output.has_shape(self.num_gains, num_samples) {
+             return Err(OarError::InvalidParameter);
+         }
+ 
++        if silent_overlap(input,num_samples,channels,&samples_range) {return Ok(());}
++
+         for i in 0..self.num_gains {
++            let out = output.channel_slice(i, num_samples);
+             let gain = self.gains[i];
++            // NSP validates finite PCM before rendering. Exact zero contributes
++            // no signal; retain every nonzero coefficient, including subnormals.
++            if gain == 0.0 {
++                continue;
++            }
+             for j in samples_range.clone() {
+                 for k in 0..channels {
+-                    output[i * num_samples + j] += input[k * num_samples + j] * gain;
++                    out[j] += input[k * num_samples + j] * gain;
+                 }
+             }
+         }
+@@ -135,6 +166,17 @@ impl InterpGainsBlock {
+         num_samples: usize,
+         channels: usize,
+         output: &mut [f32],
++    ) -> Result<(), OarError> {
++        self.process_output(start_sample, input, num_samples, channels, output)
++    }
++
++    pub(crate) fn process_output<O: GainOutput + ?Sized>(
++        &mut self,
++        start_sample: u64,
++        input: &[f32],
++        num_samples: usize,
++        channels: usize,
++        output: &mut O,
+     ) -> Result<(), OarError> {
+         let (samples_range, states_range) =
+             match get_overlap(self.first_sample, self.last_sample, start_sample, num_samples) {
+@@ -142,23 +184,56 @@ impl InterpGainsBlock {
+                 None => return Ok(()),
+             };
+ 
+-        if output.len() < self.num_gains * num_samples {
++        if !output.has_shape(self.num_gains, num_samples) {
+             return Err(OarError::InvalidParameter);
+         }
+ 
++        if silent_overlap(input,num_samples,channels,&samples_range) {return Ok(());}
++
+         let transition_len = (self.last_sample - self.first_sample) as f32;
+         let inv_transition_len = if transition_len > 0.0 { 1.0 / transition_len } else { 0.0 };
+ 
+-        // TODO(b/525080422): Optimize by merging the has_start and has_end loops when both are true
++        // Preserve the two original per-sample sums, including their order.
++        if self.has_start && self.has_end {
++            for i in 0..self.num_gains {
++            let out = output.channel_slice(i, num_samples);
++                let g_start=self.gains_start[i];let g_end=self.gains_end[i];
++                if g_start==0.0 && g_end==0.0 {continue;}
++                if g_start!=0.0 && g_end!=0.0 {
++                    for (m,j) in (states_range.start..).zip(samples_range.clone()) {
++                        let interp_val=m as f32*inv_transition_len;let weight=1.0-interp_val;
++                        for k in 0..channels {out[j]+=input[k*num_samples+j]*weight*g_start;}
++                        for k in 0..channels {out[j]+=input[k*num_samples+j]*interp_val*g_end;}
++                    }
++                } else if g_start!=0.0 {
++                    for (m,j) in (states_range.start..).zip(samples_range.clone()) {
++                        let weight=1.0-m as f32*inv_transition_len;
++                        for k in 0..channels {out[j]+=input[k*num_samples+j]*weight*g_start;}
++                    }
++                } else {
++                    for (m,j) in (states_range.start..).zip(samples_range.clone()) {
++                        let interp_val=m as f32*inv_transition_len;
++                        for k in 0..channels {out[j]+=input[k*num_samples+j]*interp_val*g_end;}
++                    }
++                }
++            }
++            return Ok(());
++        }
++
++        // Both-endpoint case handled above, single endpoints retain their original loops.
+         // to reduce loop overhead and redundant multiplication operations.
+         if self.has_start {
+             for i in 0..self.num_gains {
++            let out = output.channel_slice(i, num_samples);
+                 let g_start = self.gains_start[i];
++                if g_start == 0.0 {
++                    continue;
++                }
+                 for (m, j) in (states_range.start..).zip(samples_range.clone()) {
+                     let interp_val = m as f32 * inv_transition_len;
+                     let weight = 1.0 - interp_val;
+                     for k in 0..channels {
+-                        output[i * num_samples + j] +=
++                        out[j] +=
+                             input[k * num_samples + j] * weight * g_start;
+                     }
+                 }
+@@ -167,11 +242,15 @@ impl InterpGainsBlock {
+ 
+         if self.has_end {
+             for i in 0..self.num_gains {
++            let out = output.channel_slice(i, num_samples);
+                 let g_end = self.gains_end[i];
++                if g_end == 0.0 {
++                    continue;
++                }
+                 for (m, j) in (states_range.start..).zip(samples_range.clone()) {
+                     let interp_val = m as f32 * inv_transition_len;
+                     for k in 0..channels {
+-                        output[i * num_samples + j] +=
++                        out[j] +=
+                             input[k * num_samples + j] * interp_val * g_end;
+                     }
+                 }
+@@ -212,13 +291,24 @@ impl ProcessingBlockVariant {
+         num_samples: usize,
+         channels: usize,
+         output: &mut [f32],
++    ) -> Result<(), OarError> {
++        self.process_output(start_sample, input, num_samples, channels, output)
++    }
++
++    pub(crate) fn process_output<O: GainOutput + ?Sized>(
++        &mut self,
++        start_sample: u64,
++        input: &[f32],
++        num_samples: usize,
++        channels: usize,
++        output: &mut O,
+     ) -> Result<(), OarError> {
+         match self {
+             ProcessingBlockVariant::Fixed(b) => {
+-                b.process(start_sample, input, num_samples, channels, output)
++                b.process_output(start_sample, input, num_samples, channels, output)
+             }
+             ProcessingBlockVariant::Interp(b) => {
+-                b.process(start_sample, input, num_samples, channels, output)
++                b.process_output(start_sample, input, num_samples, channels, output)
+             }
+         }
+     }
+@@ -281,3 +371,10 @@ mod test {
+         expect_that!(output[4], near(0.4, EPSILON));
+     }
+ }
++
++// Exact zero only, checked on the contributing overlap after shape validation.
++// Metadata interpretation and queue/time advancement remain in the caller.
++fn silent_overlap(input:&[f32], samples:usize, channels:usize, range:&std::ops::Range<usize>)->bool {
++    if channels.checked_mul(samples).is_none_or(|n| n>input.len()) {return false;}
++    (0..channels).all(|c| input[c*samples+range.start..c*samples+range.end].iter().all(|v|*v==0.0))
++}
+diff --git a/src/renderer/roar_renderer.rs b/src/renderer/roar_renderer.rs
+index dd971ff..dc65ebc 100644
+--- a/src/renderer/roar_renderer.rs
++++ b/src/renderer/roar_renderer.rs
+@@ -30,7 +30,10 @@ use crate::renderer::gain_parameter::{generate_gain_multipliers, GainParameter,
+ use crate::renderer::obr::common::constants::MAX_SUPPORTED_NUM_INPUT_CHANNELS;
+ use crate::renderer::obr::renderer::ObrAudioRendererAdapter;
+ use crate::renderer::olr::object_renderer::ObjectRenderer;
++use crate::renderer::olr::custom_gain_calculator::CustomGainCalculator;
++use crate::renderer::olr::gain_calculator::GainCalculator;
+ use std::collections::HashMap;
++use std::sync::Arc;
+ 
+ const MAX_OUTPUT_CHANNELS: usize = 25;
+ 
+@@ -121,6 +124,7 @@ pub struct RoarRenderer {
+     gain_scratch_buf: Vec<f32>,
+     /// Interval in samples for processing object position metadata.
+     pub(crate) object_position_metadata_samples: Samples,
++    olr_geometry: Option<(OutputLayout, Arc<dyn GainCalculator>)>,
+ }
+ 
+ impl RoarRenderer {
+@@ -317,6 +321,7 @@ impl RoarRenderer {
+             group_gains: HashMap::new(),
+             gain_scratch_buf: vec![1.0f32; samples],
+             object_position_metadata_samples: config.samples_per_channel(),
++            olr_geometry: None,
+         })
+     }
+ 
+@@ -384,8 +389,30 @@ impl RoarRenderer {
+         Ok(new_id)
+     }
+ 
++    /// Prepare the fixed speaker geometry before the first captured packet.
++    /// Independent contexts own independent calculators; binaural routing is unchanged.
++    pub fn prepare_olr_geometry(&mut self) -> Result<(), OarError> {
++        if self.config.output_layout() == OutputLayout::Binaural {
++            return Err(OarError::NotSupported);
++        }
++        self.shared_olr_geometry(self.config.output_layout())?;
++        Ok(())
++    }
++
++    fn shared_olr_geometry(&mut self, layout: OutputLayout) -> Result<Arc<dyn GainCalculator>, OarError> {
++        if let Some((prepared_layout, calculator)) = &self.olr_geometry {
++            if *prepared_layout != layout {
++                return Err(OarError::InvalidParameter);
++            }
++            return Ok(Arc::clone(calculator));
++        }
++        let calculator: Arc<dyn GainCalculator> = Arc::new(CustomGainCalculator::new(layout)?);
++        self.olr_geometry = Some((layout, Arc::clone(&calculator)));
++        Ok(calculator)
++    }
++
+     fn instantiate_sub_renderer(
+-        &self,
++        &mut self,
+         id: u32,
+         config: &AudioElementConfig,
+         target_layout: OutputLayout,
+@@ -404,17 +431,19 @@ impl RoarRenderer {
+             AudioElementConfig::SceneBased(_) => {
+                 Box::new(EarRenderer::with_output_layout(target_layout))
+             }
+-            AudioElementConfig::ObjectBased(_obc) => Box::new(ObjectRenderer::new(
++            AudioElementConfig::ObjectBased(_obc) => Box::new(ObjectRenderer::with_gain_calculator(
+                 target_layout,
+                 self.config.sample_rate(),
+                 self.config.samples_per_channel(),
++                self.shared_olr_geometry(target_layout)?,
+             )?),
+         };
+ 
+-        let router = AudioElementsRenderer::with_backend(
++        let router = AudioElementsRenderer::with_fixed_block_backend(
+             sub,
+             target_layout.channels(),
+-            Some(self.object_position_metadata_samples),
++            self.config.samples_per_channel(),
++            self.object_position_metadata_samples,
+         );
+ 
+         let mut active_sub: Box<dyn AudioRenderer> = Box::new(router);
+@@ -442,6 +471,14 @@ impl RoarRenderer {
+             return Err(OarError::Busy);
+         }
+ 
++        // Probe-only batch elements must never reach OBR's fixed two-position state.
++        #[cfg(feature = "nsp-olr-batch-experiment")]
++        if self.config.output_layout() == OutputLayout::Binaural
++            && matches!(config, AudioElementConfig::ObjectBased(c) if c.num_objects().get() > 2)
++        {
++            return Err(OarError::NotSupported);
++        }
++
+         match self.individual_target_layout_for_config(config) {
+             None => {
+                 let renderers = self.group_renderers.entry(group_id).or_default();
+@@ -512,6 +549,42 @@ impl RoarRenderer {
+         &mut self,
+         inputs: &[(u32, PlanarBufferRef<'_, '_>)],
+         output: &mut PlanarBufferMut<'_, '_>,
++    ) -> Result<(), OarError> {
++        self.render_internal(inputs, output, false)
++    }
++
++    /// NSP's independently prepared OLR elements may omit a block. Omitted
++    /// elements retain their local metadata clock and cached gains.
++    pub fn render_olr_sparse(
++        &mut self,
++        inputs: &[(u32, PlanarBufferRef<'_, '_>)],
++        output: &mut PlanarBufferMut<'_, '_>,
++    ) -> Result<(), OarError> {
++        if self.config.output_layout() == OutputLayout::Binaural {
++            return Err(OarError::NotSupported);
++        }
++        self.render_internal(inputs, output, true)
++    }
++
++    /// Reset a preallocated individual object after a source generation change.
++    pub fn reset_olr_element(&mut self, id: u32) -> Result<(), OarError> {
++        if self.config.output_layout() == OutputLayout::Binaural
++            || !matches!(self.active_elements.get(&id), Some(AudioElementConfig::ObjectBased(_)))
++        {
++            return Err(OarError::NotSupported);
++        }
++        let group = self.element_to_group.get(&id).ok_or(OarError::InvalidParameter)?;
++        let renderer = self.group_renderers.get_mut(group)
++            .and_then(|renderers| renderers.iter_mut().find(|r| r.element_id == Some(id)))
++            .ok_or(OarError::InvalidParameter)?;
++        renderer.renderer.reset_olr_element(id)
++    }
++
++    fn render_internal(
++        &mut self,
++        inputs: &[(u32, PlanarBufferRef<'_, '_>)],
++        output: &mut PlanarBufferMut<'_, '_>,
++        sparse: bool,
+     ) -> Result<(), OarError> {
+         self.status = Status::Rendering;
+ 
+@@ -526,15 +599,25 @@ impl RoarRenderer {
+             return Err(OarError::InvalidParameter);
+         }
+ 
+-        // Validate that all active elements have inputs provided with correct channel count
++        // Sparse OLR input must still refer to an existing element exactly once.
++        if sparse {
++            for (index, (id, _)) in inputs.iter().enumerate() {
++                if !self.active_elements.contains_key(id)
++                    || inputs[..index].iter().any(|(previous, _)| previous == id)
++                {
++                    return Err(OarError::InvalidParameter);
++                }
++            }
++        }
++        // Validate the provided planar shapes before mutating render state.
+         for &id in &self.active_element_ids {
+             let config = self.active_elements.get(&id).ok_or(OarError::InvalidParameter)?;
+             let expected_chans = config.channels().get();
+-            let elem_input = inputs
+-                .iter()
+-                .find(|(eid, _)| *eid == id)
+-                .map(|&(_, data)| data)
+-                .ok_or(OarError::InvalidParameter)?;
++            let elem_input = inputs.iter().find(|(eid, _)| *eid == id).map(|&(_, data)| data);
++            let Some(elem_input) = elem_input else {
++                if sparse { continue; }
++                return Err(OarError::InvalidParameter);
++            };
+             if elem_input.num_channels() != expected_chans {
+                 return Err(OarError::InvalidParameter);
+             }
+@@ -550,6 +633,9 @@ impl RoarRenderer {
+             self.group_scratch.fill(0.0);
+ 
+             for active_rdr in renderers {
++                if sparse && active_rdr.element_id.is_some_and(|id| !inputs.iter().any(|(input_id, _)| *input_id == id)) {
++                    continue;
++                }
+                 self.renderer_scratch.fill(0.0);
+                 let mut scratch_slices_array: [&mut [f32]; MAX_OUTPUT_CHANNELS] =
+                     std::array::from_fn(|_| &mut [] as &mut [f32]);
+@@ -565,11 +651,11 @@ impl RoarRenderer {
+                 if let Some(elem_id) = active_rdr.element_id {
+                     // Individual renderer (restricted element in binaural output, or loudspeaker
+                     // output)
+-                    let elem_input = inputs
+-                        .iter()
+-                        .find(|(eid, _)| *eid == elem_id)
+-                        .map(|&(_, data)| data)
+-                        .ok_or(OarError::InvalidParameter)?;
++                    let elem_input = inputs.iter().find(|(eid, _)| *eid == elem_id).map(|&(_, data)| data);
++                    let Some(elem_input) = elem_input else {
++                        if sparse { continue; }
++                        return Err(OarError::InvalidParameter);
++                    };
+                     active_rdr.renderer.render(elem_input, &mut renderer_scratch_buf)?;
+                     if let Some(gains) = self.element_gains.get_mut(&elem_id) {
+                         for param in gains.values_mut() {

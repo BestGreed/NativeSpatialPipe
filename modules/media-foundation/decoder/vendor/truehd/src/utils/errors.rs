@@ -1,0 +1,750 @@
+/// Reports a failed conformance check to a [`DiagnosticSink`](crate::utils::diagnostic::DiagnosticSink).
+///
+/// At or below the sink's fail level the error is returned from the enclosing function,
+/// otherwise it is logged. Pass the bit reader as a fourth argument wherever the check
+/// holds one, so a collected diagnostic can name the bit it fired at.
+///
+/// `$err` is evaluated only where the error is used: returned, collected, or logged at
+/// a level a logger is listening to. Building one allocates, and a check that fires
+/// against a filtered level in a parser that is not collecting has nothing to build it
+/// for. A check that fires on every access unit — a stream declaring a peak data rate
+/// over the ceiling does — would otherwise allocate on every access unit of the stream,
+/// reporting nothing.
+#[macro_export]
+macro_rules! log_or_err {
+    (@at $state:expr, $level:expr, $err:expr, $bit:expr) => {{
+        let level: ::log::Level = $level;
+        let fatal = level <= $crate::utils::diagnostic::DiagnosticSink::fail_level(&*$state);
+        let collecting = $crate::utils::diagnostic::DiagnosticSink::is_collecting(&*$state);
+
+        if fatal || collecting || ::log::log_enabled!(level) {
+            let error = $err;
+
+            if fatal {
+                if collecting {
+                    $crate::utils::diagnostic::record(&mut *$state, level, &error, $bit);
+                }
+
+                return Err(error);
+            }
+
+            match level {
+                ::log::Level::Error => ::log::error!("{}", error),
+                ::log::Level::Warn => ::log::warn!("{}", error),
+                ::log::Level::Info => ::log::info!("{}", error),
+                ::log::Level::Debug => ::log::debug!("{}", error),
+                ::log::Level::Trace => ::log::trace!("{}", error),
+            }
+
+            if collecting {
+                $crate::utils::diagnostic::record_owned(&mut *$state, level, error, $bit);
+            }
+        }
+    }};
+
+    ($state:expr, $level:expr, $err:expr $(,)?) => {
+        $crate::log_or_err!(@at $state, $level, $err, ::core::option::Option::None)
+    };
+
+    ($state:expr, $level:expr, $err:expr, $reader:expr $(,)?) => {
+        $crate::log_or_err!(
+            @at $state,
+            $level,
+            $err,
+            $crate::utils::diagnostic::bit_position($reader)
+        )
+    };
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum DecodeError {
+    #[error("Positive saturation from the recorrelator: value = {0}")]
+    RecorrelatorPositiveSaturation(i64),
+
+    #[error("Negative saturation from the recorrelator: value = {0}")]
+    RecorrelatorNegativeSaturation(i64),
+
+    #[error("Filter B input exceeds 32-bit range: value = {0}")]
+    FilterBInputTooWide32(i64),
+
+    #[error("Filter B input exceeds 24-bit range: value = {0}")]
+    FilterBInputTooWide24(i64),
+
+    #[error("Invalid presentation index: {0}")]
+    InvalidPresentation(usize),
+
+    #[error("Outputs in substream {substream} use more than max_bits {max_bits} bits")]
+    OutputsExceedMaxBits { substream: usize, max_bits: u8 },
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ExtractError {
+    #[error("Access unit length {actual} bytes is shorter than its {minimum}-byte header")]
+    InvalidAccessUnitLength { actual: usize, minimum: usize },
+
+    #[error("Mismatch in substream count: found {found}, expected {expected}")]
+    SubstreamMismatch { found: usize, expected: usize },
+
+    #[error("Parity check failed for frame")]
+    ParityCheckFailed,
+
+    #[error("Insufficient buffer data for frame extraction")]
+    InsufficientData,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ParseError {
+    #[error("No substream context available")]
+    NoSubstream,
+
+    #[error("Invalid substream context index ({0} > {1})")]
+    InvalidSubstreamIndex(usize, usize),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum AccessUnitError {
+    #[error("Missing major sync at stream start")]
+    MissingInitialSync,
+
+    #[error("FBA stream major syncs must occur at intervals not exceeding 128 access units")]
+    FbaSyncTooFar,
+
+    #[error("FBB stream major syncs must occur at intervals not exceeding 32 access units")]
+    FbbSyncTooFar,
+
+    #[error(
+        "hires_output_timing bit must match in all substreams. Mismatch on substreams {first} and {second}"
+    )]
+    HiresOutputTimingMismatch { first: usize, second: usize },
+
+    #[error("Restart gap must be 1 or >= 8. Read {0}")]
+    RestartGapInvalid(usize),
+
+    #[error("No substream")]
+    NoSubstream,
+
+    #[error("mlp_sync must consist of an integral number of bytes")]
+    MisalignedSync,
+
+    #[error("mlp_sync failed the nibble check. Calculated {0:#X}")]
+    NibbleParity(u8),
+
+    #[error("Timing too short: input_timing[n]-input_timing[n-1] = {0} - {1} < {2}")]
+    TimingTooShort(usize, usize, usize),
+
+    #[error("Timing too short after jump: input_timing[n]-input_timing[n-1] < samples_per_au / 4")]
+    TimingTooShortAfterJump,
+
+    #[error("Timing shorter than previous duration")]
+    TimingShorterThanPrevious,
+
+    #[error("Timing shorter than previous duration after jump")]
+    TimingShorterThanPreviousAfterJump,
+
+    #[error("peak_data_rate implies a data rate above the format maximum: {rate} > {max}")]
+    PeakDataRateTooHigh { rate: usize, max: usize },
+
+    #[error("Data rate exceeds peak_data_rate")]
+    DataRateExceeded,
+
+    #[error("Data rate exceeds peak_data_rate after jump")]
+    DataRateExceededAfterJump,
+
+    #[error("input_timing[n]-input_timing[n-1] > samples_per_75ms")]
+    TimingTooLong,
+
+    #[error("input_timing[n]-input_timing[n-1] > samples_per_75ms after jump")]
+    TimingTooLongAfterJump,
+
+    #[error("Access unit too long: {0} > {1}")]
+    AccessUnitTooLong(usize, usize),
+
+    #[error("Stream is flagged as fixed rate, but variable rate detected: {0} != {1}")]
+    FixedRateMismatch(usize, usize),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum BlockError {
+    #[error("block_size must be between 8 and 160. Read {0}")]
+    InvalidBlockSizeRange(usize),
+
+    #[error("block_size must not exceed samples_per_au = {max}, got {actual}")]
+    BlockSizeExceedsAU { max: usize, actual: usize },
+
+    #[error("output_shift[{index}] = {value} exceeds max_shift {max}, substream {substream}")]
+    OutputShiftTooLarge {
+        index: usize,
+        value: i8,
+        max: i8,
+        substream: usize,
+    },
+
+    #[error("block_data_bits must be <= 16000. Read {0}")]
+    BlockDataBitsTooLarge(u16),
+
+    #[error("FIFO {substream} latency must be constant when bit 15 of flags is set")]
+    LatencyInconsistent { substream: usize },
+
+    #[error("duration[n] > latency[n] ({duration} > {latency})")]
+    DurationExceedsLatency { duration: usize, latency: usize },
+
+    #[error("latency[n] > samples_per_75ms ({latency} > {samples})")]
+    LatencyTooHigh { latency: usize, samples: u32 },
+
+    #[error("latency[n] < samples_per_au ({latency} < {au})")]
+    LatencyTooLow { latency: usize, au: usize },
+
+    #[error(
+        "substream size underflow for substream {substream}: end_ptr={end_ptr}, start_ptr={start_ptr}"
+    )]
+    SubstreamSizeUnderflow {
+        substream: usize,
+        end_ptr: u16,
+        start_ptr: u16,
+    },
+
+    #[error("huff_lsbs[{channel}] = {actual} exceeds max_lsbs {max}")]
+    HuffLsbsTooLarge {
+        channel: usize,
+        actual: usize,
+        max: usize,
+    },
+
+    #[error("quantiser_step_size must not exceed huff_lsbs")]
+    QuantiserStepTooLarge,
+
+    #[error("ninth bit of huffman msbs must be 1")]
+    HuffmanNinthBitMissing,
+
+    #[error("Positive saturation from huffman decode")]
+    HuffmanPositiveSaturation,
+
+    #[error("Negative saturation from huffman decode")]
+    HuffmanNegativeSaturation,
+
+    #[error("A huffman-encoded sample must not use more than 29 bits")]
+    HuffmanSampleTooLong,
+
+    #[error("block_data bit count mismatch: expected {expected}, got {actual}")]
+    BlockDataBitCountMismatch { expected: u16, actual: u64 },
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ChannelError {
+    #[error("Total filter order for Filters A and B must be <= 8. Got {a} + {b}")]
+    FilterOrderTooHigh { a: u8, b: u8 },
+
+    #[error("Mismatched coeff_Q for Filters A and B on channel {chan}: A = {a_q}, B = {b_q}")]
+    CoeffQMismatch { chan: usize, a_q: u8, b_q: u8 },
+
+    #[error("huff_lsbs[{chan}] must be <= {max}, got {actual}")]
+    HuffLsbsTooLarge { chan: usize, max: u32, actual: u32 },
+
+    #[error(
+        "drc_start_up_gain too large, drc_start_up_gain={start_up_gain} (linear), \
+         drc_update_gain[{index}]={update_gain} (linear)"
+    )]
+    DrcStartUpGainTooLarge {
+        index: usize,
+        start_up_gain: f64,
+        update_gain: f64,
+    },
+
+    #[error(
+        "heavy_drc_start_up_gain too large, heavy_drc_start_up_gain={start_up_gain} (linear), \
+         heavy_drc_update_gain[{index}]={update_gain} (linear)"
+    )]
+    HeavyDrcStartUpGainTooLarge {
+        index: usize,
+        start_up_gain: f64,
+        update_gain: f64,
+    },
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum ExtraDataError {
+    #[error("EXTRA_DATA does not begin on a byte boundary")]
+    MisalignedExtraDataStart,
+
+    #[error("EXTRA_DATA should be all zeros")]
+    PaddingNotZero,
+
+    #[error("extra_data_length check nibble failed. Calculated {0:#X}")]
+    LengthParityFailed(u8),
+
+    #[error(
+        "extra_data_length exceeds remaining bits in AU. extra_data_length = {length}, only {remaining} bits remain"
+    )]
+    ExtraDataTooLong { length: u16, remaining: usize },
+
+    #[error(
+        "evo_frame_byte_length exceeds extra_data_length capacity. evo_frame_byte_length = {evo_len}, extra_data_length = {extra_len}"
+    )]
+    EvoFrameTooLong { evo_len: u16, extra_len: u16 },
+
+    #[error("extra_data_length leaves no room for an evo_frame(). extra_data_length = {extra_len}")]
+    EvoFrameNoRoom { extra_len: u16 },
+
+    #[error("evo_frame() in extra_data does not begin on a byte boundary")]
+    EvoFrameMisaligned,
+
+    #[error(
+        "evo_frame() padding bits should be all zeros. Please submit a sample if you see this."
+    )]
+    EvoFramePaddingNotZero,
+
+    #[error(
+        "extra_data_parity check failed on evolution payload. Expected {expected:#X}, Read {actual:#X}"
+    )]
+    ExtraDataParityMismatch { expected: u8, actual: u8 },
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum FilterError {
+    #[error("Filter A must have order <= 8. Got {0}")]
+    FilterAOrderTooHigh(u8),
+
+    #[error("Filter B must have order <= 4. Got {0}")]
+    FilterBOrderTooHigh(u8),
+
+    #[error("coeff_Q must be >= 8 and <= 15. Got {0}")]
+    InvalidCoeffQ(u8),
+
+    #[error("coeff_bits must be between 1 and 16. Got {0}")]
+    InvalidCoeffBits(u8),
+
+    #[error("coeff_shift must be <= 15. Got {0}")]
+    InvalidCoeffShift(u8),
+
+    #[error("coeff_bits + coeff_shift must be <= 16. Got {0}")]
+    TotalCoeffBitsTooLarge(u8),
+
+    #[error("coeff cannot take value -32768")]
+    InvalidCoeffValue,
+
+    #[error("Filter A cannot use new filter states (new_states must be false)")]
+    FilterANewStatesNotAllowed,
+
+    #[error("state must be within 24-bit range, got {0:#08X}")]
+    FilterStateOutOfRange(i32),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum MatrixError {
+    #[error("matrix_ch[{index}] must be <= {max} (max_matrix_chan). Read {actual}")]
+    MatrixChannelTooHigh {
+        index: usize,
+        max: usize,
+        actual: u8,
+    },
+
+    #[error("frac_bits must be <= 14. Read {0}")]
+    FracBitsTooHigh(u8),
+
+    #[error(
+        "Cannot use lsb_bypass in substream 0 when substream_info = {info:#02X} or sampling frequency is 192kHz or 176.4kHz"
+    )]
+    InvalidLsbBypass { info: u8 },
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum RestartHeaderError {
+    #[error("restart_sync_word must be 0x31EA, 0x31EB or 0x31EC. Read {0:#06X}")]
+    InvalidRestartSyncWord(u16),
+
+    #[error(
+        "output_timing must match across all substreams. \
+        Substream {substream} read {read}, substream {reference} read {expected}"
+    )]
+    OutputTimingMismatch {
+        substream: usize,
+        read: u16,
+        reference: usize,
+        expected: u16,
+    },
+
+    #[error("output_timing failure after jump: Read {read}, expected {expected}")]
+    OutputTimingAfterJump { read: usize, expected: usize },
+
+    #[error("Invalid output_timing. Read {read}, expected {expected}")]
+    InvalidOutputTiming { read: usize, expected: usize },
+
+    #[error(
+        "Invalid seamless-branch timing interval (division by zero): samples_per_au={samples_per_au}, prev_advance={prev_advance}, advance={advance}"
+    )]
+    ZeroInputTimingInterval {
+        samples_per_au: usize,
+        prev_advance: usize,
+        advance: usize,
+    },
+
+    #[error("Invalid seamless branch")]
+    InvalidSeamlessBranch,
+
+    #[error(
+        "advance[n] > advance[n-1] + 3*samples_per_au/4 ({advance} > {prev_advance} + {slack})"
+    )]
+    BranchAdvanceTooLarge {
+        advance: usize,
+        prev_advance: usize,
+        slack: usize,
+    },
+
+    #[error(
+        "advance[n] > advance[n-1] + samples_per_au - duration[n-1] \
+        ({advance} > {prev_advance} + {samples_per_au} - {prev_fifo_duration})"
+    )]
+    BranchAdvanceExceedsBuffer {
+        advance: usize,
+        prev_advance: usize,
+        samples_per_au: usize,
+        prev_fifo_duration: usize,
+    },
+
+    #[error(
+        "advance[n] > samples_per_75ms - samples_per_au ({advance} > {limit_75ms} - {samples_per_au})"
+    )]
+    BranchAdvanceExceeds75ms {
+        advance: usize,
+        limit_75ms: usize,
+        samples_per_au: usize,
+    },
+
+    #[error("Data rate exceeds peak_data_rate after adjusting timing for the jump")]
+    BranchDataRateExceeded,
+
+    #[error("Substream 1 must use sync word 0x31EB unless it is last in 6ch presentation")]
+    InvalidSyncBForSubstream1,
+
+    #[error("Substream 0 must use sync word 0x31EA. Got 0x31EB")]
+    InvalidSyncBForSubstream0,
+
+    #[error("Sync word 0x31EC only allowed for substream 3. Got {0}")]
+    InvalidSyncC(u16),
+
+    #[error(
+        "Second occurrence of max_bits does not match first. First: {first:#02X}, Second: {second:#02X}"
+    )]
+    MaxBitsMismatch { first: u8, second: u8 },
+
+    #[error("Channel assignment ch_assign[{index}] = {value} exceeds max_matrix_chan {max}")]
+    ChannelAssignTooHigh { index: usize, value: u8, max: u8 },
+
+    #[error(
+        "In substream 0, ch_assign[{index}] = {value} must equal index when sampling rate is >= 176.4kHz"
+    )]
+    ChannelAssignMisordered { index: usize, value: u8 },
+
+    #[error("ch_assign must be a permutation of 0..{0}")]
+    ChannelAssignDuplicate(u8),
+
+    #[error("CRC mismatch in restart_header. Calculated {calculated:#02X}, Read {read:#02X}")]
+    RestartHeaderCrcMismatch { calculated: u8, read: u8 },
+
+    #[error("heavy_drc_present must be false in FBB streams")]
+    HeavyDrcPresentInFbb,
+
+    #[error("Invalid hires_output_timing field starting in au {au}, {reason}")]
+    InvalidHiresOutputTiming { au: usize, reason: &'static str },
+
+    #[error(
+        "Invalid sequence of hires_output_timing fields: {timing} starting in au {au} does not follow {prev_timing} starting in au {prev_au}"
+    )]
+    InvalidHiresOutputTimingSequence {
+        timing: usize,
+        au: usize,
+        prev_timing: usize,
+        prev_au: usize,
+    },
+
+    #[error(
+        "heavy_drc_time_update = {heavy_drc_time_update}, but heavy_drc_count = {heavy_drc_count}"
+    )]
+    HeavyDrcTimeUpdateExceeded {
+        heavy_drc_time_update: u8,
+        heavy_drc_count: usize,
+    },
+
+    #[error("Stream is invalid.")]
+    InvalidStream,
+
+    #[error(
+        "lossless_check failed for substream {substream}. Calculated {calculated:#02X}, Read {read:#02X}"
+    )]
+    LosslessCheckMismatch {
+        substream: usize,
+        calculated: i32,
+        read: u8,
+    },
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum SubstreamError {
+    #[error("extra_substream_word must be false in FBB streams")]
+    InvalidExtraSubstreamWordFbb,
+
+    #[error("restart_nonexistent must be {expected} in access_unit with{suffix} major_sync_info")]
+    InvalidRestartNonexistent { expected: bool, suffix: String },
+
+    #[error("Too many blocks in the substream segment. Got {0}")]
+    TooManyBlocks(usize),
+
+    #[error(
+        "Incorrect number of samples decoded for substream {substream}. \
+        Decoded {decoded}, should have decoded {expected}"
+    )]
+    SampleCountMismatch {
+        substream: usize,
+        decoded: usize,
+        expected: usize,
+    },
+
+    #[error("drc_time_update = {drc_time_update}, but drc_count = {drc_count}")]
+    DrcTimeUpdateExceeded {
+        drc_time_update: u8,
+        drc_count: usize,
+    },
+
+    #[error("Termination word must be 0x348D3. Read {0:#X}")]
+    InvalidTerminationWord(u32),
+
+    #[error("terminator_b must be 0x1234 for substream {substream}. Read {read:#06X}")]
+    InvalidTerminatorB { substream: usize, read: u16 },
+
+    #[error(
+        "Too many zero samples to complete the access unit for substream {substream}. Read {zero_samples}"
+    )]
+    TooManyZeroSamples { substream: usize, zero_samples: u16 },
+
+    #[error("substream_segment for substream {0} does not end on an even byte boundary")]
+    UnalignedSegmentEnd(usize),
+
+    #[error(
+        "substream_end address does not match substream_end_ptr for substream {substream}. Read {read:#03X}, expected {expected:#03X}"
+    )]
+    SubstreamEndMismatch {
+        substream: usize,
+        read: u64,
+        expected: u64,
+    },
+
+    #[error(
+        "substream size underflow for substream {substream}: end_pos={end_pos}, current_pos={current_pos}"
+    )]
+    SubstreamSizeUnderflow {
+        substream: usize,
+        end_pos: u64,
+        current_pos: u64,
+    },
+
+    #[error(
+        "substream length underflow for substream {substream}: current_pos={current_pos}, start_pos={start_pos}"
+    )]
+    SubstreamLengthUnderflow {
+        substream: usize,
+        current_pos: u64,
+        start_pos: u64,
+    },
+
+    #[error(
+        "Parity check failed on substream_segment for substream {substream}. Calculated {calculated:#X}, Read {read:#X}"
+    )]
+    ParityMismatch {
+        substream: usize,
+        calculated: u8,
+        read: u8,
+    },
+
+    #[error(
+        "CRC failed on substream_segment for substream {substream}. Calculated {calculated:#X}, Read {read:#X}"
+    )]
+    CrcMismatch {
+        substream: usize,
+        calculated: u8,
+        read: u8,
+    },
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum SyncError {
+    #[error("Invalid format_sync, Read {0:#08X}")]
+    InvalidFormatSync(u32),
+
+    #[error("Invalid format_info: audio_sampling_frequency_{index}. Read {value:#01X}")]
+    InvalidAudioSamplingFreq { index: u8, value: u8 },
+
+    #[error("Invalid signature in major_sync_info. Read {0:#04X}, expected 0xB752")]
+    InvalidMajorSyncSignature(u16),
+
+    #[error("Reserved bits in flags should be 0. Read {0:#04X}")]
+    ReservedFlagsNonZero(u16),
+
+    #[error(
+        "Bit 14 of flags marks the syntax: it must be clear in an FBA stream and set in an \
+        FBB one. Read {0:#04X}"
+    )]
+    InvalidFlagsSyntaxMarker(u16),
+
+    #[error(
+        "Flags must be constant throughout the stream. Read {read:#04X}, expected {expected:#04X}"
+    )]
+    FlagsMismatch { read: u16, expected: u16 },
+
+    #[error(
+        "peak_data_rate must be constant throughout the stream. Read {read}, expected {expected}"
+    )]
+    PeakDataRateMismatch { read: u16, expected: usize },
+
+    #[error("substreams must be constant throughout the stream. Read {read}, expected {expected}")]
+    SubstreamCountMismatch { read: usize, expected: usize },
+
+    #[error("Invalid major_sync_info, CRC failed. Calculated {calculated:#04X}, Read {read:#04X}")]
+    MajorSyncCrcMismatch { calculated: u16, read: u16 },
+
+    #[error("Reserved bits in substream_info should be 0. Read {0:#02X}")]
+    ReservedSubstreamInfo(u8),
+
+    #[error("Invalid substream_info {0:#02X}")]
+    InvalidSubstreamInfo(u8),
+
+    #[error(
+        "substream_info must be constant throughout the stream. Read {read:#02X}, expected {expected:#02X}"
+    )]
+    SubstreamInfoMismatch { read: u8, expected: u8 },
+
+    #[error("Reserved bits in extended_substream_info should be 0. Read {0:#02X}")]
+    ReservedExtendedSubstreamInfo(u8),
+
+    #[error(
+        "The four bits before substream_info are reserved in an FBB stream and should be 0. \
+        Read {0:#X}"
+    )]
+    ReservedBeforeSubstreamInfo(u8),
+
+    #[error("Reserved bits in channel_meaning should be 0. Read {0:#04X}")]
+    ReservedChannelMeaningNonZero(u8),
+
+    #[error(
+        "extended_substream_info must be constant throughout the FBA stream. Read {read:#X}, expected {expected:#X}"
+    )]
+    ExtendedSubstreamInfoMismatch { read: u8, expected: u8 },
+
+    #[error(
+        "If 6ch and 8ch presentation use the same substreams the channel_assignments must be the same. \
+        6ch_decoder_channel_assignment {sixch:#02X}, 8ch_decoder_channel_assignment {eightch:#04X}"
+    )]
+    SixchAndEightchChannelAssignmentMismatch { sixch: u8, eightch: u16 },
+
+    #[error(
+        "If 6ch and 8ch presentation use the same substreams and only Main channels, \
+    the channel_modifiers must be the same. 6ch_decoder_channel_modifier {sixch:#02X}, 8ch_decoder_channel_modifer {sixch:#02X}"
+    )]
+    SixchAndEightchChannelModifierMismatch { sixch: u8, eightch: u8 },
+
+    #[error(
+        "extended_substream_info={extended_substream_info:#X} and substream_info={substream_info:#2X} are incompatible"
+    )]
+    SubstreamInfoInCompatible {
+        substream_info: u8,
+        extended_substream_info: u8,
+    },
+
+    #[error("Must have at least {min} substreams when bit {bit} of substream_info is set")]
+    SubstreamCountInsufficient { min: usize, bit: u8 },
+
+    #[error(
+        "substream_info, extendend_substream_info are inconsistent with major_sync_info::substreams"
+    )]
+    SubstreamCountInfoInconsistent,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum TimestampError {
+    #[error("Invalid Timestamp sync bytes")]
+    InvalidSyncBytes,
+
+    #[error("parse_bcd16: Invalid BCD digit")]
+    InvalidBcdDigit,
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum FifoError {
+    #[error(
+        "FIFO depth for substream 0 and stream overheads must be less than 15000 bytes per \
+        channel. Depth = {depth}, limit {cap}"
+    )]
+    Substream0DepthExceeded { depth: usize, cap: usize },
+
+    #[error(
+        "FIFO depth for the sum of substreams used by {group} must be less than {cap} bytes. \
+        Depth = {depth}"
+    )]
+    GroupDepthExceeded {
+        group: &'static str,
+        depth: usize,
+        cap: usize,
+    },
+
+    #[error("FIFO depth for the whole stream must be less than {cap} bytes. Depth = {depth}")]
+    WholeStreamDepthExceeded { depth: usize, cap: usize },
+
+    #[error("FIFO underrun: accumulator {index} holds fewer bytes than the access unit leaving it")]
+    Underrun { index: usize },
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::process::parse::ParserState;
+    use crate::utils::diagnostic::DiagnosticMode;
+    use crate::utils::errors::SubstreamError;
+    use anyhow::{Result, anyhow};
+
+    /// Fires one check, reporting how many times its error was built.
+    fn fire(state: &mut ParserState, built: &mut usize) -> Result<()> {
+        log_or_err!(state, ::log::Level::Warn, {
+            *built += 1;
+            anyhow!(SubstreamError::InvalidTerminationWord(0))
+        });
+
+        Ok(())
+    }
+
+    /// Building an error allocates, and a check firing at a level nothing is listening
+    /// to has nothing to build one for. This is what keeps a check that fires on every
+    /// access unit — a stream declaring a peak data rate over the ceiling does — from
+    /// allocating on every access unit while reporting nothing.
+    ///
+    /// No logger is installed under `cargo test`, so `Warn` is filtered here.
+    #[test]
+    fn a_check_with_nowhere_to_report_does_not_build_its_error() {
+        let mut state = ParserState::default();
+        let mut built = 0;
+
+        assert!(
+            fire(&mut state, &mut built).is_ok(),
+            "Warn is not fatal here"
+        );
+        assert_eq!(built, 0, "nothing asked for the error");
+    }
+
+    /// The paths that use the error must still get one.
+    #[test]
+    fn a_check_that_is_reported_builds_its_error() {
+        let mut fatal = ParserState {
+            fail_level: ::log::Level::Warn,
+            ..Default::default()
+        };
+        let mut built = 0;
+        assert!(fire(&mut fatal, &mut built).is_err());
+        assert_eq!(built, 1, "the returned error had to be built");
+
+        let mut collecting = ParserState {
+            diagnostic_mode: DiagnosticMode::Collect,
+            ..Default::default()
+        };
+        let mut built = 0;
+        assert!(fire(&mut collecting, &mut built).is_ok());
+        assert_eq!(built, 1, "the collected diagnostic had to be built");
+        assert_eq!(collecting.diagnostics.len(), 1);
+    }
+}

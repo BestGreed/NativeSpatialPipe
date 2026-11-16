@@ -1,0 +1,112 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -52,7 +52,7 @@
+   add_compile_definitions(CN_USE_FLOAT)
+ endif()
+ 
+-IF(WIN32)
++IF(WIN32 AND MSVC)
+     find_program(NUGET nuget)
+     if(NOT NUGET)
+       file(DOWNLOAD https://dist.nuget.org/win-x86-commandline/v5.6.0/nuget.exe "${CMAKE_BINARY_DIR}/nuget.exe"
+--- a/src/survive_config.c
++++ b/src/survive_config.c
+@@ -1,6 +1,9 @@
+ // (C) 2017 <>< Joshua Allen, Under MIT/x11 License.
+ #include "survive_config.h"
+ #include <assert.h>
++#ifdef _WIN32
++#include <direct.h>
++#endif
+ #include <json_helpers.h>
+ #include <string.h>
+ #if defined(__FreeBSD__) || defined(__APPLE__)
+--- a/src/lfsr_lh2.c
++++ b/src/lfsr_lh2.c
+@@ -1,6 +1,10 @@
+ #include "lfsr_lh2.h"
+ #ifndef _MSC_VER
+-#include "alloca.h"
++#ifdef _WIN32
++#include <malloc.h>
++#else
++#include <alloca.h>
++#endif
+ #define clz(x) __builtin_clz(x)
+ #else
+ #include <intrin.h>
+--- a/libs/cnmatrix/CMakeLists.txt
++++ b/libs/cnmatrix/CMakeLists.txt
+@@ -25,7 +25,11 @@
+ 
+ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+ 
+-find_package (Eigen3 3.3 QUIET)
++if(EXISTS "${EIGEN3_INCLUDE_DIR}/Eigen/Core")
++  set(EIGEN3_FOUND ON)
++else()
++  find_package (Eigen3 3.3 QUIET)
++endif()
+ if(NOT EIGEN3_FOUND)
+   if(DOWNLOAD_EIGEN)
+     find_program(GIT git)
+@@ -96,7 +100,9 @@
+   endif()
+ 
+ ELSEIF(WIN32)
+-  add_compile_options(/wd4244 /wd4996 /wd4018 /wd4101 /wd4477 /wd4068 /wd4217)
++  if(MSVC)
++    add_compile_options(/wd4244 /wd4996 /wd4018 /wd4101 /wd4477 /wd4068 /wd4217)
++  endif()
+   set( CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+   set (CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+ endif()
+--- a/libs/cnmatrix/src/CMakeLists.txt
++++ b/libs/cnmatrix/src/CMakeLists.txt
+@@ -67,9 +67,9 @@
+   add_definitions     ( ${EIGEN3_DEFINITIONS} )
+   include_directories ( ${EIGEN3_INCLUDE_DIR} )
+ 
+-  if(WIN32)
++  if(WIN32 AND MSVC)
+     target_compile_options(cnmatrix PRIVATE -bigobj)
+-  else()
++  elseif(NOT WIN32)
+     target_compile_options(cnmatrix PRIVATE -fno-exceptions -fPIC)
+   endif()
+ ELSE()
+--- a/src/driver_vive.c
++++ b/src/driver_vive.c
+@@ -484,6 +484,7 @@
+ 	return true;
+ }
+ 
++STATIC_CONFIG_ITEM(USB_SERIAL_ALLOWLIST, "usb-serial-allowlist", 's', "Exact comma-separated USB serial allowlist; empty means upstream behaviour", "")
+ #ifdef HIDAPI
+ #include "driver_vive.hidapi.h"
+ #else
+@@ -765,6 +766,24 @@
+ 		return -2;
+ 	}
+ 
++#ifdef HIDAPI
++	// LSAC: filter before opening any interface or sending feature reports.
++	const char *allow = survive_configs(ctx, "usb-serial-allowlist", SC_GET, "");
++	if (allow && *allow) {
++		char serial[256] = {0};
++		if (!d->serial_number || wcstombs(serial, d->serial_number, sizeof(serial)-1) == (size_t)-1)
++			return -1;
++		bool accepted = false;
++		for (const char *p = allow; *p;) {
++			const char *end = strchr(p, ',');
++			size_t length = end ? (size_t)(end-p) : strlen(p);
++			if (strlen(serial) == length && strncmp(p, serial, length) == 0) { accepted = true; break; }
++			if (!end) break;
++			p = end+1;
++		}
++		if (!accepted) return -1;
++	}
++#endif
+ 	const struct DeviceInfo *info = find_known_device(ctx, idVendor, idProduct);
+ 	if (info == 0) {
+ 		SV_VERBOSE(110, "USB device %04x:%x4x in an unknown type; ignoring", idVendor, idProduct);

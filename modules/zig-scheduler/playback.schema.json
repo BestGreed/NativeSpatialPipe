@@ -1,0 +1,1135 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "notebookVirtualBass": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "amount": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.5,
+          "default": 0.18
+        },
+        "highpassHz": {
+          "oneOf": [
+            {
+              "const": 0
+            },
+            {
+              "type": "number",
+              "minimum": 80,
+              "maximum": 180
+            }
+          ],
+          "default": 130,
+          "description": "0 disables only dry-path protection; harmonic synthesis remains enabled."
+        }
+      },
+      "description": "Experimental subband harmonic synthesis before notebook spatial FIR. Requires notebookFilterFile; independent bypass, no bass EQ boost."
+    },
+    "notebookFilterFile": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Legacy LSAC measured FIR bank. New profiles use lsac.filterFile and outputLayout 7.1.4."
+    },
+    "recording": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pcm": {
+          "type": "boolean",
+          "default": false
+        },
+        "rawStreamStats": {
+          "type": "boolean",
+          "default": false
+        },
+        "telemetrySnapshots": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "description": "Optional pre-DSP PCM side recording and telemetry JSONL archival. Both disabled by default."
+    },
+    "renderer": {
+      "enum": [
+        "roar",
+        "olr",
+        "lira"
+      ],
+      "default": "roar"
+    },
+    "mode": {
+      "enum": [
+        "olr",
+        null
+      ],
+      "default": null
+    },
+    "bridgeDll": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Absolute path; runtime additionally validates Windows path syntax and NUL exclusion."
+    },
+    "rendererDll": {
+      "type": "string",
+      "default": ""
+    },
+    "asioDll": {
+      "type": "string",
+      "minLength": 0,
+      "maxLength": 1024,
+      "description": "Absolute path; runtime additionally validates Windows path syntax and NUL exclusion."
+    },
+    "driver": {
+      "type": "string",
+      "pattern": "^(asio:.*)?$",
+      "maxLength": 4095
+    },
+    "sourceStream": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3,
+      "default": 0
+    },
+    "channelOrder": {
+      "enum": [
+        "olr",
+        "dvs-speakers",
+        "custom"
+      ],
+      "default": "olr"
+    },
+    "sampleRate": {
+      "type": "number",
+      "minimum": 8000,
+      "maximum": 384000,
+      "default": 48000
+    },
+    "bufferFrames": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65536,
+      "default": 0
+    },
+    "master": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 16,
+      "default": 1
+    },
+    "outputProcessing": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "loudness": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "referenceSplDb",
+            "levels"
+          ],
+          "properties": {
+            "referenceSplDb": {
+              "type": "number",
+              "minimum": 20,
+              "maximum": 100
+            },
+            "levels": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "splDb",
+                  "lowDb",
+                  "highDb"
+                ],
+                "properties": {
+                  "splDb": {
+                    "type": "number",
+                    "minimum": 20,
+                    "maximum": 100
+                  },
+                  "lowDb": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 4
+                  },
+                  "highDb": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "trim": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 16,
+          "items": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 16,
+            "default": 1
+          }
+        },
+        "delayFrames": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 16,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 48000,
+            "default": 0
+          }
+        },
+        "limiter": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "ceiling": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "default": 1
+            },
+            "releaseMs": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 50
+            },
+            "lookaheadFrames": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4800,
+              "default": 0
+            }
+          }
+        },
+        "bypass": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "positionMapping": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "scaled",
+            "direction"
+          ],
+          "default": "scaled"
+        },
+        "reference": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "direction"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reference": {
+                "const": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "routing": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sourceChannelIndices": {
+          "anyOf": [
+            {
+              "type": "array",
+              "minItems": 8,
+              "maxItems": 16,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 11
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "physicalChannels": {
+          "anyOf": [
+            {
+              "type": "array",
+              "minItems": 8,
+              "maxItems": 16,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 255
+              },
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "clockSync": {
+      "type": "boolean",
+      "default": true
+    },
+    "prebufferFrames": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 48000,
+      "default": 0
+    },
+    "startupTimeoutMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "default": 0,
+      "deprecated": true,
+      "description": "Compatibility only; ignored. ASIO stays active with silent callbacks until the session ends."
+    },
+    "rebufferTimeoutMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "default": 0,
+      "deprecated": true,
+      "description": "Compatibility only; ignored. Source gaps do not terminate the ASIO session."
+    },
+    "maxRebuffers": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "default": 0,
+      "deprecated": true,
+      "description": "Compatibility only; ignored. Rebuffer count is diagnostic, not a session lifetime limit."
+    },
+    "drainTimeoutMs": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295,
+      "default": 5000
+    },
+    "outputLayout": {
+      "type": "string",
+      "enum": [
+        "2.0",
+        "5.1.2",
+        "5.1.4",
+        "7.1.2",
+        "7.1.4",
+        "7.1.6",
+        "9.1.4",
+        "9.1.6",
+        "roar-custom-6dof"
+      ],
+      "default": "7.1.4",
+      "description": "Height-bearing renderer output geometry. 2.0 is accepted only as a legacy LSAC profile alias. roar-custom-6dof is reserved."
+    },
+    "roarCustomLayout": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "const": 1
+            },
+            "measurementFile": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ],
+      "description": "ROAR-only reserved measurement slot. Not loaded or activated."
+    },
+    "outputBackend": {
+      "enum": [
+        "asio",
+        "aoip",
+        "wasapi"
+      ],
+      "default": "asio"
+    },
+    "wasapi": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "dllPath",
+        "endpointId"
+      ],
+      "properties": {
+        "dllPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "endpointId": {
+          "type": "string",
+          "pattern": "^\\{0\\.0\\.0\\.00000000\\}\\.\\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\}$"
+        },
+        "mode": {
+          "enum": ["shared", "exclusive"],
+          "default": "shared"
+        },
+        "periodFrames": {
+          "type": "integer",
+          "minimum": 144,
+          "maximum": 1920,
+          "default": 480
+        }
+      },
+      "description": "Explicit 48 kHz stereo render endpoint. periodFrames controls exclusive mode."
+    },
+    "aoip": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "interfaceIp": {
+          "type": "string"
+        },
+        "masterIp": {
+          "type": "string",
+          "default": "",
+          "description": "Blank or omitted follows an active PTPv1 master on the sending interface. Set an IPv4 address to pin the master."
+        },
+        "mac": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]{12}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 31
+        },
+        "prebufferFrames": {
+          "type": "integer",
+          "minimum": 32,
+          "maximum": 4800,
+          "default": 960
+        },
+        "txLatencyUs": {
+          "type": "integer",
+          "minimum": 250,
+          "maximum": 100000,
+          "default": 4000,
+          "description": "Advertised TX latency in microseconds; separate from packet interval and PCM prebuffer."
+        },
+        "framesPerPacket": {
+          "type": "integer",
+          "anyOf": [
+            {
+              "const": 0
+            },
+            {
+              "minimum": 2,
+              "maximum": 256
+            }
+          ],
+          "default": 32,
+          "description": "0 honors the receiver request; nonzero overrides it and requires receiver compatibility."
+        }
+      },
+      "required": [
+        "interfaceIp",
+        "mac"
+      ]
+    },
+    "unifiedSlotProfile": {
+      "enum": ["standard", "dtsxHtCompact"],
+      "default": "standard",
+      "description": "Unified input storage. DTS:X HT compact requires the active DTS:X for Home Theater endpoint and a compatible Croksor build."
+    },
+    "unifiedPrimaryPolicy": {
+      "enum": ["legacy", "objectCount"],
+      "default": "legacy",
+      "description": "Unified input primary election. Object count uses existing receiver observations in the Zig control loop."
+    },
+    "sourcePolicy": {
+      "enum": [
+        "fixed",
+        "active",
+        "unified"
+      ],
+      "default": "fixed",
+      "description": "AoIP active follows live-render selection; fixed uses sourceStream; unified sends the combined spatial and PCM renderer to the selected backend."
+    },
+    "pcmCapture": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "captureDll": {
+          "type": "string"
+        },
+        "ingressDll": {
+          "type": "string"
+        },
+        "inputEndpointId": {
+          "type": "string",
+          "description": "Independent capture endpoint. Unified input follows the FSA session endpoint, so saved profiles may omit this field."
+        },
+        "sourcePid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "default": 0
+        },
+        "routeToOutput": {
+          "type": "boolean",
+          "default": false
+        },
+        "browserIdentity": {
+          "$ref": "#/properties/browserIdentity",
+          "description": "Legacy placement. New profiles use the top-level browserIdentity module."
+        }
+      },
+      "description": "Independent ordinary PCM capture with one admitted PCM stream; unified mode can mix it with spatial input.",
+      "if": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "captureDll",
+          "ingressDll"
+        ]
+      }
+    },
+    "mediaFoundation": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "lsac": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "filterFile": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "virtualBass": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "amount": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 0.5,
+              "default": 0.18
+            },
+            "highpassHz": {
+              "oneOf": [
+                {
+                  "const": 0
+                },
+                {
+                  "type": "number",
+                  "minimum": 80,
+                  "maximum": 180
+                }
+              ],
+              "default": 130,
+              "description": "0 disables only dry-path protection; harmonic synthesis remains enabled."
+            }
+          },
+          "description": "Experimental subband harmonic synthesis before notebook spatial FIR. Requires notebookFilterFile; independent bypass, no bass EQ boost."
+        },
+        "loudness": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "referenceSplDb",
+            "levels"
+          ],
+          "properties": {
+            "referenceSplDb": {
+              "type": "number",
+              "minimum": 20,
+              "maximum": 100
+            },
+            "levels": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "splDb",
+                  "lowDb",
+                  "highDb"
+                ],
+                "properties": {
+                  "splDb": {
+                    "type": "number",
+                    "minimum": 20,
+                    "maximum": 100
+                  },
+                  "lowDb": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 4
+                  },
+                  "highDb": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "gain": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 16
+        },
+        "limiter": {
+          "anyOf": [
+            {
+              "$ref": "#/properties/outputProcessing/properties/limiter"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "wasapiUpmix": {
+      "description": "Joint upmix for ordinary PCM in a unified ROAR OLR 7.1.4 pipeline, regardless of output backend.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "dllPath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cpuFallbackDll": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modelPath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "freeSurroundDll": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "browserIdentity": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "nodeExe": {
+          "type": "string"
+        },
+        "agentScript": {
+          "type": "string"
+        },
+        "backendExe": {
+          "type": "string"
+        },
+        "identityFile": {
+          "type": "string"
+        },
+        "extensionId": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "devtoolsUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:9229"
+        },
+        "metadataPort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 8784
+        },
+        "leaseMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 5000,
+          "default": 500
+        },
+        "sourceTabId": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "default": 0
+        },
+        "devtoolsActivePortFile": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "if": {
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "nodeExe",
+          "agentScript",
+          "backendExe",
+          "identityFile",
+          "extensionId"
+        ]
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NSP per-session playback configuration",
+  "required": [
+    "bridgeDll"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "anyOf": [
+          { "properties": { "unifiedSlotProfile": { "const": "dtsxHtCompact" } }, "required": ["unifiedSlotProfile"] },
+          { "properties": { "unifiedPrimaryPolicy": { "const": "objectCount" } }, "required": ["unifiedPrimaryPolicy"] }
+        ]
+      },
+      "then": {
+        "properties": { "sourcePolicy": { "const": "unified" } },
+        "required": ["sourcePolicy"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "sourcePolicy": { "const": "unified" } },
+        "required": ["sourcePolicy"]
+      },
+      "then": {
+        "properties": {
+          "sourceStream": { "const": 0 },
+          "renderer": { "enum": ["roar", "olr"] }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "outputBackend": {
+            "const": "aoip"
+          }
+        },
+        "required": [
+          "outputBackend"
+        ]
+      },
+      "then": {
+        "required": [
+          "aoip"
+        ],
+        "properties": {
+          "sampleRate": {
+            "const": 48000
+          }
+        }
+      },
+      "else": {
+        "if": {
+          "properties": {
+            "outputBackend": {
+              "const": "wasapi"
+            }
+          },
+          "required": [
+            "outputBackend"
+          ]
+        },
+        "then": {
+          "required": [
+            "wasapi",
+            "outputLayout"
+          ],
+          "properties": {
+            "wasapi": {
+              "type": "object"
+            },
+            "outputLayout": {
+              "enum": [
+                "7.1.4",
+                "2.0"
+              ]
+            },
+            "sampleRate": {
+              "const": 48000
+            },
+            "renderer": {
+              "enum": [
+                "roar",
+                "olr",
+                "lira"
+              ]
+            },
+            "sourcePolicy": {
+              "enum": [
+                "fixed",
+                "unified"
+              ]
+            },
+            "channelOrder": {
+              "const": "olr"
+            }
+          }
+        },
+        "else": {
+          "required": [
+            "asioDll",
+            "driver"
+          ],
+          "properties": {
+            "asioDll": {
+              "minLength": 1
+            },
+            "driver": {
+              "pattern": "^asio:"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "renderer": {
+            "const": "lira"
+          }
+        },
+        "required": [
+          "renderer"
+        ]
+      },
+      "then": {
+        "required": [
+          "rendererDll"
+        ],
+        "properties": {
+          "rendererDll": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "description": "Absolute path; runtime additionally validates Windows path syntax and NUL exclusion."
+          },
+          "mode": {
+            "type": "null"
+          },
+          "positionMapping": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "channelOrder": {
+            "const": "custom"
+          }
+        },
+        "required": [
+          "channelOrder"
+        ]
+      },
+      "then": {
+        "required": [
+          "routing"
+        ],
+        "properties": {
+          "routing": {
+            "type": "object",
+            "required": [
+              "sourceChannelIndices"
+            ],
+            "properties": {
+              "sourceChannelIndices": {
+                "type": "array",
+                "minItems": 8,
+                "maxItems": 16,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 11
+                }
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "routing": {
+            "properties": {
+              "sourceChannelIndices": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "outputLayout"
+        ],
+        "properties": {
+          "outputLayout": {
+            "const": "2.0"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "notebookFilterFile",
+          "outputBackend"
+        ],
+        "properties": {
+          "notebookFilterFile": {
+            "type": "string"
+          },
+          "lsac": {
+            "type": "null"
+          },
+          "outputBackend": {
+            "const": "wasapi"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "lsac"
+        ],
+        "properties": {
+          "lsac": {
+            "type": "object",
+            "required": [
+              "enabled"
+            ],
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "outputBackend"
+        ],
+        "properties": {
+          "outputBackend": {
+            "const": "wasapi"
+          },
+          "outputLayout": {
+            "const": "7.1.4"
+          },
+          "lsac": {
+            "required": [
+              "filterFile"
+            ],
+            "properties": {
+              "filterFile": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "required": [
+            "sourcePolicy"
+          ],
+          "properties": {
+            "sourcePolicy": {
+              "const": "unified"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "pcmCapture": {
+            "if": {
+              "type": "object",
+              "required": [
+                "enabled"
+              ],
+              "properties": {
+                "enabled": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "inputEndpointId"
+              ],
+              "properties": {
+                "inputEndpointId": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

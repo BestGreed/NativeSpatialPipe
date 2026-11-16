@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "config_version": "prototype-1",
+  "audio": {
+    "endpoint_id": "{0.0.1.00000000}.{324d001e-318b-4f8c-b208-5cc6a9324821}",
+    "rate": 48000,
+    "channels": 4,
+    "container_bits": 24,
+    "valid_bits": 24,
+    "format": "PCM",
+    "mode": "exclusive",
+    "ambi_order": "WYZX",
+    "normalization": "SN3D",
+    "normalization_status": "target_SN3D_not_independently_verified",
+    "channel_order_verified": false,
+    "mic_position": "Upright_user_reported",
+    "user_reported_usb_ambisonic_mode": "AmbiX",
+    "user_reported_mic_gain": 45,
+    "mic_gain_scale_max": 100,
+    "usb_rotation_behavior_verified": false
+  },
+  "tracking": {
+    "backend": "libsurvive",
+    "runtime": "source_878c74e45b46b470aee93fcb35d391c761180669_lsac_patch",
+    "serials": ["LHR-7712DB4C", "LHR-C9F2A107"],
+    "receiver_serials": ["C0531DBB07-2YX", "4E482CC871-2YX"],
+    "entry_point": "shared_rig_broker_use_Tools.ps1_capture",
+    "pair_device": false,
+    "base_station_generation": 1,
+    "base_station_count": 2,
+    "lighthouse_calibration_file": null
+  },
+  "probe": {
+    "known_offset_tracker_m": [0, 0, 0.10673],
+    "mounting_geometry": {
+      "arrangement": "back_to_back_threaded_mount_faces",
+      "tracker_origin": "screw_axis_intersection_with_tracker_mounting_contact_plane",
+      "acoustic_center_distance_mm": 106.73,
+      "distance_is_approximate": true,
+      "source": "user_provided_2026-11-01",
+      "offset_direction": "toward_tracker_mounting_face_side_toward_H3VR_acoustic_center",
+      "offset_direction_zh": "从Tracker原点沿共同轴指向安装面那一侧，朝向H3-VR声学中心",
+      "coordinate_basis": "receiver_B_exported_head_frame_plus_z_is_negative_model_z",
+      "nominal_rotation_status": "pending_H3VR_acoustic_axes_confirmation_identity_below_is_placeholder"
+    },
+    "known_rotation_wxyz": [1, 0, 0, 0],
+    "common_axis_tracker": [0, 0, 1],
+    "common_axis_angle_radians": null,
+    "mechanical_transform_confirmed": false,
+    "support_and_usb_strain_relief_confirmed": false,
+    "calibration_status": "unverified",
+    "audio_imu_tap_fit": null,
+    "pose_latency_validation": null
+  },
+  "excitation": {"reference_file": null, "physical_output_endpoint_id": null, "approved_peak_dbfs": -12,
+                 "initial_requested_peak_dbfs": -18, "center_hz": 500, "band_definition": "one_third_octave_base2",
+                 "level_source": "user_requested_minus18_start_then_level_tuned_minus12_with_mic_gain45_2026-11-01"},
+  "session": {"lid_angle_degrees": null, "operator_confirmed_start": false, "notes": "Continuous hand scan; no point-dwell requirement. No automatic playback."}
+}

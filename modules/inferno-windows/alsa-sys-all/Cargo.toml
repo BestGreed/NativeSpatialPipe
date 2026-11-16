@@ -1,0 +1,32 @@
+[package]
+name = "alsa-sys-all"
+version = "0.3.3"
+authors = ["Pierre Krieger <pierre.krieger1708@gmail.com>",
+"David Henningsson <coding@diwic.se>",
+"Teodor Wozniak <teo@lumifaza.org>"]
+build = "build.rs"
+description = "FFI bindings for the ALSA project (Advanced Linux Sound Architecture) including less often used features such as plugin API"
+license = "MIT"
+links = "alsa"
+repository = "https://gitlab.com/lumifaza/alsa-sys-all"
+documentation = "http://docs.rs/alsa-sys-all"
+keywords = ["ALSA", "audio", "sound"]
+categories = ["os::unix-apis", "external-ffi-bindings", "multimedia::audio"]
+edition = "2018"
+
+[dependencies]
+libc = "0.2.65"
+
+[build-dependencies]
+pkg-config = "0.3"
+bindgen = { version = "0.69", optional = true }
+
+[features]
+use-bindgen = ["bindgen"]
+
+[[bin]]
+name = "regenerate_bindings"
+path = "regenerate_bindings.rs"
+
+[lib]
+doctest = false

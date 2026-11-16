@@ -1,0 +1,8 @@
+[package]
+name = "inferno-windows-clock"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later OR AGPL-3.0-or-later"
+description = "Experimental follower-only QPC/PTPv1 clock for Inferno"
+
+[dependencies]

@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "inferno_aoip",
+    "searchfire",
+    "inferno2pipe",
+    "alsa_pcm_inferno",
+    "windows-clock",
+]
+
+[patch.crates-io]
+# Pinned 0.32.0 with a Windows SendARP result-length guard; see vendor/netdev/PATCH.md.
+netdev = { path = "vendor/netdev" }
+
+[workspace.metadata.cross.target.aarch64-unknown-linux-gnu]
+pre-build = [
+    "dpkg --add-architecture $CROSS_DEB_ARCH",
+    "apt-get update && apt-get --assume-yes install libasound-dev:$CROSS_DEB_ARCH"
+]
+

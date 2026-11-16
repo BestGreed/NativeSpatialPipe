@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "taps_per_group": 3,
+  "start_count": 3,
+  "end_count": 3,
+  "irregular_intervals": true,
+  "estimate": "median offset for a single group; drift fit only with >=6 matched events across start/end",
+  "validation_tolerance_seconds": 0.004,
+  "retry_count": 5,
+  "retry_if": "unmatched/ambiguous events, onset-threshold instability or held-out residual above tolerance",
+  "evidence": "captures/lsac/tap-alignment-mmcss-001/three-vs-five.json",
+  "status": "provisional operational default; not precision calibration",
+  "keep_original_timestamps": true
+}

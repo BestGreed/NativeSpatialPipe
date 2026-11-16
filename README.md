@@ -1,83 +1,47 @@
-# Native Spatial Pipe
+# Native Spatial Pipe product build
 
-Capture Windows spatial-audio objects, render them for your speaker setup, and explore the sound through live visualization.
+The product build stages the FSA session manager, Zig scheduler, web frontend,
+native capture and receiver, and Croksor runtime. Croksor links the patched ROAR
+1.1 renderer and Inferno AoIP. The build also produces LIRA and ASIO backends.
 
-NSP brings application audio capture, selectable renderers, device output and FSA session management into one configurable workflow. The project is currently in alpha development.
-
-## Features
-
-- Capture spatial-audio object streams from supported Windows audio modes.
-- Choose ROAR's OLR speaker rendering or the alternative LIRA renderer.
-- Output through ASIO with speaker routing, per-channel calibration and optional DSP.
-- Use **5.1.2, 5.1.4, 7.1.2, 7.1.4, 7.1.6, 9.1.4 or 9.1.6** speaker layouts.
-- View object positions, movement and channel activity in the browser.
-- Manage audio modes and sessions through FSA; edit playback settings in the Web configuration page.
-- Enable optional PCM recording and telemetry archives when needed; both default off.
-
-## Modules
-
-| Module | Purpose |
-|---|---|
-| Capture and common input | Bring application object audio into a shared rendering pipeline. |
-| ROAR / OLR | The primary speaker-rendering path. |
-| LIRA | An alternative renderer with its own rendering behavior. |
-| Output and DSP | ASIO device output, channel routing, calibration and optional processing. |
-| FSA integration | Audio-mode selection, endpoint preparation and session control. |
-| Web configuration and visualization | Playback settings, status, object views and channel meters. |
-
-## Build
-
-Follow the [Windows build guide](docs/build.md) to prepare the pinned dependencies, then run:
+Run from the source root with an explicit Windows x64 Python executable:
 
 ```powershell
-./tools/Build-Alpha.ps1 -LlvmBin C:/toolchains/llvm-mingw/bin -Zig C:/toolchains/zig-0.13.0/zig.exe
+./tools/Build-Product.ps1 -Python (Get-Command python.exe).Source -MediaFoundation -PcmCapture -BrowserIdentity -Wasapi -WasapiUpmix
 ```
 
-For the FSA application, follow the [FSA setup guide](tools/fsa-integration/README.md). Building creates the artifacts; deployment and starting an audio session are separate steps.
+The build expects the pinned MinHook and ROAR checkouts, LLVM-MinGW, Zig,
+the locked Rust toolchain and Cargo dependencies, and the OpenVINO CPU SDK
+for the upmix option. See the build scripts for the expected dependency paths.
+The scheduler, receiver, Croksor, and web assets are staged under
+`build/nsp-product`. FSA is staged under `build/fsa-integration`.
 
-The default FSA session renders through ROAR or LIRA and sends audio to ASIO. The public tree also includes three standalone components.
+Windows spatial audio is a platform prerequisite. The native object capture
+controller also requires a supported Windows audio-engine build. The presence
+of a spatial audio setting alone does not establish capture compatibility.
 
-- [WASAPI output and tracing](docs/wasapi-diagnostics.md) builds a stereo PCM sink and an optional trace reader.
-- [FreeSurround](docs/freesurround.md) builds a stereo-to-7.1 decoder.
-- [LSAC DSP adapter](docs/lsac-adapter.md) provides 7.1.4-to-stereo processing for hosts that supply their own filters and output.
+## Native spatial capture compatibility
 
-Build these components separately using their linked instructions.
+The native capture controller requires an exact SHA-256 match for the
+`audiodg.exe` profile compiled into the controller. Each profile assumes
+a specific Windows audio engine layout.
 
-## Quick configuration
+| Profile | Capture layout |
+| --- | --- |
+| `Legacy` | Original validated build with primary and secondary vtables. |
+| `Lnl20261102` | Validated LNL build with the primary vtable only. |
 
-1. With FSA running, **click its tray icon three times in quick succession**. This opens the Web page in your default browser.
-2. **On the opened Web page**, select **Configuration**, choose the renderer and speaker layout, then select your ASIO device and map the output channels to your wiring.
-3. Save the settings, then start NSp through FSA. To apply later changes, stop and start the session again.
+The build script defaults to `Auto`. It selects `Lnl20261102` when the local
+system binary matches that profile's hash and selects `Legacy` otherwise.
+At runtime, the controller independently checks the target binary against the
+selected profile and rejects mismatches. A successful build therefore does
+not establish that native capture will run on the target machine.
 
-Triple-clicking the tray icon is the only FSA UI shortcut for opening the page; there is no separate tray-menu item or additional button. The Web page saves settings and shows status; FSA handles runtime control.
+## Optional Node.js runtime
 
-The default configuration file is `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`. You can also edit it directly; see the [example configuration](tools/zig-scheduler/playback.example.json) and [configuration reference](docs/core/playback-json-configuration-20261022.md).
+Browser identity uses a user-installed Node.js runtime. Its deployment script
+resolves node.exe from PATH by default. Use -NodeExe to specify an executable
+explicitly. The script records the resolved absolute path in playback settings.
+The Windows product build and the default audio session require no Node.js.
 
-## Direction
-
-- Add native network-audio output alongside the current ASIO path.
-- Develop custom speaker layouts and 6DoF support.
-- Improve installation, configuration guidance and diagnostics.
-- Extend long-running validation and recording-storage management.
-
-These are planned directions, not currently available features. See [development status](docs/alpha-dev.md) for the current scope.
-
-## Documentation
-
-- [Build and prerequisites](docs/build.md)
-- [Configuration reference](docs/core/playback-json-configuration-20261022.md)
-- [Runtime details and validation limits](docs/runtime-details.md)
-- [Architecture and module boundaries](docs/core/current-architecture.md)
-- [Documentation index](docs/README.md)
-
-## Latest update
-
-<!-- Keep one brief entry here. Detailed progress belongs in docs/alpha-dev.md. -->
-
-**2026-11-08:** Public DEV added standalone WASAPI output and tracing, FreeSurround, and the LSAC DSP adapter.
-
-## License and credits
-
-Original NSP code uses **Apache-2.0**. The included ASIO device code and SDK headers have **GPL-3.0-only** scope; a combined program containing them is not Apache-only. FSA and artwork retain their separate terms. See [license scope](LICENSING.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
-
-Thanks to **hikari-taritsu (rmj)** for the Spatial ASIO / LIRA contributions. Original author and license notices are preserved; see [module licensing](modules/audio-backends/LICENSING.md) and [source provenance](docs/alpha-dev.md).
+See the [documentation index](docs/README.md) for dependency paths, runtime details and license scope.

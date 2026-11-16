@@ -1,0 +1,10 @@
+Icon assets notice
+
+The ICO artwork in this directory was supplied for the Final Spatial Audio
+project. These image assets are excluded from the repository's root Unlicense.
+No additional copyright or trademark rights in the artwork are granted by the
+source-code license. Obtain permission from the applicable rights holder before
+reusing these assets separately or incorporating them into another product.
+
+Product names and third-party marks remain the property of their respective
+owners. Inclusion does not imply endorsement or affiliation.

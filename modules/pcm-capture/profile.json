@@ -1,0 +1,9 @@
+{
+  "sha256": "4b5981cf6bdfac2f7be0c3314fb1eb12f6075083f11316c6cc15c63b697aeae7",
+  "localSha256": "3dd24fe6faf0b56f99d5b00f24687b5f3b3e76e15b219e23f0963114a0dce9a5",
+  "inputVtableRva": "0x9e6c0",
+  "getInputRva": "0x508c0",
+  "prologue32": "4c894424185355565741544155415641574883ec684533db488d9920fefffff6",
+  "layout": "ordinary V1 only; endpoint binding requires unique active session PID; no target writes",
+  "inputVtableSymbol": "??_7?$CComObject@V?$CCrossProcessServerInputEndpoint@UStaticControlData_V1@@UVolatileControlData_V0@@UControlData_V1@@@@@ATL@@6B?$CCrossProcessInputEndpoint@UStaticControlData_V1@@UVolatileControlData_V0@@UControlData_V1@@@@@"
+}

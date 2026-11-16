@@ -1,0 +1,21 @@
+[package]
+name = "nsp-croksor"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+nsp-lsac-adapter = { path = "../lsac-adapter" }
+aom-roar = { path = "../../work/roar-product-1.1", features = ["nsp-olr-batch-experiment"] }
+inferno_aoip = { path = "../inferno-windows/inferno_aoip", optional = true }
+tokio = { version = "=1.52.1", features = ["rt", "time", "net", "sync"], optional = true }
+
+[features]
+# Native pool source only; no network listener or new default output is started.
+experimental-aoip-pool = []
+aoip-output = ["experimental-aoip-pool", "dep:inferno_aoip", "dep:tokio"]
+
+[patch.crates-io]
+netdev = { path = "../inferno-windows/vendor/netdev" }

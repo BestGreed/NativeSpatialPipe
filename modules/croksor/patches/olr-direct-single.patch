@@ -1,0 +1,343 @@
+--- a/src/renderer/olr/processing_block.rs
++++ b/src/renderer/olr/processing_block.rs
+@@ -14,6 +14,18 @@
+ 
+ use crate::common::definitions::{OarError, MAX_OUTPUT_CHANNEL_COUNT};
+ 
++/// Safe output abstraction; channel slices need not be contiguous in memory.
++pub(crate) trait GainOutput {
++    fn has_shape(&self, channels: usize, samples: usize) -> bool;
++    fn channel_slice(&mut self, channel: usize, samples: usize) -> &mut [f32];
++}
++impl GainOutput for [f32] {
++    fn has_shape(&self, channels: usize, samples: usize) -> bool { self.len() >= channels * samples }
++    fn channel_slice(&mut self, channel: usize, samples: usize) -> &mut [f32] {
++        &mut self[channel * samples..(channel + 1) * samples]
++    }
++}
++
+ fn get_overlap(
+     first_sample: u64,
+     last_sample: u64,
+@@ -60,19 +72,31 @@
+         channels: usize,
+         output: &mut [f32],
+     ) -> Result<(), OarError> {
++        self.process_output(start_sample, input, num_samples, channels, output)
++    }
++
++    pub(crate) fn process_output<O: GainOutput + ?Sized>(
++        &mut self,
++        start_sample: u64,
++        input: &[f32],
++        num_samples: usize,
++        channels: usize,
++        output: &mut O,
++    ) -> Result<(), OarError> {
+         let (samples_range, _) =
+             match get_overlap(self.first_sample, self.last_sample, start_sample, num_samples) {
+                 Some(r) => r,
+                 None => return Ok(()),
+             };
+ 
+-        if output.len() < self.num_gains * num_samples {
++        if !output.has_shape(self.num_gains, num_samples) {
+             return Err(OarError::InvalidParameter);
+         }
+ 
+         if silent_overlap(input,num_samples,channels,&samples_range) {return Ok(());}
+ 
+         for i in 0..self.num_gains {
++            let out = output.channel_slice(i, num_samples);
+             let gain = self.gains[i];
+             // NSP validates finite PCM before rendering. Exact zero contributes
+             // no signal; retain every nonzero coefficient, including subnormals.
+@@ -81,7 +105,7 @@
+             }
+             for j in samples_range.clone() {
+                 for k in 0..channels {
+-                    output[i * num_samples + j] += input[k * num_samples + j] * gain;
++                    out[j] += input[k * num_samples + j] * gain;
+                 }
+             }
+         }
+@@ -143,13 +167,24 @@
+         channels: usize,
+         output: &mut [f32],
+     ) -> Result<(), OarError> {
++        self.process_output(start_sample, input, num_samples, channels, output)
++    }
++
++    pub(crate) fn process_output<O: GainOutput + ?Sized>(
++        &mut self,
++        start_sample: u64,
++        input: &[f32],
++        num_samples: usize,
++        channels: usize,
++        output: &mut O,
++    ) -> Result<(), OarError> {
+         let (samples_range, states_range) =
+             match get_overlap(self.first_sample, self.last_sample, start_sample, num_samples) {
+                 Some(r) => r,
+                 None => return Ok(()),
+             };
+ 
+-        if output.len() < self.num_gains * num_samples {
++        if !output.has_shape(self.num_gains, num_samples) {
+             return Err(OarError::InvalidParameter);
+         }
+ 
+@@ -161,23 +196,24 @@
+         // Preserve the two original per-sample sums, including their order.
+         if self.has_start && self.has_end {
+             for i in 0..self.num_gains {
++            let out = output.channel_slice(i, num_samples);
+                 let g_start=self.gains_start[i];let g_end=self.gains_end[i];
+                 if g_start==0.0 && g_end==0.0 {continue;}
+                 if g_start!=0.0 && g_end!=0.0 {
+                     for (m,j) in (states_range.start..).zip(samples_range.clone()) {
+                         let interp_val=m as f32*inv_transition_len;let weight=1.0-interp_val;
+-                        for k in 0..channels {output[i*num_samples+j]+=input[k*num_samples+j]*weight*g_start;}
+-                        for k in 0..channels {output[i*num_samples+j]+=input[k*num_samples+j]*interp_val*g_end;}
++                        for k in 0..channels {out[j]+=input[k*num_samples+j]*weight*g_start;}
++                        for k in 0..channels {out[j]+=input[k*num_samples+j]*interp_val*g_end;}
+                     }
+                 } else if g_start!=0.0 {
+                     for (m,j) in (states_range.start..).zip(samples_range.clone()) {
+                         let weight=1.0-m as f32*inv_transition_len;
+-                        for k in 0..channels {output[i*num_samples+j]+=input[k*num_samples+j]*weight*g_start;}
++                        for k in 0..channels {out[j]+=input[k*num_samples+j]*weight*g_start;}
+                     }
+                 } else {
+                     for (m,j) in (states_range.start..).zip(samples_range.clone()) {
+                         let interp_val=m as f32*inv_transition_len;
+-                        for k in 0..channels {output[i*num_samples+j]+=input[k*num_samples+j]*interp_val*g_end;}
++                        for k in 0..channels {out[j]+=input[k*num_samples+j]*interp_val*g_end;}
+                     }
+                 }
+             }
+@@ -188,6 +224,7 @@
+         // to reduce loop overhead and redundant multiplication operations.
+         if self.has_start {
+             for i in 0..self.num_gains {
++            let out = output.channel_slice(i, num_samples);
+                 let g_start = self.gains_start[i];
+                 if g_start == 0.0 {
+                     continue;
+@@ -196,7 +233,7 @@
+                     let interp_val = m as f32 * inv_transition_len;
+                     let weight = 1.0 - interp_val;
+                     for k in 0..channels {
+-                        output[i * num_samples + j] +=
++                        out[j] +=
+                             input[k * num_samples + j] * weight * g_start;
+                     }
+                 }
+@@ -205,6 +242,7 @@
+ 
+         if self.has_end {
+             for i in 0..self.num_gains {
++            let out = output.channel_slice(i, num_samples);
+                 let g_end = self.gains_end[i];
+                 if g_end == 0.0 {
+                     continue;
+@@ -212,7 +250,7 @@
+                 for (m, j) in (states_range.start..).zip(samples_range.clone()) {
+                     let interp_val = m as f32 * inv_transition_len;
+                     for k in 0..channels {
+-                        output[i * num_samples + j] +=
++                        out[j] +=
+                             input[k * num_samples + j] * interp_val * g_end;
+                     }
+                 }
+@@ -254,12 +292,23 @@
+         channels: usize,
+         output: &mut [f32],
+     ) -> Result<(), OarError> {
++        self.process_output(start_sample, input, num_samples, channels, output)
++    }
++
++    pub(crate) fn process_output<O: GainOutput + ?Sized>(
++        &mut self,
++        start_sample: u64,
++        input: &[f32],
++        num_samples: usize,
++        channels: usize,
++        output: &mut O,
++    ) -> Result<(), OarError> {
+         match self {
+             ProcessingBlockVariant::Fixed(b) => {
+-                b.process(start_sample, input, num_samples, channels, output)
++                b.process_output(start_sample, input, num_samples, channels, output)
+             }
+             ProcessingBlockVariant::Interp(b) => {
+-                b.process(start_sample, input, num_samples, channels, output)
++                b.process_output(start_sample, input, num_samples, channels, output)
+             }
+         }
+     }
+--- a/src/renderer/olr/block_processing_channel.rs
++++ b/src/renderer/olr/block_processing_channel.rs
+@@ -22,6 +22,7 @@
+ };
+ use crate::renderer::olr::gain_calculator::GainCalculator;
+ use crate::renderer::olr::interpret_object_metadata::InterpretObjectMetadata;
++use crate::renderer::olr::processing_block::GainOutput;
+ use crate::renderer::olr::processing_block::ProcessingBlockVariant;
+ use std::collections::VecDeque;
+ use std::sync::Arc;
+@@ -139,6 +140,16 @@
+         input: &[f32],
+         output: &mut [f32],
+     ) -> Result<(), OarError> {
++        self.process_output(_sample_rate, offset, input, output)
++    }
++
++    pub(crate) fn process_output<O: GainOutput + ?Sized>(
++        &mut self,
++        _sample_rate: SampleRate,
++        offset: u64,
++        input: &[f32],
++        output: &mut O,
++    ) -> Result<(), OarError> {
+         let start_sample = offset;
+         let num_samples = input.len();
+         let end_sample = start_sample + num_samples as u64;
+@@ -152,7 +163,7 @@
+             let last_sample = self.processing_queue.front().unwrap().last_sample();
+             let block = self.processing_queue.front_mut().unwrap();
+ 
+-            block.process(start_sample, input, num_samples, 1, output)?;
++            block.process_output(start_sample, input, num_samples, 1, output)?;
+ 
+             if last_sample < end_sample {
+                 self.processing_queue.pop_front();
+--- a/src/renderer/olr/object_renderer.rs
++++ b/src/renderer/olr/object_renderer.rs
+@@ -24,8 +24,18 @@
+ use crate::renderer::olr::block_processing_channel::BlockProcessingChannel;
+ use crate::renderer::olr::custom_gain_calculator::CustomGainCalculator;
+ use crate::renderer::olr::gain_calculator::GainCalculator;
++use crate::renderer::olr::processing_block::GainOutput;
+ use std::collections::HashMap;
+ use std::sync::Arc;
++
++impl GainOutput for PlanarBufferMut<'_, '_> {
++    fn has_shape(&self, channels: usize, samples: usize) -> bool {
++        self.num_channels() >= channels && self.num_samples() == samples
++    }
++    fn channel_slice(&mut self, channel: usize, _samples: usize) -> &mut [f32] {
++        self.channel_mut(channel)
++    }
++}
+ 
+ #[derive(Debug)]
+ struct ObjectElement {
+@@ -45,6 +55,7 @@
+     sample_rate: SampleRate,
+     elements: HashMap<u32, ObjectElement>,
+     channel_out_buffer: Vec<f32>,
++    max_block_samples: usize,
+     sorted_element_ids: Vec<u32>,
+     output_channels: usize,
+     offset: u64,
+@@ -76,13 +87,14 @@
+         if output_channels != output_layout.channels() {
+             return Err(OarError::InvalidParameter);
+         }
+-        let initial_scratch_size = output_channels * max_block_size.value() as usize;
++        let max_block_samples = max_block_size.value() as usize;
+         Ok(ObjectRenderer {
+             output_layout,
+             gain_calculator,
+             sample_rate,
+             elements: HashMap::new(),
+-            channel_out_buffer: vec![0.0; initial_scratch_size],
++            channel_out_buffer: Vec::new(),
++            max_block_samples,
+             sorted_element_ids: Vec::new(),
+             output_channels,
+             offset: 0,
+@@ -94,6 +106,16 @@
+     fn add_element(&mut self, id: u32, config: &AudioElementConfig) -> Result<(), OarError> {
+         match config {
+             AudioElementConfig::ObjectBased(cfg) => {
++                // Reserve only for multi-object accumulation, before rendering.
++                // One scratch block is reused across objects in the original order.
++                let other_objects: usize = self.elements.iter()
++                    .filter(|(existing, _)| **existing != id)
++                    .map(|(_, element)| element.channels.len()).sum();
++                let required_size = self.output_channels * self.max_block_samples;
++                if other_objects + cfg.num_objects as usize > 1
++                    && self.channel_out_buffer.len() < required_size {
++                    self.channel_out_buffer.resize(required_size, 0.0);
++                }
+                 let mut channels = Vec::new();
+                 for _ in 0..cfg.num_objects {
+                     channels.push(BlockProcessingChannel::new(Arc::clone(&self.gain_calculator)));
+@@ -149,16 +171,17 @@
+             return Err(OarError::InvalidParameter);
+         }
+ 
+-        if self.channel_out_buffer.len() < required_size {
++        if samples > self.max_block_samples {
+             return Err(OarError::InvalidParameter);
+         }
+ 
+         output.fill(0.0);
+-        // With one object, adding its scratch buffer to an initially zero
+-        // output is redundant. Keep the original accumulation order for
+-        // multiple objects: metadata boundary overlap can contribute twice
+-        // to a sample and fusing their sums changes float32 rounding.
++        // Direct single-object accumulation keeps all processing-block additions
++        // in their original order. Two or more objects retain isolated sums.
+         let single_object = inputs.num_channels() == 1;
++        if !single_object && self.channel_out_buffer.len() < required_size {
++            return Err(OarError::InvalidParameter);
++        }
+ 
+         let mut global_chan_idx = 0;
+         for &id in &self.sorted_element_ids {
+@@ -171,15 +194,18 @@
+                     let input_channel = inputs.channel(global_chan_idx);
+                     global_chan_idx += 1;
+ 
+-                    self.channel_out_buffer[..required_size].fill(0.0);
+-                    element.channels[local_idx].process(
+-                        self.sample_rate,
+-                        self.offset,
+-                        input_channel,
+-                        &mut self.channel_out_buffer[..required_size],
+-                    )?;
+-
+-                    if !single_object {
++                    if single_object {
++                        element.channels[local_idx].process_output(
++                            self.sample_rate, self.offset, input_channel, output,
++                        )?;
++                    } else {
++                        self.channel_out_buffer[..required_size].fill(0.0);
++                        element.channels[local_idx].process(
++                            self.sample_rate,
++                            self.offset,
++                            input_channel,
++                            &mut self.channel_out_buffer[..required_size],
++                        )?;
+                         for out_idx in 0..self.output_channels {
+                             let start = out_idx * samples;
+                             for (dst, src) in output.channel_mut(out_idx).iter_mut()
+@@ -189,14 +215,6 @@
+                         }
+                     }
+                 }
+-            }
+-        }
+-
+-        if single_object {
+-            for out_idx in 0..self.output_channels {
+-                let start = out_idx * samples;
+-                output.channel_mut(out_idx)
+-                    .copy_from_slice(&self.channel_out_buffer[start..start + samples]);
+             }
+         }
+ 

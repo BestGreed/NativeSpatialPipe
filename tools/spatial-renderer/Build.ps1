@@ -1,7 +1,7 @@
 param([string]$TargetDirectory='build/spatial-renderer', [string]$LlvmBin='work/rust-bootstrap/llvm-fast/llvm-mingw-20261006-ucrt-x86_64/bin')
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path "$PSScriptRoot/../..").Path
-$out=Join-Path $root $TargetDirectory
+$out=if([IO.Path]::IsPathRooted($TargetDirectory)){$TargetDirectory}else{Join-Path $root $TargetDirectory}
 $llvm=if([IO.Path]::IsPathRooted($LlvmBin)){$LlvmBin}else{Join-Path $root $LlvmBin}
 New-Item -ItemType Directory -Force $out | Out-Null
 $sources=@('spatial_renderer_c.cpp','native_scene.cpp','metadata_renderer.cpp','point_geometry.cpp','speaker_identity.cpp') | ForEach-Object {Join-Path $root "modules/audio-backends/src/$_"}

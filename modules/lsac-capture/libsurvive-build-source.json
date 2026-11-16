@@ -1,0 +1,44 @@
+{
+  "source_commit": "878c74e45b46b470aee93fcb35d391c761180669",
+  "staged": "work/lsac-libsurvive-source",
+  "changes": [
+    {
+      "file": "CMakeLists.txt",
+      "before_sha256": "2094309df6a5b607ebd98546d08313965a48ce2e74990284efbb6535eff4b65f",
+      "after_sha256": "b0e91643a3144544580e13bd938494c3373597a49a31f7140352b4299f434b35"
+    },
+    {
+      "file": "src/survive_config.c",
+      "before_sha256": "b4c32be517a5d263801d1604939b34cd09712fec79e8a11f4a2721aadff6148d",
+      "after_sha256": "db5cbe3496a9b4b6485dc26811d1d9cbe1da3f567740ae9a519daa4323b0a77e"
+    },
+    {
+      "file": "src/lfsr_lh2.c",
+      "before_sha256": "fc09b4ac1170e83ea73ddc1adfa10783083182d79e81cb60189d07bbb2945210",
+      "after_sha256": "ecf8ac41746f2e2be6f21bf0d9925904966409ad41e94636d18ab9f7e18c5ec6"
+    },
+    {
+      "file": "libs/cnmatrix/CMakeLists.txt",
+      "before_sha256": "54722d2e61670aa6897dc9d35d259b09808ff8234eb04d6c4f44c9568c92b7bd",
+      "after_sha256": "062eee5854f3f20537b9d7101b12110800ca1365f6890c1ebbca52c3a099f193"
+    },
+    {
+      "file": "libs/cnmatrix/src/CMakeLists.txt",
+      "before_sha256": "231b4c17f3f266edfbbe22dd56f10bdc22da8476009c9b0eed739e0dbb3626e3",
+      "after_sha256": "0a4cc9328915f2bfcfcb2a8a8dd7944b6087fceef1954a5fa823e3166fe79b7a"
+    },
+    {
+      "file": "src/driver_vive.c",
+      "before_sha256": "df853807334f1d73f383180302d15c4e6300e990e85557da82bdbeee04dba9f0",
+      "after_sha256": "01df9309b74741e97bc0e4cb2f17806d94701ad25110be1d2fb128c4a3ed560d"
+    }
+  ],
+  "purpose": "Portable build compatibility plus exact USB serial allowlist before opening/configuring devices; pairing stays disabled",
+  "built_targets": [
+    "survive",
+    "driver_vive",
+    "survive-cli"
+  ],
+  "optional_all_target_status": "visualize_mpfit link failure; core/driver/CLI built successfully",
+  "dll_sha256": "4ef938ada8d5ad86f172d0b9b86fdf4cf06fb41935a0fba2cc5b1f8da5721317"
+}

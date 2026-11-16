@@ -2,6 +2,7 @@
   "version": 1,
   "default": "7.1.4",
   "reserved": {"id": "roar-custom-6dof", "renderer": "roar", "available": false},
+  "deviceLayouts": [{"id":"2.0","channels":["L","R"]}],
   "layouts": [
     {"id":"5.1.2","code":512,"roar":"Layout512","channels":["L","R","C","LFE","Ls","Rs","Ltf","Rtf"]},
     {"id":"5.1.4","code":514,"roar":"Layout514","channels":["L","R","C","LFE","Ls","Rs","Ltf","Rtf","Ltr","Rtr"]},

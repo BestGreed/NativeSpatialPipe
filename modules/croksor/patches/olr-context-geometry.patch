@@ -1,0 +1,98 @@
+--- a/src/renderer/roar_renderer.rs
++++ b/src/renderer/roar_renderer.rs
+@@ -29,7 +29,10 @@
+ use crate::renderer::obr::common::constants::MAX_SUPPORTED_NUM_INPUT_CHANNELS;
+ use crate::renderer::obr::renderer::ObrAudioRendererAdapter;
+ use crate::renderer::olr::object_renderer::ObjectRenderer;
++use crate::renderer::olr::custom_gain_calculator::CustomGainCalculator;
++use crate::renderer::olr::gain_calculator::GainCalculator;
+ use std::collections::HashMap;
++use std::sync::Arc;
+ 
+ const MAX_OUTPUT_CHANNELS: usize = 25;
+ const LIMITER_RELEASE_TIME_MS: f64 = 50.0;
+@@ -114,6 +117,8 @@
+     gain_scratch_buf: Vec<f32>,
+     /// Interval in samples for processing object position metadata.
+     pub(crate) object_position_metadata_samples: u32,
++    /// One immutable OLR geometry per context, never shared object history.
++    olr_geometry: Option<(Layout, Arc<dyn GainCalculator>)>,
+ }
+ 
+ impl RoarRenderer {
+@@ -263,6 +268,7 @@
+             group_gains: HashMap::new(),
+             gain_scratch_buf: vec![1.0f32; samples],
+             object_position_metadata_samples: config.samples_per_channel().value(),
++            olr_geometry: None,
+         })
+     }
+ 
+@@ -294,8 +300,30 @@
+         Ok(new_id)
+     }
+ 
++    /// Prepare the fixed speaker geometry before the first captured packet.
++    /// Independent contexts own independent calculators; binaural routing is unchanged.
++    pub fn prepare_olr_geometry(&mut self) -> Result<(), OarError> {
++        if self.config.output_layout() == Layout::Binaural {
++            return Err(OarError::NotSupported);
++        }
++        self.shared_olr_geometry(self.config.output_layout())?;
++        Ok(())
++    }
++
++    fn shared_olr_geometry(&mut self, layout: Layout) -> Result<Arc<dyn GainCalculator>, OarError> {
++        if let Some((prepared_layout, calculator)) = &self.olr_geometry {
++            if *prepared_layout != layout {
++                return Err(OarError::InvalidParameter);
++            }
++            return Ok(Arc::clone(calculator));
++        }
++        let calculator: Arc<dyn GainCalculator> = Arc::new(CustomGainCalculator::new(layout)?);
++        self.olr_geometry = Some((layout, Arc::clone(&calculator)));
++        Ok(calculator)
++    }
++
+     fn instantiate_sub_renderer(
+-        &self,
++        &mut self,
+         id: u32,
+         config: &AudioElementConfig,
+         target_layout: Layout,
+@@ -318,10 +346,11 @@
+             AudioElementConfig::SceneBased(_) => {
+                 Box::new(EarRenderer::with_output_layout(target_layout))
+             }
+-            AudioElementConfig::ObjectBased(_obc) => Box::new(ObjectRenderer::new(
++            AudioElementConfig::ObjectBased(_obc) => Box::new(ObjectRenderer::with_gain_calculator(
+                 target_layout,
+                 self.config.sample_rate(),
+                 self.config.samples_per_channel(),
++                self.shared_olr_geometry(target_layout)?,
+             )?),
+         };
+ 
+--- a/src/renderer/olr/object_renderer.rs
++++ b/src/renderer/olr/object_renderer.rs
+@@ -62,7 +62,20 @@
+         max_block_size: Samples,
+     ) -> Result<Self, OarError> {
+         let gain_calculator = Arc::new(CustomGainCalculator::new(output_layout)?);
++        Self::with_gain_calculator(output_layout, sample_rate, max_block_size, gain_calculator)
++    }
++
++    /// Reuses immutable geometry from the owning rendering context only.
++    pub(crate) fn with_gain_calculator(
++        output_layout: Layout,
++        sample_rate: SampleRate,
++        max_block_size: Samples,
++        gain_calculator: Arc<dyn GainCalculator>,
++    ) -> Result<Self, OarError> {
+         let output_channels = gain_calculator.gains_count();
++        if output_channels != output_layout.channels() {
++            return Err(OarError::InvalidParameter);
++        }
+         let initial_scratch_size = output_channels * max_block_size.value() as usize;
+         Ok(ObjectRenderer {
+             output_layout,

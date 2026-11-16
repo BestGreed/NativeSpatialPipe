@@ -1,6 +1,6 @@
-param([string]$TargetDirectory='build/freesurround-v1',[ValidateSet(240,256,480,510,512,1024)][int]$Window=1024,[switch]$HalfHop,[string]$LlvmBin=$env:NSP_LLVM_BIN)
+param([string]$TargetDirectory='build/freesurround-v1',[ValidateSet(240,256,480,510,512,1024)][int]$Window=1024,[switch]$HalfHop,[string]$LlvmBin='work/rust-bootstrap/llvm-fast/llvm-mingw-20261006-ucrt-x86_64/bin')
 $ErrorActionPreference='Stop';$root=(Resolve-Path "$PSScriptRoot/../..").Path;$out=Join-Path $root $TargetDirectory
-if(!$LlvmBin){throw 'Pass -LlvmBin or set NSP_LLVM_BIN'}; $llvm=(Resolve-Path -LiteralPath $LlvmBin).Path
+$llvm=if([IO.Path]::IsPathRooted($LlvmBin)){$LlvmBin}else{Join-Path $root $LlvmBin}
 New-Item -ItemType Directory -Force $out|Out-Null
 & "$llvm/clang.exe" -O2 -c "$PSScriptRoot/vendor/kissfft/kiss_fft.c" -o "$out/fft.o"
 if($LASTEXITCODE){throw 'FFT build failed'}

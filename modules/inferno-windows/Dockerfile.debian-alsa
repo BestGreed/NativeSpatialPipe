@@ -1,0 +1,31 @@
+FROM rust:1.92.0-slim-trixie AS builder
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libasound2-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+ENV RUSTFLAGS="-C target-feature=-crt-static"
+ARG BUILD_FLAGS=--release
+ARG BUILD_TYPE=release
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/build/target \
+    mkdir /out && \
+    cargo build $BUILD_FLAGS -p alsa_pcm_inferno && \
+    cp target/$BUILD_TYPE/libasound_module_pcm_inferno.so /out/
+
+FROM debian:trixie-slim
+
+RUN apt-get update && apt-get install -y libasound2t64 && \
+    dpkg -L libasound2t64 | grep -m1 'libasound\.so\.2$' > /tmp/libasound.path && \
+    ln -s "$(dirname $(cat /tmp/libasound.path))/alsa-lib" /tmp/alsa-lib && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /out/libasound_module_pcm_inferno.so /tmp/alsa-lib/
+RUN rm /tmp/alsa-lib /tmp/libasound.path
+
+COPY alsa_pcm_inferno/asoundrc /etc/asound.conf

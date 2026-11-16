@@ -1,0 +1,6 @@
+# Optional fallback when index.crates.io is unreachable. Still uses the
+# official Rust index and the official download URLs in its config.json.
+[source.crates-io]
+replace-with = "official-github"
+[source.official-github]
+registry = "sparse+https://raw.githubusercontent.com/rust-lang/crates.io-index/master/"

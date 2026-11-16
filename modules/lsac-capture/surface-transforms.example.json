@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "tracker_serial": "LHR-C9F2A107",
+  "tracker_origin": "screw_axis_intersection_with_mounting_contact_plane",
+  "tracker_origin_verified": true,
+  "tracker_head_plus_y": "toward_USB_port",
+  "tracker_head_plus_z": "toward_mounting_face_side",
+  "screen_contact_instruction": "安装面贴屏幕中心，USB口朝屏幕下沿；屏幕X向右、Y向上、Z朝使用者",
+  "reference_contact_instruction": "安装面贴掌托或桌面，USB口朝使用者；参考面Y朝屏幕转轴、Z向上",
+  "tracker_from_screen_surface": {
+    "position_m": [0, 0, 0],
+    "quaternion_wxyz": [0, 1, 0, 0]
+  },
+  "tracker_from_reference_surface": {
+    "position_m": [0, 0, 0],
+    "quaternion_wxyz": [0, 1, 0, 0]
+  },
+  "physical_contact_placement_verified": false,
+  "floor_or_absolute_desk_height_required": false,
+  "note": "A设备head原点已独立导出核实；本例仅适用于上述USB方向与安装面直接贴合，额外接触垫或转接件需补偿。"
+}

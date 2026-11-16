@@ -1,0 +1,22 @@
+[package]
+name = "nsp-mf-decoder"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+bridge_api = { path = "vendor/bridge_api" }
+bridge-common = { path = "vendor/bridge-common" }
+bridge-family-dolby = { path = "vendor/bridge-family-dolby" }
+abi_stable = "0.11.3"
+
+[patch.crates-io]
+truehd = { path = "vendor/truehd" }
+
+[profile.release]
+lto = "thin"

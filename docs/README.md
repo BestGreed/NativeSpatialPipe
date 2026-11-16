@@ -1,16 +1,11 @@
-# Public source documentation
+# Native Spatial Pipe documentation
 
-- [Runtime details and validation limits](runtime-details.md)
-- [Alpha integration and provenance](alpha-dev.md)
-- [Current architecture](core/current-architecture.md)
-- [Stack and documentation audit](core/stack-architecture-audit-20261024.md)
-- [Native enumeration hook](core/native-enumeration-hook-20261024.md)
-- [Build and pinned dependencies](build.md)
-- [Playback JSON](core/playback-json-configuration-20261022.md)
-- [Output pool](core/output-pool-processing-20261022.md)
+- [Product build and dependencies](build.md)
+- [Runtime architecture and validation](runtime-details.md)
+- [Source provenance](alpha-dev.md)
 - [WASAPI output and diagnostics](wasapi-diagnostics.md)
-- [LSAC stereo post-processing adapter](lsac-adapter.md)
-- [Standalone FreeSurround decoder](freesurround.md)
-- [Renderer boundary](core/renderer-backend-boundary-20261021.md)
-- [FSA / scheduler](scheduler.md)
+- [FreeSurround](freesurround.md)
+- [LSAC stereo DSP adapter](lsac-adapter.md)
 - [License scope](../LICENSING.md)
+
+The dated design notes and earlier CI instructions describe previous development builds.

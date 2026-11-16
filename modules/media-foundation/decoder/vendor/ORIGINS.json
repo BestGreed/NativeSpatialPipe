@@ -1,0 +1,12 @@
+{
+  "harlettyBridge": {
+    "repository": "https://github.com/harletty/harletty-bridge",
+    "tag": "v0.9.0",
+    "commit": "9556bcedfd6e71461d49fd3f03fcfdf87351b67f"
+  },
+  "truehd": {
+    "repository": "https://github.com/harletty/truehdd",
+    "commit": "5c8b880405946e7ff1aee884cf9988415fe2c3a9"
+  },
+  "adaptation": "Cargo path dependencies only; codec implementation unchanged"
+}

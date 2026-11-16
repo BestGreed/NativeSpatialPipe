@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import {Navigation,VisualHeading,norm,rad} from './navigation.js';
+import {snapshot} from './test-navigation-fixture.js';
+
+function run(scene,frames=35,options={}){const nav=new Navigation(),visual=new VisualHeading();let valid=0,flow=0,maxFlow=0;
+  for(let i=0;i<frames;i++){const m=snapshot(i);scene(m,i);
+    const result=nav.ingest(m,options);valid+=+result.valid;flow+=+result.flowAvailable;maxFlow=Math.max(maxFlow,result.flowAvailable?norm(result.dominantFlow):0);
+    visual.step(nav,.05);visual.step(nav,.05);
+  }return {nav,visual,valid,flow,maxFlow};}
+const still=run(()=>{});assert(still.valid>25);assert(!still.nav.result.flowAvailable);assert(norm(still.nav.result.dominantFlow)===0);
+const mixed=run((m,i)=>{for(const o of m.taps['decoded-input'].objects.slice(0,7))o.spatial.position[0]+=i*.12;});
+assert(mixed.valid>20);assert(mixed.flow>10);assert(mixed.maxFlow>.05);
+assert.equal(mixed.nav.result.observerMotion.status,'candidate-only');
+const highOutliers=run((m,i)=>{for(const o of m.taps['decoded-input'].objects.slice(0,8))o.spatial.position=[Math.sin(i*.8+o.objectKey.slot)*3,Math.cos(i*.5+o.objectKey.slot),Math.sin(i*.7-o.objectKey.slot)*3];});
+assert(highOutliers.valid>15);
+const noReference=run((m,i)=>{for(const o of m.taps['decoded-input'].objects)o.spatial.position=[Math.sin(i*.7+o.objectKey.slot)*3,Math.cos(i*.4+o.objectKey.slot),Math.sin(i*.8-o.objectKey.slot)*2];});
+assert.equal(noReference.valid,0);assert.equal(noReference.visual.relocations,0);
+const breakInIdentity=run((m,i)=>{if(i>10)for(const o of m.taps['decoded-input'].objects)o.objectKey.generation=i;});
+assert.equal(breakInIdentity.nav.result.valid,false);
+const fast=run((m,i)=>{const theta=i*.055,c=Math.cos(theta),s=Math.sin(theta);for(const o of m.taps['decoded-input'].objects){const [x,y,z]=o.spatial.position;o.spatial.position=[c*x+s*z,y,-s*x+c*z];}});
+assert(fast.valid>20);assert(Math.abs(fast.nav.yaw)>45*rad);
+const sourceTurn=run((m,i)=>{const theta=i*.1,c=Math.cos(theta),s=Math.sin(theta);for(const o of m.taps['decoded-input'].objects){const [x,y,z]=o.spatial.position;o.spatial.position=[20*(c*x+s*z),20*y,20*(-s*x+c*z)];}},35,{sourceSpace:true});
+assert(sourceTurn.valid>20);assert(Math.abs(sourceTurn.nav.yaw)>80*rad);
+assert.equal(sourceTurn.nav.result.cooperativeFlow.valid,false);
+const sourceWalk=run((m,i)=>{for(const o of m.taps['decoded-input'].objects)o.spatial.position[2]+=i*.08;},35,{sourceSpace:true});
+assert(sourceWalk.valid>20);assert(sourceWalk.nav.result.translation[2]>.5);assert.equal(sourceWalk.nav.result.translationUnit,'source-unverified/s');
+assert(sourceWalk.nav.result.cooperativeFlow.valid);assert(sourceWalk.nav.result.cooperativeFlow.observer[2]<-.5);
+const loneMover=run((m,i)=>{m.taps['decoded-input'].objects[0].spatial.position[2]+=i*.8;},35,{sourceSpace:true});
+assert.equal(loneMover.nav.result.cooperativeFlow.valid,false);
+const sourceIndependent=run((m,i)=>{for(const o of m.taps['decoded-input'].objects)o.spatial.position=[Math.sin(i*.7+o.objectKey.slot)*3,Math.cos(i*.4+o.objectKey.slot),Math.sin(i*.8-o.objectKey.slot)*2];},35,{sourceSpace:true});
+assert.equal(sourceIndependent.valid,0);
+assert.equal(sourceIndependent.nav.result.cooperativeFlow.valid,false);
+const sourceJump=run((m,i)=>{if(i>=10)for(const o of m.taps['decoded-input'].objects){const [x,y,z]=o.spatial.position;o.spatial.position=[z,y,-x];}},35,{sourceSpace:true});
+assert(Math.abs(sourceJump.nav.yaw)<rad);
+assert.equal(sourceJump.nav.result.cooperativeFlow.valid,false);
+console.log(JSON.stringify({passed:true,mixed:{valid:mixed.valid,flow:mixed.flow},highOutliers:highOutliers.valid,noReference:noReference.valid,fastYawDeg:fast.nav.yaw/rad}));

@@ -1,0 +1,36 @@
+
+pcm.inferno {
+	type inferno
+	@args.NAME { type string }
+	@args.DEVICE_ID { type string }
+	@args.BIND_IP { type string }
+	@args.SAMPLE_RATE { type string }
+	@args.PROCESS_ID { type string }
+	@args.ALT_PORT { type string }
+	@args.RX_CHANNELS { type string }
+	@args.TX_CHANNELS { type string }
+	@args.CLOCK_PATH { type string }
+	@args.RX_LATENCY_NS { type string }
+	@args.TX_LATENCY_NS { type string }
+
+	# note: too long ALSA device string may not work in some or all apps (noticed in PipeWire)
+	# so if you need to change them, better configure all needed settings below
+	# and remove corresponding "@args. ..." lines above
+
+	NAME $NAME
+	DEVICE_ID $DEVICE_ID
+	BIND_IP $BIND_IP
+	SAMPLE_RATE $SAMPLE_RATE
+	PROCESS_ID $PROCESS_ID
+	ALT_PORT $ALT_PORT
+	RX_CHANNELS $RX_CHANNELS
+	TX_CHANNELS $TX_CHANNELS
+	CLOCK_PATH $CLOCK_PATH
+	RX_LATENCY_NS $RX_LATENCY_NS
+	TX_LATENCY_NS $TX_LATENCY_NS
+
+	hint {
+		show on
+		description "Inferno ALSA virtual device"
+	}
+}

@@ -15,6 +15,8 @@ target_link_libraries(NSP.AsioOutput PRIVATE NSP.AsioDevice)
 add_library(NSP.SpatialRenderer SHARED src/spatial_renderer_c.cpp src/native_scene.cpp src/metadata_renderer.cpp src/point_geometry.cpp src/speaker_identity.cpp)
 target_compile_definitions(NSP.SpatialRenderer PRIVATE NSP_SPATIAL_BUILD)
 target_include_directories(NSP.SpatialRenderer PUBLIC src)
+add_library(NSP.WasapiOutput SHARED src/wasapi_pool.cpp)
+target_link_libraries(NSP.WasapiOutput PRIVATE ole32 uuid avrt)
 # Compatibility helpers are not linked into either production DLL.
 add_library(NSP.LegacyLayoutAdapter STATIC EXCLUDE_FROM_ALL src/asio_layout_adapter.cpp src/speaker_layout.cpp)
 target_include_directories(NSP.LegacyLayoutAdapter PUBLIC src)

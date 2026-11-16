@@ -1,0 +1,876 @@
+//! Restart header structures and decoder initialization.
+//!
+//! Restart headers provide decoder initialization and recovery points within TrueHD streams.
+//!
+//! ## Restart Sync Words
+//!
+//! - **0x31EA**: Substream 0 and substream 1
+//! - **0x31EB**: Substream 1 and substream 2
+//! - **0x31EC**: Substream 3 (object-based audio)
+//!
+//! ## Parameters
+//!
+//! Contains channel configuration, timing management, dithering parameters,
+//! and channel permutation mapping.
+
+use crate::log_or_err;
+use crate::process::decode::DecoderState;
+use crate::process::parse::{BranchConditions, ParserState};
+use crate::structs::sync::{
+    BASE_SAMPLING_RATE_CD, MAJOR_SYNC_FBA, MAJOR_SYNC_FBB, samples_per_75ms,
+};
+use crate::utils::bitstream_io::BsIoSliceReader;
+use crate::utils::errors::RestartHeaderError;
+use crate::utils::timing::{HiresTimingFault, TimingContext};
+use anyhow::{Result, anyhow, bail};
+use log::Level::Warn;
+use log::{info, trace};
+
+/// Restart synchronization words identifying substream types.
+///
+/// 16-bit restart sync word at the beginning of restart headers
+/// determining substream type and block organization.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u16)]
+pub enum RestartSyncWord {
+    #[default]
+    None,
+    A = 0x31EA,
+    B,
+    C,
+}
+
+impl RestartSyncWord {
+    pub fn read(reader: &mut BsIoSliceReader) -> Result<Self> {
+        let value = reader.get_n::<u16>(14)?;
+        RestartSyncWord::try_from(value).map_err(Into::into)
+    }
+}
+
+impl TryFrom<u16> for RestartSyncWord {
+    type Error = RestartHeaderError;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            0x31EA => Ok(RestartSyncWord::A),
+            0x31EB => Ok(RestartSyncWord::B),
+            0x31EC => Ok(RestartSyncWord::C),
+            _ => Err(RestartHeaderError::InvalidRestartSyncWord(value)),
+        }
+    }
+}
+impl From<RestartSyncWord> for u16 {
+    fn from(value: RestartSyncWord) -> Self {
+        match value {
+            RestartSyncWord::A => 0x31EA,
+            RestartSyncWord::B => 0x31EB,
+            RestartSyncWord::C => 0x31EC,
+            RestartSyncWord::None => 0,
+        }
+    }
+}
+
+/// Complete restart header for decoder initialization.
+///
+/// Provides decoder state initialization at sync points.
+/// Protected by 8-bit CRC.
+#[derive(Clone, Debug, Default)]
+pub struct RestartHeader {
+    pub restart_sync_word: RestartSyncWord,
+    pub output_timing: u16,
+    pub min_chan: u8,
+    pub max_chan: u8,
+    pub max_matrix_chan: u8,
+    pub dither_shift: u8,
+    pub dither_seed: u32,
+    pub max_shift: u8,
+    pub max_lsbs: u8,
+    pub max_bits: u8,
+    pub max_bits_repeat: u8,
+    pub error_protect: bool,
+    pub lossless_check: u8,
+
+    pub hires_output_timing: bool,
+    pub heavy_drc_present: bool,
+    pub heavy_drc_gain_update: i16,
+    pub heavy_drc_time_update: u8,
+
+    pub ch_assign: [usize; 16],
+
+    pub restart_header_crc: u8,
+}
+
+impl RestartHeader {
+    pub fn read(state: &mut ParserState, reader: &mut BsIoSliceReader) -> Result<Self> {
+        let start_pos = reader.position()?;
+
+        let mut rh = Self {
+            restart_sync_word: RestartSyncWord::read(reader)?,
+            output_timing: reader.get_n(16)?,
+            min_chan: reader.get_n(4)?,
+            max_chan: reader.get_n(4)?,
+            max_matrix_chan: reader.get_n(4)?,
+            dither_shift: reader.get_n(4)?,
+            dither_seed: reader.get_n(23)?,
+            max_shift: reader.get_n(4)?,
+            max_lsbs: reader.get_n(5)?,
+            max_bits: reader.get_n(5)?,
+            max_bits_repeat: reader.get_n(5)?,
+            error_protect: reader.get()?,
+            lossless_check: reader.get_n(8)?,
+            ..Default::default()
+        };
+
+        'check_output_timing: {
+            Self::check_output_timing_matches(state, rh.output_timing, reader)?;
+
+            if state.has_parsed_substream {
+                break 'check_output_timing;
+            }
+
+            state.output_timing = rh.output_timing as usize;
+
+            if !state.has_parsed_au {
+                if state.output_timing < state.input_timing {
+                    state.output_timing += 0x10000;
+                }
+
+                // Recorded unwrapped, so the value seeding the FIFO output clock is the
+                // adjusted one. The 16-bit consumers are unaffected.
+                state.first_output_timing = state.output_timing;
+
+                trace!(
+                    "AU {}: first output_timing adjusted to {}",
+                    state.au_counter, state.output_timing
+                );
+            } else {
+                let history_index = state.substream_state()?.history_index.wrapping_sub(1) & 0x7F;
+
+                let samples_per_au = state.samples_per_au;
+
+                state.advance = state
+                    .output_timing
+                    .wrapping_sub(samples_per_au)
+                    .wrapping_sub(state.input_timing)
+                    & 0xFFFF;
+
+                let expected_output_timing = state
+                    .output_timing_deviation
+                    .wrapping_add(samples_per_au)
+                    .wrapping_add(state.substream_state()?.output_timing_history[history_index])
+                    & 0xFFFF;
+
+                if expected_output_timing == state.output_timing {
+                    if !state.input_timing_jump && !state.peak_data_rate_jump {
+                        break 'check_output_timing;
+                    }
+                } else if state.allow_seamless_branch {
+                    if state.has_valid_branch {
+                        log_or_err!(
+                            state,
+                            Warn,
+                            anyhow!(RestartHeaderError::OutputTimingAfterJump {
+                                read: state.output_timing,
+                                expected: expected_output_timing
+                            }),
+                            reader
+                        );
+                    }
+                    state.output_timing_jump = true;
+                    trace!(
+                        "Output timing jump: read={}, expected={}",
+                        state.output_timing, expected_output_timing
+                    );
+                } else {
+                    log_or_err!(
+                        state,
+                        Warn,
+                        anyhow!(RestartHeaderError::InvalidOutputTiming {
+                            read: state.output_timing,
+                            expected: expected_output_timing
+                        }),
+                        reader
+                    );
+                }
+
+                if state.has_jump() {
+                    let samples_per_au = state.samples_per_au;
+                    let prev_advance = state.prev_advance;
+                    let advance = state.advance;
+                    let prev_access_unit_length = state.prev_access_unit_length;
+                    let prev_fifo_duration = state.prev_fifo_duration;
+
+                    let input_timing_interval = samples_per_au
+                        .wrapping_add(prev_advance)
+                        .wrapping_sub(advance)
+                        & 0xFFFF;
+
+                    if input_timing_interval == 0 {
+                        log_or_err!(
+                            state,
+                            Warn,
+                            anyhow!(RestartHeaderError::ZeroInputTimingInterval {
+                                samples_per_au,
+                                prev_advance,
+                                advance,
+                            }),
+                            reader
+                        );
+                        break 'check_output_timing;
+                    }
+
+                    let data_rate = (state.audio_sampling_frequency_1 as usize
+                        * (prev_access_unit_length << 4))
+                        .div_ceil(input_timing_interval);
+
+                    if data_rate > state.max_data_rate {
+                        state.max_data_rate = data_rate;
+                        state.max_data_rate_au_index = state.au_counter - 1;
+                    }
+
+                    let samples_per_au_3q4 = 3 * (samples_per_au >> 2);
+                    let limit_75ms = samples_per_75ms(state.audio_sampling_frequency_1) as usize;
+
+                    let c2_limit = prev_advance
+                        .checked_add(samples_per_au)
+                        .and_then(|v| v.checked_sub(prev_fifo_duration));
+                    let c3_limit = limit_75ms.checked_sub(samples_per_au);
+
+                    let c1 = advance <= prev_advance.saturating_add(samples_per_au_3q4);
+                    let c2 = c2_limit.is_some_and(|limit| advance <= limit);
+                    let c3 = c3_limit.is_some_and(|limit| advance <= limit);
+                    let c4 = prev_access_unit_length << 8
+                        <= state
+                            .prev_peak_data_rate
+                            .saturating_mul(input_timing_interval);
+
+                    let conditions = BranchConditions {
+                        advance_step: c1,
+                        fifo_duration: c2,
+                        within_75ms: c3,
+                        data_rate: c4,
+                    };
+                    state.record_branch(advance, conditions);
+
+                    if conditions.is_valid() {
+                        state.has_valid_branch = true;
+                        state.reset_for_branch();
+
+                        state.output_timing_deviation = state
+                            .output_timing
+                            .wrapping_sub(state.first_output_timing)
+                            .wrapping_sub(state.au_counter * samples_per_au)
+                            & 0xFFFF;
+
+                        // The arrival was unwrapped before the branch was judged, so a
+                        // restarted input clock reads a wrap late. Re-run it now the
+                        // deviation aligns the two clocks.
+                        let mut arrival = (state.input_timing as u16)
+                            .wrapping_sub(state.output_timing_deviation as u16)
+                            as usize;
+
+                        while state.prev_unwrapped_input_timing > arrival {
+                            arrival += 0x10000;
+                        }
+
+                        state.unwrapped_input_timing = arrival;
+
+                        info!(
+                            "AU {}: Valid seamless branch. Latency {} -> {}",
+                            state.au_counter,
+                            state.substream_state()?.prev_latency,
+                            state.output_timing.wrapping_sub(state.input_timing) & 0xFFFF,
+                        );
+
+                        break 'check_output_timing;
+                    }
+
+                    if !c1 {
+                        log_or_err!(
+                            state,
+                            Warn,
+                            anyhow!(RestartHeaderError::BranchAdvanceTooLarge {
+                                advance,
+                                prev_advance,
+                                slack: samples_per_au_3q4,
+                            }),
+                            reader
+                        );
+                    }
+
+                    if !c2 {
+                        log_or_err!(
+                            state,
+                            Warn,
+                            anyhow!(RestartHeaderError::BranchAdvanceExceedsBuffer {
+                                advance,
+                                prev_advance,
+                                samples_per_au,
+                                prev_fifo_duration,
+                            }),
+                            reader
+                        );
+                    }
+
+                    if !c3 {
+                        log_or_err!(
+                            state,
+                            Warn,
+                            anyhow!(RestartHeaderError::BranchAdvanceExceeds75ms {
+                                advance,
+                                limit_75ms,
+                                samples_per_au,
+                            }),
+                            reader
+                        );
+                    }
+
+                    if !c4 {
+                        log_or_err!(
+                            state,
+                            Warn,
+                            anyhow!(RestartHeaderError::BranchDataRateExceeded),
+                            reader
+                        );
+                    }
+
+                    log_or_err!(
+                        state,
+                        Warn,
+                        anyhow!(RestartHeaderError::InvalidSeamlessBranch),
+                        reader
+                    );
+
+                    let output_timing = state.output_timing;
+                    state.restart_stream_for_branch(output_timing);
+                }
+            }
+        }
+
+        match rh.restart_sync_word {
+            RestartSyncWord::A if state.substream_index == 1 && state.substream_info & 8 == 0 => {
+                bail!(RestartHeaderError::InvalidSyncBForSubstream1)
+            }
+            RestartSyncWord::B if state.substream_index == 0 => {
+                bail!(RestartHeaderError::InvalidSyncBForSubstream0)
+            }
+            rsw @ RestartSyncWord::C if state.substream_index != 3 => {
+                bail!(RestartHeaderError::InvalidSyncC(rsw as u16))
+            }
+            _ => {}
+        }
+
+        if rh.max_bits != rh.max_bits_repeat {
+            bail!(RestartHeaderError::MaxBitsMismatch {
+                first: rh.max_bits,
+                second: rh.max_bits_repeat
+            })
+        }
+
+        rh.hires_output_timing = reader.get()?;
+
+        trace!(
+            "AU {}: high-resolution output timing field = {}",
+            state.au_counter, rh.hires_output_timing
+        );
+
+        // Each substream serialises its own field over its own restart headers.
+        let ctx = TimingContext::from(&*state);
+        let first_substream = !state.has_parsed_substream;
+        let timing = state.substream_state_mut()?;
+        timing.hires_output_timing = rh.hires_output_timing;
+        let stream_start = timing
+            .hires_output_timing_state
+            .update(&ctx, rh.hires_output_timing);
+        let fault = timing.hires_output_timing_state.fault.take();
+
+        if let Some(stream_start) = stream_start
+            && first_substream
+        {
+            state.hires_output_timing = Some(stream_start);
+        }
+
+        match fault {
+            Some(HiresTimingFault::Malformed { au, reason }) => log_or_err!(
+                state,
+                Warn,
+                anyhow!(RestartHeaderError::InvalidHiresOutputTiming { au, reason }),
+                reader
+            ),
+            Some(HiresTimingFault::Sequence {
+                timing,
+                au,
+                prev_timing,
+                prev_au,
+            }) => log_or_err!(
+                state,
+                Warn,
+                anyhow!(RestartHeaderError::InvalidHiresOutputTimingSequence {
+                    timing,
+                    au,
+                    prev_timing,
+                    prev_au
+                }),
+                reader
+            ),
+            None => {}
+        }
+
+        reader.skip_n(2)?;
+
+        // Reserved unless flags bit 13 says the stream carries heavy DRC.
+        if state.flags & 0x2000 != 0 {
+            rh.heavy_drc_present = reader.get()?;
+
+            if state.format_sync == MAJOR_SYNC_FBA {
+                let ss_state = state.substream_state_mut()?;
+                ss_state.heavy_drc_count += 1;
+
+                let (heavy_drc_active, heavy_drc_time_update, heavy_drc_count) = (
+                    ss_state.heavy_drc_active,
+                    ss_state.heavy_drc_time_update,
+                    ss_state.heavy_drc_count,
+                );
+
+                if heavy_drc_active && 1 << heavy_drc_time_update < heavy_drc_count {
+                    log_or_err!(
+                        state,
+                        Warn,
+                        anyhow!(RestartHeaderError::HeavyDrcTimeUpdateExceeded {
+                            heavy_drc_time_update,
+                            heavy_drc_count
+                        }),
+                        reader
+                    );
+                }
+            }
+        } else {
+            reader.skip_n(1)?;
+        }
+
+        // The bit this header carries decides the twelve after it, not the one before.
+        if rh.heavy_drc_present {
+            if state.format_sync == MAJOR_SYNC_FBB {
+                // The field is FBA-only, so nothing follows it here; report and read on.
+                log_or_err!(
+                    state,
+                    Warn,
+                    anyhow!(RestartHeaderError::HeavyDrcPresentInFbb),
+                    reader
+                );
+            } else {
+                rh.heavy_drc_gain_update = reader.get_s(9)?;
+                rh.heavy_drc_time_update = reader.get_n(3)?;
+
+                let ss_state = state.substream_state_mut()?;
+                ss_state.heavy_drc_active = true;
+                ss_state.heavy_drc_count = 0;
+                ss_state.heavy_drc_gain_update = rh.heavy_drc_gain_update;
+                ss_state.heavy_drc_time_update = rh.heavy_drc_time_update;
+            }
+        } else {
+            reader.skip_n(12)?;
+        }
+
+        // TODO: as context?
+        let mut permutation: u16 = 0;
+
+        for i in 0..=rh.max_matrix_chan as usize {
+            let ch_assign = reader.get_n::<u8>(6)?;
+
+            // The permutation must index within the matrix channels in either format.
+            if ch_assign > rh.max_matrix_chan {
+                bail!(RestartHeaderError::ChannelAssignTooHigh {
+                    index: i,
+                    value: ch_assign,
+                    max: rh.max_matrix_chan
+                })
+            }
+
+            // Requiring the identity permutation is FBA-only, and only for substream 0 at
+            // four times the CD rate or above. FBB carries no such rule.
+            if state.format_sync == MAJOR_SYNC_FBA
+                && state.substream_index == 0
+                && i != ch_assign as usize
+                && state.audio_sampling_frequency_1 >= BASE_SAMPLING_RATE_CD << 2
+            {
+                bail!(RestartHeaderError::ChannelAssignMisordered {
+                    index: i,
+                    value: ch_assign,
+                })
+            }
+
+            let permutation_bit = 1 << ch_assign;
+
+            if permutation_bit & permutation != 0 {
+                bail!(RestartHeaderError::ChannelAssignDuplicate(
+                    rh.max_matrix_chan
+                ))
+            }
+
+            permutation |= permutation_bit;
+
+            rh.ch_assign[i] = ch_assign as usize;
+        }
+
+        let len = reader.position()? - start_pos;
+
+        rh.restart_header_crc = reader.get_n(8)?;
+
+        let crc = reader.crc8_check(&state.crc_restart_block_header, start_pos, len)?;
+
+        if crc != rh.restart_header_crc {
+            bail!(RestartHeaderError::RestartHeaderCrcMismatch {
+                calculated: crc,
+                read: rh.restart_header_crc
+            });
+        }
+
+        state.reset_parser_substream_state();
+        let ss_state = state.substream_state_mut()?;
+
+        ss_state.restart.restart_sync_word = rh.restart_sync_word as u16;
+        ss_state.restart.min_chan = rh.min_chan as usize;
+        ss_state.restart.max_chan = rh.max_chan as usize;
+        ss_state.restart.max_matrix_chan = rh.max_matrix_chan as usize;
+        ss_state.restart.max_shift = rh.max_shift as i8;
+        ss_state.restart.max_lsbs = rh.max_lsbs as u32;
+        ss_state.restart.error_protect = rh.error_protect;
+        ss_state.heavy_drc_present = rh.heavy_drc_present;
+
+        Ok(rh)
+    }
+
+    /// Compares one substream's `output_timing` against the first seen in this access
+    /// unit, adopting it as the reference when it is the first.
+    ///
+    /// Every substream present in the access unit takes part, including one whose segment
+    /// the presentation mask skips: its restart header is never read, so the comparison
+    /// would otherwise cover only the substreams a given presentation happens to need.
+    fn check_output_timing_matches(
+        state: &mut ParserState,
+        output_timing: u16,
+        reader: &mut BsIoSliceReader,
+    ) -> Result<()> {
+        let Some((reference, expected)) = state.au_output_timing else {
+            state.au_output_timing = Some((state.substream_index, output_timing));
+
+            return Ok(());
+        };
+
+        if expected != output_timing {
+            log_or_err!(
+                state,
+                Warn,
+                anyhow!(RestartHeaderError::OutputTimingMismatch {
+                    substream: state.substream_index,
+                    read: output_timing,
+                    reference,
+                    expected,
+                }),
+                reader
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Takes part in the `output_timing` comparison for a substream whose segment is
+    /// being skipped, leaving the reader where it was.
+    ///
+    /// Only the two block flags and the restart sync word stand between the segment start
+    /// and `output_timing`, so a skipped segment can still be held to the rule. A segment
+    /// that carries no restart header carries no `output_timing` to compare.
+    pub fn peek_output_timing(state: &mut ParserState, reader: &mut BsIoSliceReader) -> Result<()> {
+        if reader.available()? < 32 {
+            return Ok(());
+        }
+
+        let peek = reader.get_n::<u32>(32)?;
+        reader.seek(-32)?;
+
+        // block_header_exists, restart_header_exists, restart_sync_word, output_timing.
+        if peek >> 30 != 3 || RestartSyncWord::try_from((peek >> 16) as u16 & 0x3FFF).is_err() {
+            return Ok(());
+        }
+
+        Self::check_output_timing_matches(state, peek as u16, reader)
+    }
+
+    pub fn update_decoder_state(&self, state: &mut DecoderState) -> Result<()> {
+        let valid = state.valid;
+
+        // Compare the lossless check for every presentation being decoded, not
+        // only the highest one: the accumulator is maintained per effective
+        // presentation, and a multi-presentation decode would otherwise leave
+        // the lower presentations' PCM unverified.
+        if valid && state.effective_presentations[state.substream_index] {
+            let substream_info = state.substream_info;
+            if match state.substream_index {
+                0 => true,
+                1 => substream_info & 8 != 0 || substream_info & 0x60 == 0x20,
+                2 => substream_info & 0x40 != 0,
+                3 => substream_info >> 7 != 0,
+                _ => bail!(RestartHeaderError::InvalidStream),
+            } {
+                let mut lossless_check_i32 = state.substream_state()?.lossless_check_i32_accum;
+                lossless_check_i32 ^= lossless_check_i32 >> 16;
+                lossless_check_i32 ^= lossless_check_i32 >> 8;
+                lossless_check_i32 &= 0xFF;
+
+                if lossless_check_i32 != self.lossless_check as i32 {
+                    // Past a splice the check covers samples of the new stream from before
+                    // the splice, which this decoder never saw, whether or not the branch
+                    // met the buffer-model conditions.
+                    if state.has_valid_branch || state.has_invalid_branch {
+                        log::debug!(
+                            "lossless_check failure is allowed on first access unit immediately after the jump"
+                        )
+                    } else {
+                        log_or_err!(
+                            state,
+                            Warn,
+                            anyhow!(RestartHeaderError::LosslessCheckMismatch {
+                                substream: state.substream_index,
+                                calculated: lossless_check_i32,
+                                read: self.lossless_check
+                            })
+                        )
+                    }
+                }
+            }
+        }
+
+        if valid
+            && !state.has_duplicate_timing
+            && state.substream_state()?.output_timing == self.output_timing
+        {
+            state.has_duplicate_timing = true;
+        }
+
+        state.reset_decoder_substream_state();
+
+        let ss_state = state.substream_state_mut()?;
+
+        ss_state.restart_sync_word = self.restart_sync_word as u16;
+        ss_state.output_timing = self.output_timing;
+        ss_state.max_bits = self.max_bits;
+        ss_state.min_chan = self.min_chan as usize;
+        ss_state.max_chan = self.max_chan as usize;
+        ss_state.max_matrix_chan = self.max_matrix_chan as usize;
+        ss_state.dither_shift = self.dither_shift as u32;
+        ss_state.dither_seed = self.dither_seed;
+        ss_state.ch_assign = self.ch_assign;
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Guards(u8);
+
+impl Default for Guards {
+    fn default() -> Self {
+        Self(0xFF)
+    }
+}
+
+impl Guards {
+    pub fn read(reader: &mut BsIoSliceReader) -> Result<Self> {
+        let guards = reader.get_n(8)?;
+        Ok(Self(guards))
+    }
+}
+
+#[repr(u8)]
+pub enum GuardsField {
+    Guards,
+    HuffOffset,
+    CoeffsB,
+    CoeffsA,
+    QuantiserStepSize,
+    OutputShift,
+    Matrixing,
+    BlockSize,
+}
+
+impl Guards {
+    pub fn need_change(&self, field: GuardsField) -> bool {
+        self.0 & (1 << field as u8) != 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::crc::{CRC_RESTART_BLOCK_HEADER_ALG, Crc8};
+    use crate::utils::diagnostic::{DiagnosticMode, RestartHeaderRule, RuleId};
+
+    #[derive(Default)]
+    struct Bits {
+        data: Vec<u8>,
+        len: usize,
+    }
+
+    impl Bits {
+        fn push(&mut self, n: usize, value: u32) {
+            for i in 0..n {
+                if self.len.is_multiple_of(8) {
+                    self.data.push(0);
+                }
+
+                if (value >> (n - 1 - i)) & 1 == 1 {
+                    let last = self.data.len() - 1;
+                    self.data[last] |= 1 << (7 - (self.len & 7));
+                }
+
+                self.len += 1;
+            }
+        }
+    }
+
+    /// A one-channel restart header that states nothing, with a CRC that matches so it
+    /// `heavy_drc_present` is the field; `heavy_drc_fields` the twelve bits after it,
+    /// a gain and time update in FBA and reserved otherwise.
+    fn crafted_restart_header(heavy_drc_present: u32, heavy_drc_fields: usize) -> Vec<u8> {
+        let mut bits = Bits::default();
+
+        bits.push(14, 0x31EA); // restart_sync_word
+        bits.push(16, 0); // output_timing
+        bits.push(4, 0); // min_chan
+        bits.push(4, 0); // max_chan
+        bits.push(4, 0); // max_matrix_chan
+        bits.push(4, 0); // dither_shift
+        bits.push(23, 0); // dither_seed
+        bits.push(4, 0); // max_shift
+        bits.push(5, 0); // max_lsbs
+        bits.push(5, 0); // max_bits
+        bits.push(5, 0); // max_bits_repeat
+        bits.push(1, 0); // error_protect
+        bits.push(8, 0); // lossless_check
+        bits.push(1, 0); // hires_output_timing
+        bits.push(2, 0);
+        bits.push(1, heavy_drc_present);
+        bits.push(heavy_drc_fields, 0);
+        bits.push(6, 0); // ch_assign[0]
+
+        let crc = BsIoSliceReader::from_slice(&bits.data)
+            .crc8_check(
+                &Crc8::new(&CRC_RESTART_BLOCK_HEADER_ALG),
+                0,
+                bits.len as u64,
+            )
+            .unwrap();
+        bits.push(8, crc as u32);
+
+        bits.data
+    }
+
+    /// Reads a crafted restart header into a state prepared by `setup`, returning the
+    /// checks that fired.
+    fn checks_over_crafted_header(
+        format_sync: u32,
+        heavy_drc_present: u32,
+        heavy_drc_fields: usize,
+        setup: impl FnOnce(&mut ParserState),
+    ) -> Vec<RuleId> {
+        let mut state = ParserState {
+            format_sync,
+            substreams: Some(1),
+            diagnostic_mode: DiagnosticMode::Collect,
+            ..Default::default()
+        };
+        setup(&mut state);
+
+        let data = crafted_restart_header(heavy_drc_present, heavy_drc_fields);
+        let reader = &mut BsIoSliceReader::from_slice(&data);
+
+        RestartHeader::read(&mut state, reader).expect("the crafted header reads");
+
+        state
+            .diagnostics
+            .iter()
+            .map(|diagnostic| diagnostic.rule)
+            .collect()
+    }
+
+    /// heavy DRC updates must arrive at least as often as the last one promised, and the
+    /// count of restart headers since it is what says whether they did.
+    #[test]
+    fn heavy_drc_updates_must_keep_to_their_stated_interval() {
+        let rule = RuleId::RestartHeader(RestartHeaderRule::HeavyDrcTimeUpdateExceeded);
+
+        // heavy_drc_time_update 0 promises an update at every restart header, and this is
+        // the second one to pass without one.
+        let fired = checks_over_crafted_header(MAJOR_SYNC_FBA, 0, 12, |state| {
+            state.flags = 0x2000;
+            let ss_state = &mut state.substream_state[0];
+            ss_state.heavy_drc_active = true;
+            ss_state.heavy_drc_time_update = 0;
+            ss_state.heavy_drc_count = 1;
+        });
+        assert!(fired.contains(&rule), "{fired:?}");
+
+        // One update per two restart headers, and this is the first to pass without one.
+        let quiet = checks_over_crafted_header(MAJOR_SYNC_FBA, 0, 12, |state| {
+            state.flags = 0x2000;
+            let ss_state = &mut state.substream_state[0];
+            ss_state.heavy_drc_active = true;
+            ss_state.heavy_drc_time_update = 1;
+            ss_state.heavy_drc_count = 1;
+        });
+        assert!(!quiet.contains(&rule), "{quiet:?}");
+    }
+
+    /// The field is FBA-only, so an FBB header that sets it is reported and read on past.
+    #[test]
+    fn heavy_drc_carried_into_an_fbb_stream_is_reported() {
+        let rule = RuleId::RestartHeader(RestartHeaderRule::HeavyDrcPresentInFbb);
+
+        let fired = checks_over_crafted_header(MAJOR_SYNC_FBB, 1, 0, |state| {
+            state.flags = 0x2000;
+        });
+        assert!(fired.contains(&rule), "{fired:?}");
+
+        let quiet = checks_over_crafted_header(MAJOR_SYNC_FBB, 0, 12, |state| {
+            state.flags = 0x2000;
+        });
+        assert!(!quiet.contains(&rule), "{quiet:?}");
+
+        // Reserved here, and still read.
+        let stale = checks_over_crafted_header(MAJOR_SYNC_FBB, 0, 12, |state| {
+            state.flags = 0x2000;
+            state.substream_state[0].heavy_drc_present = true;
+        });
+        assert!(!stale.contains(&rule), "{stale:?}");
+    }
+
+    /// With flags bit 13 clear the bit and the twelve after it are reserved.
+    #[test]
+    fn heavy_drc_is_not_read_where_the_flags_do_not_declare_it() {
+        let rule = RuleId::RestartHeader(RestartHeaderRule::HeavyDrcPresentInFbb);
+
+        let quiet = checks_over_crafted_header(MAJOR_SYNC_FBB, 1, 12, |state| {
+            state.substream_state[0].heavy_drc_present = true;
+        });
+        assert!(!quiet.contains(&rule), "{quiet:?}");
+    }
+
+    #[test]
+    fn restart_sync_word_rejects_invalid_values() {
+        assert!(matches!(
+            RestartSyncWord::try_from(0x31EA),
+            Ok(RestartSyncWord::A)
+        ));
+        assert!(matches!(
+            RestartSyncWord::try_from(0x31EB),
+            Ok(RestartSyncWord::B)
+        ));
+        assert!(matches!(
+            RestartSyncWord::try_from(0x31EC),
+            Ok(RestartSyncWord::C)
+        ));
+        // Corrupt value observed in the wild (issue #15, Cavern #322)
+        assert!(RestartSyncWord::try_from(0x20DA).is_err());
+    }
+}

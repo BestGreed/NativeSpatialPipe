@@ -1,0 +1,95 @@
+﻿param([Parameter(Mandatory=$true)][string]$OutputDirectory,[switch]$FullTiming,[ValidateSet('WindowsSonic','DTSXForHomeTheater','DolbyAtmosForHomeTheater','DolbyAtmosForHeadphones','DolbyAtmosForSpeakers','DTSHeadphoneX','DTSXUltra')][string]$SpatialFormat='WindowsSonic',[switch]$Managed,[int]$OwnerPid=0,[string]$Endpoint='',[string]$SchedulerExecutable='',[string]$TelemetryPython='python.exe',[int]$TelemetryPort=8766,[string]$FrontendOrigin='http://127.0.0.1:8765',[string]$PlaybackConfig='')
+$ErrorActionPreference='Stop'
+$root=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+Set-Location -LiteralPath $root
+if(-not $SchedulerExecutable){$SchedulerExecutable=Join-Path $root 'build/zig-scheduler/nsp-scheduler.exe'}
+if(-not(Test-Path -LiteralPath $SchedulerExecutable -PathType Leaf)){throw 'Build the Zig scheduler first; Python fallback is disabled'}
+if(-not $Managed){$Managed=$true;if($OwnerPid -le 0){$OwnerPid=$PID}}
+if($Managed -and $OwnerPid -le 0){throw 'Managed mode requires OwnerPid'}
+$out=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
+$stopFile="$out.stop"
+if(Test-Path -LiteralPath $out){throw 'Use a new output directory'}
+if(([IO.DriveInfo]::new([IO.Path]::GetPathRoot($out))).AvailableFreeSpace -lt 1GB){throw 'Need 1 GiB free'}
+New-Item -ItemType Directory -Path $out|Out-Null
+Start-Transcript -Path "$out/orchestrator.log" | Out-Null
+if($SchedulerExecutable -and -not $Managed){throw 'Zig scheduler requires managed mode'}
+if(-not $Endpoint){throw 'Pass an explicitly verified -Endpoint; no device is selected automatically'}
+if($Endpoint -match '^\{0\.0\.0\.00000000\}\.\{[0-9a-fA-F-]+\}$'){
+ $Endpoint='\\?\SWD#MMDEVAPI#'+$Endpoint+'#{e6327cad-dcec-4949-ae8a-991e976a79d2}'
+}
+$endpoint=$Endpoint
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$formatType=[Windows.Media.Audio.SpatialAudioFormatSubtype,Windows.Media.Audio,ContentType=WindowsRuntime]
+$frontendIds=@{WindowsSonic='{B53D940C-B846-4831-9F76-D102B9B725A0}';DolbyAtmosForHeadphones='{1459AC38-3875-49BF-BB59-0FE80F4D395D}';DolbyAtmosForSpeakers='{4C81E564-C8EF-4AD9-9F2C-9EF995533790}';DolbyAtmosForHomeTheater='{A289735D-FA3E-4E35-9D7D-B6F896ACB2E7}';DTSHeadphoneX='{4444ACB0-8DC0-4C2C-A0D8-2C76DB470F86}';DTSXUltra='{ADAFD3C6-AC4C-404A-836A-9615E9060564}';DTSXForHomeTheater='{10201B4A-3322-4967-BF40-2CAA9BAFCA44}'}
+$targetFormat=$frontendIds[$SpatialFormat]
+$resultType=[Windows.Media.Audio.SetDefaultSpatialAudioFormatResult,Windows.Media.Audio,ContentType=WindowsRuntime]
+function Await-Format($op){
+ $m=[System.WindowsRuntimeSystemExtensions].GetMethods()|Where-Object {$_.Name -eq 'AsTask' -and $_.IsGenericMethodDefinition -and $_.GetParameters().Count -eq 1}|Select-Object -First 1
+ $m.MakeGenericMethod($resultType).Invoke($null,@($op)).GetAwaiter().GetResult()
+}
+$cfg=[Windows.Media.Audio.SpatialAudioDeviceConfiguration,Windows.Media.Audio,ContentType=WindowsRuntime]::GetForDeviceId($endpoint)
+$record=[ordered]@{endpoint=$endpoint;spatialFormat=$SpatialFormat;targetFormat=$targetFormat;beforeSelected=$cfg.DefaultSpatialAudioFormat;beforeActive=$cfg.ActiveSpatialAudioFormat;startedUtc=[DateTime]::UtcNow.ToString('o')}
+$record|ConvertTo-Json|Set-Content -LiteralPath "$out/endpoint-before.json" -Encoding UTF8
+$hook=$null
+try {
+ if(Test-Path -LiteralPath $stopFile){throw 'Session cancelled before activation'}
+ if(-not $cfg.IsSpatialAudioFormatSupported($targetFormat)){
+  # Only a matching, fresh memory tag can waive this extra support precheck.
+  # Selection and active readback below remain mandatory and unmodified.
+  $initPython=if($TelemetryPython){$TelemetryPython}else{(Get-Command python.exe).Source}
+  $legacy=[regex]::Match($endpoint,'\{0\.0\.0\.00000000\}\.\{[0-9a-fA-F-]+\}').Value
+  & $initPython "$root/modules/pipeline-init/pipeline.py" verify-hook --endpoint $legacy --format $SpatialFormat | Set-Content "$out/frontend-hook-verification.json" -Encoding UTF8
+  if($LASTEXITCODE){throw "$SpatialFormat unsupported and no matching live enumeration hook"}
+ }
+ if([guid]$cfg.DefaultSpatialAudioFormat -eq $targetFormat -and [guid]$cfg.ActiveSpatialAudioFormat -eq $targetFormat){$record.setStatus='AlreadyActive'}
+ else{$record.setStatus="$( (Await-Format ($cfg.SetDefaultSpatialAudioFormatAsync($targetFormat))).Status )"}
+ if($record.setStatus -notin @('Succeeded','AlreadyActive')){throw "$SpatialFormat activation failed"}
+ Start-Sleep -Seconds 2
+ $record.selectedDuring=$cfg.DefaultSpatialAudioFormat;$record.activeDuring=$cfg.ActiveSpatialAudioFormat
+ if([guid]$record.selectedDuring -ne $targetFormat -or [guid]$record.activeDuring -ne $targetFormat){throw 'Requested spatial format is not active'}
+ if(Test-Path -LiteralPath $stopFile){throw 'Session cancelled before Hook startup'}
+ $record|ConvertTo-Json -Depth 6|Set-Content -LiteralPath "$out/endpoint-active.json" -Encoding UTF8
+ $hosts=@(Get-Process audiodg)
+ if($hosts.Count -ne 1){throw 'Require exactly one audiodg'}
+ $env:NSP_RENDER_MMCSS='1'
+  $arguments='host --root "'+$root+'" --out "'+$out+'/observed" --pid '+$hosts[0].Id+' --owner-pid '+$OwnerPid+' --stop-file "'+$stopFile+'" --python "'+$TelemetryPython+'" --telemetry-port '+$TelemetryPort+' --origin "'+$FrontendOrigin+'"'
+  $arguments+=' --active-spatial-format '+$SpatialFormat
+  if($FullTiming){$arguments+=' --full-timing'}
+  if($PlaybackConfig){
+   if(-not [IO.Path]::IsPathRooted($PlaybackConfig) -or $PlaybackConfig.Contains('"')){throw 'Invalid playback config path'}
+   $arguments+=' --playback-config "'+$PlaybackConfig+'"'
+   $outputProfile=Get-Content -LiteralPath $PlaybackConfig -Raw | ConvertFrom-Json
+   if($outputProfile.outputBackend -eq 'aoip'){$arguments='resident-session '+$arguments.Substring(5)}
+  }
+  $hostExecutable=$SchedulerExecutable
+ $hook=Start-Process -FilePath $hostExecutable -ArgumentList $arguments -WorkingDirectory $root -WindowStyle Hidden -PassThru -RedirectStandardOutput "$out/host-stdout.txt" -RedirectStandardError "$out/host-stderr.txt"
+ $null=$hook.Handle
+ $record.hostPid=$hook.Id
+ $deadline=[DateTime]::UtcNow.AddSeconds(50)
+ while(-not(Test-Path "$out/observed/ready.txt") -and -not $hook.HasExited -and -not(Test-Path -LiteralPath $stopFile) -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 100}
+ if(Test-Path -LiteralPath $stopFile){throw 'Session cancelled during startup'}
+ if(-not(Test-Path "$out/observed/ready.txt")){throw 'Observer not ready'}
+ Write-Output ('FRONTEND_CONNECT '+(Get-Content "$out/observed/telemetry-service.json" -Raw -ErrorAction SilentlyContinue))
+ $record.readyUtc=[DateTime]::UtcNow.ToString('o')
+ while(-not $hook.HasExited){
+  if(Test-Path -LiteralPath "$out/stop.txt"){'stop'|Set-Content -LiteralPath $stopFile}
+  Start-Sleep -Seconds 1
+ }
+} catch {
+ if($_.Exception.Message -like 'Session cancelled*'){$record.cancelled=$true}
+ else{$record.error=$_.Exception.ToString()}
+}
+finally {
+ if($hook){'stop'|Set-Content -LiteralPath $stopFile;$record.hookCompleted=$hook.WaitForExit(30000);if($record.hookCompleted){$hook.WaitForExit();$record.hookExitCode=$hook.ExitCode}}
+ else{$record.hookCompleted=$true;$record.hookExitCode=0}
+ try {
+  if(-not $record.hookCompleted){throw 'Hook host did not stop; endpoint restore deferred'}
+  $record.restoreStatus="$( (Await-Format ($cfg.SetDefaultSpatialAudioFormatAsync($record.beforeSelected))).Status )"
+  $record.finalSelected=$cfg.DefaultSpatialAudioFormat;$record.finalActive=$cfg.ActiveSpatialAudioFormat
+  $record.restored=($record.finalSelected -eq $record.beforeSelected -and $record.finalActive -eq $record.beforeActive)
+ }catch{$record.restoreError=$_.Exception.ToString();$record.restored=$false}
+ $record.finishedUtc=[DateTime]::UtcNow.ToString('o')
+ $record|ConvertTo-Json -Depth 6|Set-Content -LiteralPath "$out/endpoint.json" -Encoding UTF8
+}
+$record|ConvertTo-Json -Depth 6
+if($record.error -or -not $record.restored -or $record.hookExitCode -ne 0){throw 'Game session failed; inspect reports'}

@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "research_sources": [
+    {
+      "name": "liblsl",
+      "requested_origin": "https://github.com/labstreaminglayer/liblsl.git",
+      "commit": "992635a9277bb7cc71b6516e7608182e5e2976f3",
+      "license": "MIT (root; audit transitive dependencies separately)",
+      "license_files": [
+        {
+          "path": "LICENSE",
+          "sha256": "69f1fe9152e5cbedb387b67ff0f5ca7eb395905d5c03073a4ffe0b78451d3f8f"
+        }
+      ]
+    },
+    {
+      "name": "App-LabRecorder",
+      "requested_origin": "https://github.com/labstreaminglayer/App-LabRecorder.git",
+      "commit": "01cdea3e3a41b8441c25833a73e43c99e1824e43",
+      "license": "MIT (root; audit transitive dependencies separately)",
+      "license_files": [
+        {
+          "path": "LICENSE",
+          "sha256": "ba6a7531ca31869c4f4909448552323f12c3c74d1ed38aff68313b9536d591dc"
+        }
+      ]
+    },
+    {
+      "name": "App-OpenVR",
+      "requested_origin": "https://github.com/labstreaminglayer/App-OpenVR.git",
+      "commit": "d85155bd9dc74d3f854c87d3a22e2889c68eef1e",
+      "license": "MIT (root; audit transitive dependencies separately)",
+      "license_files": [
+        {
+          "path": "LICENSE",
+          "sha256": "a228ace899355b492c50b0fc68c71f3f06a3405d2ff3098c19012f88ae976ea7"
+        }
+      ]
+    },
+    {
+      "name": "App-AudioCapture",
+      "requested_origin": "https://github.com/labstreaminglayer/App-AudioCapture.git",
+      "commit": "87cf78793179c8f55ef1225ede3c19950aa00aaf",
+      "license": "MIT (root; audit transitive dependencies separately)",
+      "license_files": [
+        {
+          "path": "LICENSE",
+          "sha256": "85469f5efceda2ad4c911dfb54ca0ee2d4a8355d35b4be19208fd7cef73320d7"
+        }
+      ]
+    },
+    {
+      "name": "libsurvive",
+      "requested_origin": "https://github.com/collabora/libsurvive.git",
+      "commit": "878c74e45b46b470aee93fcb35d391c761180669",
+      "license": "MIT (root; audit transitive dependencies separately)",
+      "license_files": [
+        {
+          "path": "LICENSE",
+          "sha256": "45361b741c058f4784ca0803ff9db1ff70b1c978e8b3524844d628d121043498"
+        }
+      ]
+    },
+    {
+      "name": "FreeGrid",
+      "requested_origin": "https://github.com/dcbau/FreeGrid.git",
+      "commit": "79e331efdf74253cd6beb8faef3af801929335f5",
+      "license": "MIT (root; audit transitive dependencies separately)",
+      "license_files": [
+        {
+          "path": "LICENSE",
+          "sha256": "a08377505a134259ad0d740909056008289fdc44873db22c27e54cff903332b5"
+        }
+      ]
+    }
+  ],
+  "runtime": {
+    "labrecorder_release": "v1.18.0",
+    "pylsl": "1.18.6",
+    "pylsl_bundled_liblsl_commit": "d7f892d78a9ddad8f55cdd43ca4a35bd7787ee89",
+    "pyxdf": "1.18.0",
+    "numpy": "2.5.4",
+    "historical_libsurvive_release": {
+      "libsurvive_tag": "v1.01",
+      "libsurvive_commit": "9a29117646004d8484a9c33f605826576ef7cd7e",
+      "libsurvive_dll_sha256": "0204acf78c39eb4dfb58bf188640be00813d1fdcd75e699a35cf942dc2d9083b"
+    },
+    "libsurvive_commit": "878c74e45b46b470aee93fcb35d391c761180669",
+    "libsurvive_dll_sha256": "4ef938ada8d5ad86f172d0b9b86fdf4cf06fb41935a0fba2cc5b1f8da5721317",
+    "libsurvive_build": "source + libsurvive-windows-research.patch",
+    "eigen_version": "3.4.0",
+    "eigen_commit": "3147391d946bb4b6c68edd901f2add6ac1f31f8c",
+    "eigen_license": "MPL-2.0",
+    "toolchain": "llvm-mingw-20261006-ucrt-x86_64"
+  },
+  "binary_packages": [
+    {
+      "path": "work\\lsac-binaries\\LabRecorder-1.18.0.zip",
+      "sha256": "a78f9682f8aca77503b8589a14a169341b6bb7bc03fc094801457102d9f0f455",
+      "bytes": 12145603
+    },
+    {
+      "path": "work\\lsac-binaries\\libsurvive-v1.01.zip",
+      "sha256": "a1dcae88d0bd16ea611f02bbf891463e82902d7fa23a40888b35a054742f94b5",
+      "bytes": 1326982
+    }
+  ],
+  "note": "Current scoped receiver sessions use the locally source-built libsurvive core and driver; published v1.01 retained as historical diagnostic evidence. Vendored runtime binaries and raw recordings are not committed."
+}

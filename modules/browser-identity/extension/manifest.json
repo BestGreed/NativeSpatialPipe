@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "NSp Browser Identity",
+  "version": "0.1.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsGnapMvkJNiPguhXJCt6/iypd4kAB4kQkePWNVGNiim5d6vhj7nLweq6aI2BnssSfVJNhwG/JkmUvThlTCsAjYav/LHxWlQBx/InuJrgohfqqX0RrGtPxwjegS8r1+ZOiORdtCBE0OgQBLdCSFGbn9ABgHa2nXgMJjjjMculH9mB8A6p+A87tLNPdWKx4M+99VYPIrf7Tryntr7ya8xdIcjOdPGDtvivUA9sdmovqxbnA2gavXz0VEXTmANOhKs2j+L37MC2DzkgUi5QDkcZojKaQu6cT8s4ACEcDpChsqstfCie9fu7fGZ1iRaGaPVBUTSsHjKvsRlpB88NzTdXxQIDAQAB",
+  "description": "Local-only tab/document identity for NSp. Does not capture audio.",
+  "permissions": [
+    "tabs",
+    "webNavigation",
+    "debugger",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "worker.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src ws://127.0.0.1:*"
+  }
+}
