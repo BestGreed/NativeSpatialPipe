@@ -1,51 +1,51 @@
-# NSp 前置空间管线初始化
+# NSp front space pipeline initialization
 
-入口为 `pipeline.py`，供 FSA、NSp 启动脚本和独立命令行调用。所有命令输出 JSON，失败返回非零。控制层使用现有 Windows Python；枚举注入由 `build/enum-hook/nsp_enum_control.exe` 和 `nsp_enum_hook.dll` 执行，与音频捕获共用固定版本 MinHook，不再加载 Frida 或 JS 注入代理。`inspect` 仍使用 `work/OemEndpointProbe.exe`。枚举 hook 和 EDID 写入需要管理员权限；模块不自行弹 UAC。
+The entrance is `pipeline.py`, which is called by FSA, NSp startup scripts and independent command lines. All commands output JSON, and return non-zero on failure. The control layer uses existing Windows Python; enumeration injection is performed by `build/enum-hook/nsp_enum_control.exe` and `nsp_enum_hook.dll`, shares a fixed version of MinHook with audio capture, and no longer loads Frida or JS injection agents. `inspect` still uses `work/OemEndpointProbe.exe`. Enumeration hooks and EDID writing require administrator privileges; the module does not trigger UAC on its own.
 
-运行 `powershell -File tools/pipeline-init/Build-EnumHook.ps1` 构建；公开构建可传 `-LlvmBin <LLVM-MinGW bin>`。完整 FSA 集成构建也会构建此模块。三处 AudioSrv 拦截仍独立于 audiodg 的 PCM 捕获拦截：统一的是原生注入和 MinHook 技术栈，不混合两者的生命周期或数据。见[原生枚举 Hook](../../docs/archive/core/native-enumeration-hook-20261024.md)。
+Run the `powershell -File tools/pipeline-init/Build-EnumHook.ps1` build; public builds can pass `-LlvmBin <LLVM-MinGW bin>`. A full FSA integration build also builds this module. The three AudioSrv interceptions are still independent of audiodg's PCM capture interception: the native injection and MinHook technology stacks are unified, and the life cycle or data of the two are not mixed. See [Native Enumeration Hook](../../docs/archive/core/native-enumeration-hook-20261024.md).
 
-显式 EDID `plan` / HT Support 的预检和 `inspect` 仍需旧 `work/OemEndpointProbe.exe`。它是 C# / Windows 自带 .NET Framework 工具，可运行 `powershell -File tools/endpoint-probe/Build-EndpointProbe.ps1` 构建；不要求 .NET 10/WPF，不属于逐包音频链。只读解析器在 `tools/edid-probe/edid_probe.py`，不使用 Frida。不要把这项既有准备依赖误标为仅供测试。
+Explicit EDID `plan`/HT Support's preflight and `inspect` still require the old `work/OemEndpointProbe.exe`. It is a native .NET Framework tool for C#/Windows and can run the `powershell -File tools/endpoint-probe/Build-EndpointProbe.ps1` build; does not require .NET 10/WPF and is not part of the per-packet audio chain. The read-only parser is at `tools/edid-probe/edid_probe.py`, which does not use Frida. Don't mistakenly label this ready dependency as testing only.
 
-## FSA 接入
+## FSA access
 
-运行 `tools/fsa-integration/Build-Integration.ps1 -FsaOnly` 生成 `build/fsa-integration/bin/FinalSpatialAudio.exe`。配置脚本填写 `[NSP]PipelineInitScript`，默认前置模式仍为 Sonic。
+Running `tools/fsa-integration/Build-Integration.ps1 -FsaOnly` generates `build/fsa-integration/bin/FinalSpatialAudio.exe`. Fill in `[NSP]PipelineInitScript` in the configuration script, and the default front-end mode is still Sonic.
 
-FSA 主菜单提供七种空间模式；点击会实际切换并读回验证，同时更新 NSp 的前置格式。耳机／扬声器的四个扩展项只在对应 Enum 开启且实际可用时显示；关闭枚举或失去可用状态后直接移除。NSp 运行时选择其他模式，会先等待捕获停止并验证恢复，再执行切换。**高级 → NS Extreme** 沿用 FSA 自绘侧展开菜单的材质、字体、DPI、定位和交互：
+The FSA main menu provides seven spatial modes; clicking will actually switch and read back the verification, and update the NSp's preformat at the same time. The four extension items of headphones/speakers are only displayed when the corresponding Enum is turned on and actually available; they are removed directly after the enumeration is turned off or the available state is lost. When running in other modes, NSp will wait for capture to stop and verify recovery before switching. **Advanced → NS Extreme** follows the material, font, DPI, positioning and interaction of FSA's self-drawn side expansion menu:
 
-| 子项 | 含义 | 配置字段 |
+| Subkeys | Meaning | Configuration fields |
 | --- | --- | --- |
-| Expand Online | 退出 NSp/FSA 后继续维持枚举常驻 | PersistEnumerationHook |
-| Enum OLR | 扬声器模式枚举 | HookSpeakers |
-| Enum OBR | 耳机模式枚举 | HookHeadphones |
-| Rec Hook | 关闭自动常驻并撤销枚举 hook | 停用 PersistEnumerationHook 并 recover |
+| Expand Online | Keep enumeration persistent after exiting NSp/FSA | PersistEnumerationHook |
+| Enum OLR | Speaker Mode Enumeration | HookSpeakers |
+| Enum OBR | Headphone mode enumeration | HookHeadphones |
+| Rec Hook | Turn off automatic persistence and revoke enumeration hook | Disable PersistEnumerationHook and recover |
 
 ### NSp Lock
 
-**高级 → NSp Lock** 在工作线程立即读取当前实际启用的空间格式，保存 `LockedFrontend`、`LockEndpoint`、`LockFormatGuid`、`LockHookMask`，再提交 `NSpLock=1`。空间音频关闭、格式未知或首选端点不匹配时拒绝锁定，不从旧的 FrontendFormat 猜测。
+**Advanced → NSp Lock** Immediately read the currently enabled spatial format in the working thread, save `LockedFrontend`, `LockEndpoint`, `LockFormatGuid`, `LockHookMask`, and then submit `NSpLock=1`. Locking is refused when spatial audio is off, the format is unknown, or the preferred endpoint does not match, instead of guessing from the old FrontendFormat.
 
-依赖枚举的耳机格式补齐 Expand Online 和 Enum OBR，扬声器格式补齐 Expand Online 和 Enum OLR；Sonic 和家庭影院没有新增枚举需求。若对应枚举未开启、没有活跃 hook，服务原生声明仍支持当前格式，则记录零新增 hook 需求，不为原生已可用的 OEM／已许可模式额外注入。保留用户已经开启的其他组；健康且范围匹配的持久常驻直接复用。锁定期间这三个依赖开关由快照维持，Rec Hook 仍可恢复；再次启动会重申所需依赖。取消 NSp Lock 解除路由约束，保留当前会话和枚举设置，避免撤销仍在使用的依赖。
+The headphone format that relies on enumeration completes Expand Online and Enum OBR, and the speaker format completes Expand Online and Enum OLR; Sonic and home theater have no new enumeration requirements. If the corresponding enumeration is not enabled, there are no active hooks, and the service native declaration still supports the current format, zero new hook requirements will be recorded, and no additional injection will be done for the OEM/licensed mode that is already available natively. Retain other groups that the user has opened; healthy and scope-matching persistent residents are reused directly. During the lock period, these three dependency switches are maintained by snapshots, and Rec Hook can still be restored; starting again will reiterate the required dependencies. Canceling NSp Lock releases routing constraints, retains the current session and enumeration settings, and avoids revoking dependencies that are still in use.
 
-主菜单的七种独立空间模式合并为唯一 NSp 入口：
+The seven independent spatial modes of the main menu are combined into a single NSp entry:
 
-| 前置格式 | 锁定后的入口 |
+| Pre-formatting | Locked entry |
 | --- | --- |
 | Windows Sonic | Sonic NSp |
-| Dolby 耳机 | Dolby Atmos B NSp |
-| Dolby 扬声器 | Dolby Atmos L NSp |
-| Dolby 家庭影院 | Dolby Atmos HT NSp |
-| DTS 耳机 | DTS:X B NSp |
+| Dolby Headphones | Dolby Atmos B NSp |
+| Dolby Speakers | Dolby Atmos L NSp |
+| Dolby Home Theater | Dolby Atmos HT NSp |
+| DTS Headphones | DTS:X B NSp |
 | DTS:X Ultra | DTS:X L NSp |
-| DTS 家庭影院 | DTS:X HT NSp |
+| DTS Home Theater | DTS:X HT NSp |
 
-勾选先锁定；点击唯一入口或自动规则命中空间模式时启动 NSp。锁定下所有空间格式规则（包括原来不可用的空间格式目标）均路由至快照格式 + NSp，优先级仍由原规则解析器决定。Stereo/5.1/7.1 不重定向，命中时先核验捕获停止，再应用 PCM；之后再次命中空间规则可自动回到同一前置管线。自动模式在锁定的 NSp 运行期间仍可使用。明确手动停止会暂停自动规则，防止立即自动重启。
+Check Lock first; start NSp when clicking the only entrance or automatic rule hitting space mode. All spatial format rules under lockdown (including spatial format targets that were originally unavailable) are routed to snapshot format + NSp, with priority still determined by the original rule parser. Stereo/5.1/7.1 does not redirect. When a hit is made, first verify that the capture is stopped, and then apply PCM; after that, if the space rule is hit again, it will automatically return to the same front-end pipeline. Automatic mode is still available during locked NSp operation. Clarify that manual stopping will pause automatic rules, preventing immediate automatic restarts.
 
-锁定配置可跨 FSA 重启保留，但不自动启动捕获。硬件端点变化时保留快照并禁用该 NSp 入口，需解锁后在新端点重新锁定。锁定本身不替代实际 active GUID、hook 心跳、端点身份和恢复检查。
+Lock configurations are retained across FSA restarts, but capture is not automatically initiated. When the hardware endpoint changes, the snapshot is retained and the NSP entry is disabled. It needs to be unlocked and re-locked at the new endpoint. The lock itself does not replace the actual active GUID, hook heartbeat, endpoint identity, and recovery checks.
 
-NSp 首次完整验证成功后，对应前置格式的托盘图标以缓存帧旋转一圈（约 720ms），结束后停止计时器；后续状态轮询不重复播放。遵循 Windows 客户端动画开关，失败或仅收到启动请求时不播放成功提示。NS Extreme 的展开箭头在所有菜单层级均绘制。
+After the first complete verification of NSp is successful, the tray icon corresponding to the preformatted format rotates in a circle (about 720ms) with the cached frame, and the timer is stopped after the end; subsequent status polling will not be played repeatedly. Follows the Windows client animation switch and does not play a success prompt when it fails or only receives a startup request. NS Extreme's expansion arrows are drawn at all menu levels.
 
-自绘菜单中的开关操作保持菜单展开，勾选立即更新。移除的模式在约 160 毫秒内横向滑出、淡出并收拢行高；收拢期间这些行已经不能点击或被键盘选中。移除期间重新启用会取消移除，关闭菜单会清理动画计时器。关闭 Windows 菜单／客户端动画时立即移除；高对比度和屏幕阅读器仍走系统菜单，无自绘动画。
+The switch operation in the self-drawn menu keeps the menu expanded and checks Update immediately. The removed mode slides out, fades out, and collapses row heights laterally in about 160 milliseconds; during the collapse, the rows are no longer clickable or keyboard selectable. Re-enabling during removal will cancel the removal, and closing the menu will clear the animation timer. Removed immediately when closing Windows menu/client animation; high contrast and screen readers still use the system menu without self-drawn animation.
 
-例如：
+For example:
 
 ```ini
 [NSP]
@@ -55,13 +55,13 @@ HookHeadphones=1
 HookSpeakers=1
 ```
 
-七种 `FrontendFormat`：`WindowsSonic`、`DolbyAtmosForHeadphones`、`DolbyAtmosForSpeakers`、`DolbyAtmosForHomeTheater`、`DTSHeadphoneX`、`DTSXUltra`、`DTSXForHomeTheater`。
+Seven kinds of `FrontendFormat`: `WindowsSonic`, `DolbyAtmosForHeadphones`, `DolbyAtmosForSpeakers`, `DolbyAtmosForHomeTheater`, `DTSHeadphoneX`, `DTSXUltra`, `DTSXForHomeTheater`.
 
-FSA 先检查捕获启动条件，再准备前置模式，然后启动 NSp。格式参数贯穿原生 Zig 调度器、兼容 Python 调度器和 `Run-GameTelemetry.ps1`。设置发生变化时重建对应枚举 hook；相同设置的 NSp 再次启动复用常驻，不重复卸载。勾选分组后保留初始化启动入口；这只允许发起初始化，实际支持验证绕行仍必须等到匹配的内存存活标记出现。
+FSA first checks the capture startup conditions, prepares for pre-mode, and then starts the NSp. Format parameters are used throughout the native Zig scheduler, compatible Python scheduler, and `Run-GameTelemetry.ps1`. When the settings change, the corresponding enumeration hook is rebuilt; the NSP with the same settings is started again and reused, and is not uninstalled repeatedly. Keep the initialization startup entry after checking the group; this only allows initialization to be initiated. To actually support verification bypass, you must wait until the matching memory survival mark appears.
 
-## 独立参数调用
+## Independent parameter call
 
-在仓库根目录的 PowerShell 中，`$endpoint` 使用 MMDevice 的传统 ID，例如 `{0.0.0.00000000}.{...}`：
+In PowerShell at the root of the repository, `$endpoint` uses the traditional ID of the MMDevice, such as `{0.0.0.00000000}.{...}`:
 
 ```powershell
 $endpoint = '{0.0.0.00000000}.{7209e4d4-431d-479b-bdba-8dc78c174b60}'
@@ -73,67 +73,67 @@ python tools/pipeline-init/pipeline.py verify-hook --endpoint $endpoint --format
 python tools/pipeline-init/pipeline.py recover
 ```
 
-`ensure` 只维持枚举，不切模式；`prepare` 切换并核对实际 active/default GUID。`headphones` 对应 Dolby 耳机和 DTS Headphone:X；`speakers` 对应 Dolby 扬声器和 DTS:X Ultra。家庭影院通过原生声明／EDID 路径使用，不包含在这两个 hook 分组中。
+`ensure` only maintains enumeration and does not switch modes; `prepare` switches and checks the actual active/default GUID. `headphones` is compatible with Dolby Headphones and DTS Headphone:X; `speakers` is compatible with Dolby Speakers and DTS:X Ultra. Home Theater is used via the native declaration/EDID path and is not included in these two hook groups.
 
-目标必须是当前首选 multimedia 渲染端点。常驻与 FSA/NSp 分离，调用者退出后继续运行。首选端点改变时旧常驻恢复并退出；FSA 更新端点后可按用户偏好重新建立。FSA 每八秒检查存活，AudioSrv 实例变化时常驻重新核对身份和版本后尝试附着。它不重启音频服务，不管理 NSp 捕获 hook。此处“持久化”指进程生命周期独立；没有安装开机自启任务。
+The target must be the current preferred multimedia rendering endpoint. Resident is detached from FSA/NSp and continues running after the caller exits. The old resident is restored and exited when the preferred endpoint changes; FSA can be re-established according to user preferences after updating the endpoint. FSA checks for liveness every eight seconds, and when the AudioSrv instance changes, the resident rechecks the identity and version before attempting to attach. It does not restart the audio service and does not manage NSp capture hooks. "Persistence" here means that the process life cycle is independent; no self-starting tasks are installed.
 
-非持久测试可直接调用：
+Non-persistent tests can be called directly:
 
 ```powershell
 python tools/pipeline-init/manager.py start --endpoint $endpoint --groups headphones --owner-pid $PID
 ```
 
-这种常驻随指定 owner 进程退出而恢复。`prepare` 也接受 `--owner-pid`；非持久化且指定 hook 分组时必须提供。FSA 非持久配置以自身为 owner，并在 NSp 停止确认后主动恢复。同一端点、分组和持久化设置的重复启动是幂等操作；不同配置要求先恢复，FSA 菜单已经处理该步骤。
+This persistence is restored when the specified owner process exits. `prepare` also accepts `--owner-pid`; non-persistent and required when specifying hook grouping. The FSA non-persistent configuration takes itself as the owner and actively recovers after the NSp stops acknowledging. Repeated launches of the same endpoint, grouping and persistence settings are idempotent; different configurations require recovery first, a step already handled by the FSA menu.
 
-## EDID 初始化与恢复
+## EDID initialization and recovery
 
-产品触发边界以 2026-10-23 决策（开发参考未随公开源码提供）为准：EDID 写入仅限后续安装流程及显式手动入口，常驻检查／`prepare` 不自动写入；成功覆盖不会随 FSA／NSP 退出而撤回。
+The product trigger boundary is based on the 2026-10-23 decision (development reference is not provided with the open source code): EDID writing is limited to subsequent installation processes and explicit manual entries, resident check/`prepare` is not automatically written; successful overwriting will not be withdrawn with FSA/NSP exit.
 
-FSA 已接入 NS Extreme → HT Support 手动入口（开发参考未随公开源码提供）。本地过滤与已有 HT 枚举控制菜单状态，不为状态查询创建外部进程。只有用户点击适用且尚无 HT 能力的端点才执行 `pipeline.py edid-enable --endpoint <id> --output <新目录>`：通过 ContainerId 绑定唯一活动显示器，核对显卡父设备，写入后重载该显卡并用新进程回验。此命令会实际写入和重载，不用于只读诊断；失败结果和恢复事务保留在输出目录。
+FSA has been connected to the NS Extreme → HT Support manual portal (the development reference is not provided with the open source code). Local filtering and existing HT enumeration control menu status, no external process is created for status query. `pipeline.py edid-enable --endpoint <id> --output <new directory>` is executed only when the user clicks on an applicable endpoint that does not yet have HT capabilities: Bind the only active monitor through the ContainerId, check the parent device of the graphics card, reload the graphics card after writing and verify with a new process. This command does the actual writing and reloading and is not used for read-only diagnostics; failure results and recovery transactions are retained in the output directory.
 
-2026-10-23 回归进展见 OG27QH EDID 准备回归（开发参考未随公开源码提供）。新增事务与驱动重载编排测试，实际写入读回、驱动重载、新进程能力与 active/default 查询分别验收；已有声明的设备不能充当“从不支持到支持”的正负对照。
+2026-10-23 For the regression progress, please see OG27QH EDID preparing to return (development reference is not provided with the open source code). New transaction and driver reload orchestration tests, actual write readback, driver reload, new process capabilities and active/default query are respectively accepted; devices that have been declared cannot serve as a positive and negative comparison of "from unsupported to supported".
 
-首次使用先调用 `inspect`。它返回 GPU 音频端点判断、两个家庭影院模式的支持查询、`recommendEdidInitialization` 和活动显示器候选。FSA 或其他前端可据此提示初始化。声音端点和显示器必须由调用者明确配对，不能只靠“第几个设备”推断。
+Call `inspect` first when using it for the first time. It returns GPU audio endpoint determinations, support queries for two home theater modes, `recommendEdidInitialization` and active display candidates. FSA or other frontends can prompt for initialization based on this. The sound endpoint and display must be paired explicitly by the caller and cannot be inferred just by "device number".
 
 ```powershell
 python tools/pipeline-init/pipeline.py edid-plan --endpoint $endpoint --monitor-instance 'HKC27A7\5&26f91d2b&0&UID4357' --profile both --output experiments/my-edid-plan
 python tools/pipeline-init/pipeline.py edid-apply --plan experiments/my-edid-plan/edid-plan.json
-python tools/pipeline-init/pipeline.py edid-reload --plan experiments/my-edid-plan/edid-plan.json --adapter-instance 'PCI\实际显卡实例ID'
+python tools/pipeline-init/pipeline.py edid-reload --plan experiments/my-edid-plan/edid-plan.json --adapter-instance 'PCI\actual graphics card instance ID'
 python tools/pipeline-init/pipeline.py query --endpoint $endpoint --format DTSXForHomeTheater
 python tools/pipeline-init/pipeline.py edid-restore --plan experiments/my-edid-plan/edid-plan.json
 ```
 
-`--profile dtsx` 补充 LPCM、DTS、DTS-HD；`atmos` 补充 LPCM 和带对象能力标志的 MAT；`both` 包含两者。保留已有 CRU 元数据、非音频块和显示时序。计划保存前后 EDID、全部已有覆盖值以及目标块原值；写入前记录事务意图，并核对设备 EDID 哈希、当前块和写后读回。空间不足、布局未知、校验和错误或别人修改了该块时停止。
+`--profile dtsx` supplements LPCM, DTS, DTS-HD; `atmos` supplements LPCM and MAT with object capability flag; `both` includes both. Preserve existing CRU metadata, non-audio blocks, and display timing. The plan saves the before and after EDID, all existing coverage values, and the original value of the target block; records the transaction intention before writing, and checks the device EDID hash, current block, and read back after writing. Stops when there is insufficient space, unknown layout, bad checksum, or someone else modified the block.
 
-应用只写指定 CTA 覆盖块。显示驱动重载是独立显式操作，可能短暂黑屏；恢复 EDID 后同样需要重载才能让驱动重新枚举。`edid-restore` 恢复本事务触及的块，不删除其他 CRU 设置。`recover` 仅恢复运行中的枚举 hook，不撤销已应用 EDID。EDID 声明和 active 成功均不证明物理设备能够解码或播放。
+The app only writes the specified CTA overlay block. Display driver reloading is an independent explicit operation, and the screen may go black briefly; after restoring the EDID, it also needs to be reloaded to allow the driver to re-enumerate. `edid-restore` restores the blocks touched by this transaction without deleting other CRU settings. `recover` only restores the running enumeration hook and does not revoke the applied EDID. Neither EDID assertion nor active success proves that the physical device is capable of decoding or playback.
 
-## 内存存活契约
+## memory survival contract
 
-共享映射为 `Local\NSp-PipelineInit-v1`，2048 字节，布局对应 `model.py` 和 FSA 的 `native/pipeline_init.h`：
+The shared mapping is `Local\NSp-PipelineInit-v1`, 2048 bytes, and the layout corresponds to `model.py` and FSA's `native/pipeline_init.h`:
 
-| 偏移 | 类型 | 内容 |
+| offset | type | content |
 | --- | --- | --- |
-| 0 | uint32 | seqlock 序号，奇数表示写入中 |
+| 0 | uint32 | seqlock sequence number, odd numbers indicate writing |
 | 4 | uint32 | magic `0x4950534e` |
-| 8 | uint32 | 版本 1 |
-| 12 | uint32 | 状态：0 停止、1 启动／重试、2 就绪、3 撤销中 |
-| 16 / 20 | uint32 × 2 | 常驻 PID；flags bit0 在线、bit1 持久化 |
-| 24 / 32 | uint64 × 2 | GetTickCount64 心跳；进程创建 FILETIME |
-| 40 / 44 | uint32 × 2 | AudioSrv PID；七种格式的位掩码 |
-| 48 | WCHAR[512] | 绑定的传统 endpoint ID |
+| 8 | uint32 | version 1 |
+| 12 | uint32 | Status: 0 stopped, 1 starting/retrying, 2 ready, 3 withdrawing |
+| 16 / 20 | uint32 × 2 | Resident PID; flags bit0 online, bit1 persistent |
+| 24 / 32 | uint64 × 2 | GetTickCount64 heartbeat; process creation FILETIME |
+| 40 / 44 | uint32 × 2 | AudioSrv PID; bitmask in seven formats |
+| 48 | WCHAR[512] | Binding traditional endpoint ID |
 
-FSA 必须同时核对一致序号、版本、就绪状态、心跳不超过三秒、PID 存活及创建时间、端点和所选格式位。INI 勾选项或磁盘中的 `ready` 字样不能授权绕行。只有当前格式对应的活跃标记，才能放宽该格式的支持预检；实际设置结果、active GUID、端点身份和捕获恢复检查仍须通过。
+The FSA must also check for consistent sequence numbers, versions, readiness status, heartbeats no longer than three seconds, PID live and creation times, endpoints, and selected format bits. The INI checkbox or the `ready` text on the disk cannot authorize bypassing. Only active tags corresponding to the current format can relax support preflight for that format; actual setup results, active GUID, endpoint identity, and capture recovery checks must still pass.
 
-## 恢复和版本边界
+## Recovery and version boundaries
 
-hook 目前严格绑定 AudioSrv.dll SHA-256 `487e51035a76323032acd5996511c221c449cd244051d3b0e057eec70538ca97`（本机 10.0.26100.8875）。Windows 更新后若哈希不符会拒绝附着，需要重新分析地址。仅修改指定端点、指定格式的许可查询结果，不修改服务文件或内核驱动。
+The hook is currently strictly bound to AudioSrv.dll SHA-256 `487e51035a76323032acd5996511c221c449cd244051d3b0e057eec70538ca97` (native 10.0.26100.8875). After Windows updates, if the hashes do not match, attachment will be refused and the address needs to be reanalyzed. Only the license query results of the specified endpoint and specified format are modified, and the service file or kernel driver is not modified.
 
-常驻续租间隔约半秒；原生 watchdog 在监督进程退出或五秒未续租后自行撤销。`recover` 请求退出并逐项比对三处函数的原始字节。宿主异常退出时，通过只读 `ReadProcessMemory` 核查同一 AudioSrv 进程实例，不重新注入运行时，也不向新 PID 写入旧内存快照。撤销后小型 Hook DLL 和禁用的 trampoline 留驻，以保护已进入原函数的调用。无法确认恢复时返回失败，保留 `%LOCALAPPDATA%/NativeSpatialPipe/pipeline-init/resident.json` 证据。
+The resident renewal interval is about half a second; the native watchdog cancels itself after the supervision process exits or the lease is not renewed for five seconds. `recover` requests to exit and compare the raw bytes of the three functions one by one. When the host exits abnormally, the same AudioSrv process instance is checked through read-only `ReadProcessMemory`, the runtime is not re-injected, and the old memory snapshot is not written to the new PID. A small Hook DLL and a disabled trampoline persist after undoing to protect calls that have entered the original function. Failure is returned when recovery cannot be confirmed, and `%LOCALAPPDATA%/NativeSpatialPipe/pipeline-init/resident.json` evidence is retained.
 
-## 验证记录
+## Verify records
 
-`experiments/pipeline-init-20261019` 保存本机验证：同一常驻 PID 下四种耳机／扬声器模式均设置成功，调用者退出后仍在线，FSA 原生 C 读取器确认存活；首选端点变化后常驻退出，三处函数原始字节恢复核对通过。`owner-exit-fixed/result.json` 验证了非持久 owner 退出，即使测试端仍保留进程句柄也能正确撤销。测试结束后恢复原始模式和默认端点，没有留下运行中的枚举 hook。
+`experiments/pipeline-init-20261019` Save local verification: All four headphone/speaker modes under the same resident PID are set successfully, the caller is still online after exiting, the FSA native C reader confirms survival; the resident exits after the preferred endpoint changes, and the original byte recovery verification of the three functions passes. `owner-exit-fixed/result.json` verified that non-persistent owner exits are properly revoked even if the test side still retains the process handle. After the test is completed, the original mode and default endpoint are restored, leaving no running enumeration hooks.
 
-`fsa-seven-modes-fixed/result.json` 记录 FSA 自身七个切换入口的实机验证：七项 active/default GUID 均匹配，同一常驻 PID 完成，之后恢复原音频状态和配置。修复了要求 AudioSrv SYNCHRONIZE 权限导致部分上下文无法检查服务身份的问题；现在只用 PROCESS_QUERY_LIMITED_INFORMATION 查询创建时间和退出码，仍能识别被保留句柄的已退出 owner。
+`fsa-seven-modes-fixed/result.json` records the real-machine verification of the seven switching entries of FSA itself: all seven active/default GUIDs match, the same resident PID is completed, and then the original audio status and configuration are restored. Fixed an issue that required the AudioSrv SYNCHRONIZE permission, causing some contexts to be unable to check the service identity; now only use PROCESS_QUERY_LIMITED_INFORMATION to query the creation time and exit code, and the exited owner of the retained handle can still be identified.
 
-通用 EDID 计划已在现有 OG27QH 覆盖上执行只读检查，前后结果相同；没有为这次模块验证再次重载显卡。单元测试覆盖 EDID 保留／分组／校验和／拒绝条件及陈旧、错端点、错进程和撕裂内存标签。还通过调度器回归和 FSA 构建检查。弹出菜单测试覆盖七个模式和四个子项命令、键盘操作及子菜单几何；输入桌面不可用时会明确跳过鼠标轨迹用例。尚未做长时间驻留、AudioSrv 强制崩溃和七种前置模式各自的完整 NSp 音频质量验证。
+The Universal EDID scheme has performed a read-only check on the existing OG27QH overlay with the same results; the card was not reloaded again for this module verification. Unit tests cover EDID retention/grouping/checksum/reject conditions and stale, bad endpoint, bad process and torn memory tags. Also checked via scheduler regression and FSA build. The pop-up menu test covers seven modes and four sub-item commands, keyboard operations and sub-menu geometry; the mouse track use case is explicitly skipped when the input desktop is unavailable. Full NSp audio quality validation for long dwell times, AudioSrv forced crashes, and each of the seven front modes has not yet been done.

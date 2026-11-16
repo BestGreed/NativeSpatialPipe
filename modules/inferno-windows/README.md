@@ -60,7 +60,7 @@ Big thanks to [Project Pendulum](https://github.com/pendulum-project) (by [Trife
 
 # Quick start
 1. [Install Rust](https://rustup.rs/)
-2. If using a firewall, open UDP ports: 4455, 8700, 4400, 8800 (or others if [`INFERNO_ALT_PORT`](#environment-variables) is specified), 5353. Also, allow incoming UDP traffic from possible transmitters (port numbers are allocated by the OS so can't be known beforehand)
+2. If using a firewall, open UDP ports: 4455, 8700, 4400, 8800 (or others if `INFERNO_ALT_PORT` is specified), 5353. Also, allow incoming UDP traffic from possible transmitters (port numbers are allocated by the OS so can't be known beforehand)
 3. Ensure that seccomp, SELinux or other kernel-level security mechanisms are not blocking clock-related syscalls. For example, if you want to use `alsa_pcm_inferno` together with PipeWire, and PipeWire service is managed by systemd, copy [`os_integration/systemd_allow_clock.conf`](os_integration/systemd_allow_clock.conf) to `$HOME/.config/systemd/user/pipewire.service.d/override.conf` (or, if already exists, append it)
 4. <s>If wanting to use anything other than Inferno2pipe,</s> clock synchronization daemon is needed. Inferno is compatible with modified [Statime](https://github.com/pendulum-project/statime):
    * currently, Statime is always needed, even for just capturing audio, but it is not by design and will be fixed

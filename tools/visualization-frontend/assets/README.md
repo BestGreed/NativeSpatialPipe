@@ -1,13 +1,13 @@
-# 监听者线框模型
+# Listener wireframe model
 
-源模型：Kenney 的 Furniture Kit 中的 Toilet（CC0 1.0）。原作者授权页：https://kenney.nl/assets/furniture-kit 。本仓库保存的 `toilet-kenney.glb` 从 https://www.innerscene.com/tools/library/3d-parts/toilet-3f1ac211 提供的直接下载接口取得，该页面也标注原作者和 CC0 来源。下载文件 SHA-256：`16165cfd03c56c2cb443b800570810a22ef770f65e7a468f6761d9dc14eaaeae`。
+Source model: Toilet from Kenney's Furniture Kit (CC0 1.0). Original author authorization page: https://kenney.nl/assets/furniture-kit. The `toilet-kenney.glb` saved in this warehouse is obtained from the direct download interface provided by https://www.innerscene.com/tools/library/3d-parts/toilet-3f1ac211. The original author and CC0 source are also marked on this page. Download file SHA-256: `16165cfd03c56c2cb443b800570810a22ef770f65e7a468f6761d9dc14eaaeae`.
 
-运行 `python tools/visualization-frontend/assets/build-toilet-wire.py` 可从原 GLB 重新提取 `toilet-wire.js`。提取器保留边界和明显折角，跳过平面三角剖分的对角线；当前得到 187 条细线。前端只加载提取后的静态线段，既不显示材质或面，也不引入 glTF 运行时。
+Run `python tools/visualization-frontend/assets/build-toilet-wire.py` to re-extract `toilet-wire.js` from the original GLB. The extractor preserves boundaries and sharp corners, skipping diagonals of planar triangulation; currently results in 187 thin lines. The front end only loads the extracted static line segments, does not display materials or faces, and does not introduce the glTF runtime.
 
-线框原始底部为参考网格的 y=-0.8，前端默认上移 0.20 个画面单位，底部显示于 y=-0.60；旧版滑杆保存过的高度会继续读取；界面不再显示滑杆。坐姿头部（监听者坐标）始终为原点 y=0。这里是画面内的相对比例，不宣称 Wwise 对象坐标具有米制校准。界面不显示额外的监听者文字标签。
+The original bottom of the wireframe is y=-0.8 of the reference grid. The front end is moved up by 0.20 screen units by default, and the bottom is displayed at y=-0.60; the height saved by the old version of the slider will continue to be read; the slider will no longer be displayed on the interface. The seated head (listener coordinates) is always the origin y=0. These are relative scales within the frame and do not claim that Wwise object coordinates have metric calibration. The interface does not display additional listener text labels.
 
-当前视角可通过“设当前为默认”保存，复位时恢复保存的水平角、俯仰角、缩放和马桶高度。马桶仅对可信的相对流向与转向候选作几度以内的视觉跟随，绕线框外框中心旋转；它不代表测得的监听者六自由度姿态。
+The current perspective can be saved by "Set Current as Default", and the saved horizontal angle, pitch angle, zoom and toilet height will be restored when resetting. The toilet only visually follows credible relative flow and steering candidates within a few degrees and rotates around the center of the outer frame of the wire frame; it does not represent the measured six-degree-of-freedom posture of the monitor.
 
-视角切换提供斜侧、正前、正上和左侧。正前按监听者朝向定义：从马桶后方朝声场前方看。斜侧使用本机保存的复位视角；正前、正上、左侧按当前对象与马桶线框的投影范围自动留白缩放。鼠标横拖和竖拖相对于旧版均已反向。
+Viewing angle switching provides oblique, front, top and left sides. Front is defined according to the direction of the listener: looking from behind the toilet toward the front of the sound field. The oblique side uses the reset perspective saved by the machine; the front, top, and left sides are automatically scaled according to the projection range of the current object and the toilet line frame. The horizontal dragging and vertical dragging of the mouse have been reversed compared to the old version.
 
-马桶线框利用原始 230 个面片的屏幕投影判断遮挡：被更近面片盖住的边仍画出，但透明度由 0.46 降到 0.075。遮挡约 20 Hz 更新，线框保持原画面帧率；切换视角时立即重算。此处只修改视觉线条，不影响遥测和航向估计。
+The toilet wireframe uses the screen projection of the original 230 patches to determine occlusion: the edges covered by closer patches are still drawn, but the transparency is reduced from 0.46 to 0.075. Occlusion is updated at about 20 Hz, and the wireframe maintains the original frame rate; it is recalculated immediately when switching perspectives. Only the visual lines are modified here and telemetry and heading estimation are not affected.

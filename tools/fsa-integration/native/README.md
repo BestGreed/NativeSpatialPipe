@@ -1,7 +1,7 @@
-# 原生源码
+# Native source code
 
-简体中文 | [English](README.en.md)
+Simplified Chinese | [English](README.en.md)
 
-纯 C11 / Win32 实现。构建入口为 build.ps1，发布打包入口为仓库根目录 release.ps1。
+Pure C11/Win32 implementation. The build entry point is build.ps1, and the release packaging entry point is release.ps1 in the warehouse root directory.
 
-复制 final-spatial-audio.example.ini 为 final-spatial-audio.ini 可创建本地规则；个人规则、快照、日志与构建产物均被忽略。
+Copying final-spatial-audio.example.ini to final-spatial-audio.ini creates local rules; personal rules, snapshots, logs, and build artifacts are ignored.

@@ -1,112 +1,112 @@
-# NSp 声航 / 声谱前端
+# NSp sound navigation / sound spectrum front end
 
 2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/archive/core/playback-user-location-20261024.md).
 
-## 当前入口与配置
+## Current entry and configuration
 
-2026-11-08 的播放配置区分别显示核心布局与 LSAC 的双声道设备配置。信号链面板展示渲染及设备布局、MFT 状态、PCM 捕获、浏览器身份、Joint 后端及回退和 WASAPI 写入。可选模块的字段与约束见[播放配置](../../docs/archive/core/playback-json-configuration-20261022.md#可选模块开关)。
+The playback configuration area of 2026-11-08 shows the core layout and the two-channel device configuration of LSAC respectively. The signal chain panel shows rendering and device layout, MFT status, PCM capture, browser identity, Joint backend and fallback, and WASAPI writes. For fields and constraints of optional modules, see [Playback Configuration](../../docs/archive/core/playback-json-configuration-20261022.md#radius-recovery-and-new-switches).
 
-FSA 随启的独立 Zig Web API Host 默认使用 `http://127.0.0.1:8767/`，托盘连续三击由默认浏览器打开。首页「配置」支持播放/后端 JSON 表单、renderer、七布局、DSP/bypass、按声道名称展示的设备接线和两项诊断录制开关。PCM 旁录及遥测快照均默认关闭，关闭归档不影响实时遥测、内存历史及可视化。设备通道在界面从 1 开始，在 JSON 中从 0 开始。
+The independent Zig Web API Host that comes with FSA uses `http://127.0.0.1:8767/` by default, and the tray is opened by the default browser with three consecutive clicks. The "Configuration" on the homepage supports playback/backend JSON forms, renderer, seven layouts, DSP/bypass, device wiring displayed by channel name, and two diagnostic recording switches. PCM side-recording and telemetry snapshots are turned off by default. Turning off archiving does not affect real-time telemetry, memory history, and visualization. Device channels start at 1 in the interface and 0 in JSON.
 
-配置由 `/api/web/` 读取、校验和按修订保存，浏览器不存主副本；播放设置下次启动会话生效，后端默认值需后端重启。Web 不控制 FSA、Hook、EDID 或播放。布局切换按声道名迁移校准/接线，ROAR 6DoF 槽不可选用。见[Web 合同](../../docs/archive/decisions/web-configuration-host-20261023.md)、[布局](../../docs/archive/core/output-layout-presets-20261023.md)、[旁录](../../docs/archive/core/recording-isolation-20261024.md)。
+The configuration is read by `/api/web/`, verified and saved according to revision. The browser does not save the master copy; the playback settings take effect the next time the session is started, and the backend default value requires a backend restart. Web does not control FSA, Hook, EDID or playback. Layout switching migrates calibration/wiring by channel name, ROAR 6DoF slots are not selectable. See [Web Contract](../../docs/archive/decisions/web-configuration-host-20261023.md), [Layout](../../docs/archive/core/output-layout-presets-20261023.md), [Sidenote](../../docs/archive/core/recording-isolation-20261024.md).
 
-下方 `serve.py` 的 `8765` 是独立预览入口，不启动配置 API、捕获或 ASIO；FSA Web Host 运行时不要让预览服务占用 `8767`。原模拟、回放与声航/声谱入口保持。
+`8765` of `serve.py` below is an independent preview entrance, which does not start configuration API, capture or ASIO; do not let the preview service occupy `8767` when FSA Web Host is running. The original simulation, playback and sonar/sound spectrum entries are maintained.
 
-2026-10-18。支持模拟、Wwise一分钟回放与独立实时遥测服务，契约0.2能力协商、both订阅、decoded-input/render-ready。Wwise run-05已在浏览器观察声航/声谱及140对象详情；最终全部效果、独立帧率和长期资源待验。最新修复见[联调总览](../../docs/history/latest-integration.md)。
+2026-10-18. Supports simulation, Wwise one-minute playback and independent real-time telemetry service, contract 0.2 capability negotiation, both subscription, decoded-input/render-ready. Wwise run-05 has observed the sound navigation/sound spectrum and 140 object details in the browser; all final effects, independent frame rates and long-term resources are yet to be tested. For the latest fix, see Joint Debugging Overview (reference outside this source tree).
 
-仓库根目录启动：
+Start the warehouse root directory:
 
 ```powershell
 python modules/visualization-frontend/serve.py
 ```
 
-浏览器访问控制台打印的 `http://127.0.0.1:8765/`；端口占用时加 `--port 8767`。服务器只监听本机，提供前端和只读契约文件，不列出目录，不暴露项目其他文件。页面需要HTTP访问，不能直接双击HTML。无需npm安装、外部CDN或网络字体。
+Browser access console prints `http://127.0.0.1:8765/`; when the port is occupied, add `--port 8767`. The server only monitors the local machine, provides front-end and read-only contract files, does not list directories, and does not expose other project files. The page requires HTTP access, and HTML cannot be double-clicked directly. No npm installation, external CDN or web fonts required.
 
-## Wwise 一分钟记录回放
+## Wwise one minute recording playback
 
-已有真实源数据回放适配，见[验证记录](../../experiments/visualization-wwise-minute-20261017/README.md)。先运行 `python modules/visualization-frontend/prepare-replay.py`，它读取保留的原一分钟源捕获、测量全部6000包，并用现有ROAR DLL重渲染12声道。生成600个10 Hz快照与60秒历史汇总，写入`build/wwise-visualization-replay`；已有manifest时拒绝重复生成。
+There is real source data playback adaptation, see Verification Record (reference outside this source tree). First run `python modules/visualization-frontend/prepare-replay.py`, which reads the original one-minute source capture retained, measures all 6000 packets, and re-renders 12 channels using the existing ROAR DLL. Generate 600 10 Hz snapshots and 60-second history summary, and write them to `build/wwise-visualization-replay`; if the manifest already exists, repeated generation will be refused.
 
-启动上述本地服务后访问 `/?replay=wwise-minute`，或点击“数据源 → 加载 Wwise 一分钟记录”。支持暂停回放、从头回放及进度条，最多缓存3个逐秒数据块。页面明确标记录制回放，不接管音频、不重新运行Wwise、不播放PCM。历史窗口使用完整60秒记录：10分钟覆盖10%，1小时覆盖1.67%。
+After starting the above local service, visit `/?replay=wwise-minute`, or click "Data Source → Load Wwise One Minute Record". Supports pause playback, playback from the beginning and progress bar, caching up to 3 second-by-second data blocks. The page is clearly marked for recording and playback, and does not take over the audio, does not rerun Wwise, and does not play PCM. The historical window uses a complete 60-second record: 10% coverage in 10 minutes and 1.67% coverage in 1 hour.
 
-## 已实现
+## Realized
 
-- 声航：对象方向壳层、相对轨迹、短瞬态光斑、旋转/缩放/复位、鼠标选中及键盘对象选择。未知位置保留在对象选择器中，不塞入中心；零向量不伪造方向。
-- 声谱：理想Layout714的平滑能量球面、扬声器标记、12声道全带RMS表；固定−60～0 dBFS色标，LFE单独显示。未知布局仍显示声道表，不套用默认空间布局。
-- 对象/声道详情、gap/stale/disconnected等状态、覆盖率、遥测缺块和事件溢出；明确区分模拟与测量来源。
-- 模拟数据10 Hz、WebGL画面上限30 fps；暂停冻结画面而继续接收数据；减少动态关闭短轨迹和瞬态。隐藏页面停止绘制和模拟推进。
-- 实时/10分钟/1小时切换。演示历史是独立固定fixture，页面持续提示它不是演示动画的累计结果；未实现浏览器历史采集器。
-- 数据源面板支持导入snapshot/layout/history JSON，或连接同一服务的capabilities、layout、history HTTP接口与WebSocket快照。事件缓存最多256项，每对象轨迹最多10点；完整快照才按缺席移除对象，generation变化不串轨迹。
+- Sound Navigation: Object direction shell, relative trajectory, short transient light spot, rotation/zoom/reset, mouse selection and keyboard object selection. Unknown positions remain in the object selector and are not crammed into the center; zero vectors do not fake directions.
+- Sound spectrum: Ideal Layout714's smooth energy sphere, speaker marks, 12-channel full-band RMS meter; fixed −60~0 dBFS color scale, LFE displayed separately. The unknown layout still displays the channel table and does not apply the default space layout.
+- Object/channel details, gap/stale/disconnected status, coverage, telemetry missing blocks and event overflows; clearly differentiate between simulated and measured sources.
+- Simulation data 10 Hz, WebGL screen upper limit 30 fps; pause to freeze the screen while continuing to receive data; reduce dynamic shutdown of short trajectories and transients. Hiding the page stops drawing and simulation advancement.
+- Real-time/10 minutes/1 hour switching. The demo history is an independent fixed fixture, and the page continues to prompt that it is not the cumulative result of the demo animation; the browser history collector is not implemented.
+- The data source panel supports importing snapshot/layout/history JSON, or connecting the capabilities, layout, history HTTP interface and WebSocket snapshot of the same service. The event cache has a maximum of 256 items and a maximum of 10 points per object trajectory; objects are removed based on absence only in complete snapshots, and generation changes do not change trajectories.
 
-快捷键：Space暂停/继续，R复位，Esc取消选择；按钮、对象选择器均可键盘操作。窄屏变为上下布局与两行声道表；不支持WebGL2时仍提供声道数据。
+Shortcut keys: Space to pause/continue, R to reset, Esc to cancel selection; buttons and object selectors can all be operated by the keyboard. The narrow screen changes to a top-bottom layout and a two-line channel table; channel data is still provided when WebGL2 is not supported.
 
-## 接入真实服务
+## Access real services
 
-点击“数据源”，输入 `ws://127.0.0.1:<服务端口>/v1/telemetry` 后连接。前端先读取同主机 `/v1/capabilities`，选第一条route并取对应layout，再发送subscribe，默认申请10 Hz、全带和已支持的模式。服务须先返回negotiated，再发snapshot；独立服务已实现这些端点，连接需满足服务Origin策略。多路由选择UI、自动重连、认证及完整错误码还未实现；本版断开后由用户手动重新连接。
+Click "Data Source", enter `ws://127.0.0.1:<service port>/v1/telemetry` and connect. The front end first reads the same host `/v1/capabilities`, selects the first route and gets the corresponding layout, and then sends subscribe. By default, it applies for 10 Hz, full band and supported modes. The service must first return negotiated before sending the snapshot; the independent service has implemented these endpoints, and the connection must meet the service Origin policy. Multiple routing UI, automatic reconnection, authentication and complete error codes have not yet been implemented; users must manually reconnect after disconnection in this version.
 
-JSON结构由仓库生成的schema检查，浏览器另外检查关键数值、覆盖率、身份、位置变换与事件语义。外部文本仅用textContent显示。单消息/文件临时保护上限为2 MiB，此值与旧64 KiB初拟性能目标无关。浏览器结构校验器只支持本项目schema词汇，服务端仍应使用完整合同校验。
+The JSON structure is checked against the schema generated by the repository, and the browser additionally checks for key values, coverage, identity, location transformations, and event semantics. External text is only displayed with textContent. The upper limit of single message/file temporary protection is 2 MiB, which has nothing to do with the old 64 KiB original performance target. The browser structure validator only supports the schema vocabulary of this project, and the server should still use the complete contract verification.
 
-原64 KiB/快照、0.5 MB/s预算不作为前端开发阻塞。按用户确认保留完整JSON，先验证真实资源开销，再决定是否优化。音频不等待界面和有界队列要求保留。
+The original 64 KiB/snapshot, 0.5 MB/s budget is not blocking front-end development. Keep the complete JSON according to user confirmation, verify the real resource overhead first, and then decide whether to optimize. Audio does not wait for the interface and bounded queue requirements remain.
 
-## 验证与限制
+## Authentication and restrictions
 
-可用Node.js时运行（不需要安装依赖）：
+Run when Node.js is available (no dependencies required):
 
 ```powershell
 node modules/visualization-frontend/test-data.js
 ```
 
-本次前端JavaScript验证：17份现有fixture通过、9份错误消息被拒绝，覆盖字段顺序无关性；app脚本语法通过。使用可用的JavaScript运行环境执行，无系统node命令依赖。原Python契约测试13组通过。
+This front-end JavaScript verification: 17 existing fixtures passed, 9 error messages were rejected, covering field order irrelevance; app script syntax passed. Use the available JavaScript runtime environment to execute, without system node command dependency. 13 groups passed the original Python contract test.
 
-浏览器已验证：模拟首屏、两模式切换、12声道、LFE详情、10分钟/1小时固定历史、导入六轴fixture与选择未知位置、暂停标识；390px窄屏检查无横向溢出。此段为早期模拟验收；后续真实WS与Wwise现场浏览器联通见联调总览。频带FFT、对象长历史、完整星云/光锥、WebView2壳、GPU context恢复及一小时资源测试尚待后续。
+The browser has verified: simulated first screen, two-mode switching, 12 channels, LFE details, 10 minutes/1 hour fixed history, importing six-axis fixtures and selecting unknown positions, pause logo; 390px narrow screen check without horizontal overflow. This section is for early simulation acceptance; see the joint debugging overview for the subsequent connection between real WS and Wwise on-site browser. Band FFT, object long history, complete nebula/light cone, WebView2 shell, GPU context recovery and one-hour resource testing are yet to be followed.
 
-当前展示方向和能量图用于观察，不是实际声压、声束、房间仿真或设备播放证明。首次真实接入应先核对声道表及覆盖率，再验证空间效果。
+Current display direction and energy diagrams are for observation and are not proof of actual sound pressure, sound beam, room simulation, or device playback. For the first real access, you should first check the channel table and coverage, and then verify the spatial effect.
 
-## 声航 V0.2 原型
+## Sound Navigation V0.2 Prototype
 
-参见 [审查、算法和输入限制](../../docs/history/visualization-navigation-v02.md)。页面可控运动下拉框覆盖转向、平移、混合声源、身份复用及中断。真实回放沿用 100 ms 快照，约 50 ms 更新视觉状态；无可信尺度时不生成平移。测试：`node modules/visualization-frontend/test-navigation.js`。
+See Review, Algorithm, and Input Limitations (reference outside this source tree). The controllable movement drop-down box on the page covers steering, panning, mixing sound sources, identity multiplexing and interruption. Real playback uses 100 ms snapshots and updates the visual state in about 50 ms; no translation is generated when there is no credible scale. Test: `node modules/visualization-frontend/test-navigation.js`.
 
-## 弱持续声源丝网
+## Weak continuous sound source screen
 
-声航的弱持续声源丝网采用路径生长：各对象先横向探索并轻微向内弯曲，主丝数量和夹角按对象变化，较短侧枝从丝束中途生出；相邻且持续时间相近的对象再从两端沿内凹的局部弯曲路径逐步接通，接通段更亮。邻近关系只选择可接通的局部对象组，不直接绘制点间直线；深场薄雾沿丝束分布。特殊纵深点列不再画对象间直线。
+Acoustic Navigation's weak continuous sound source wire mesh grows by a path: each object first explores laterally and bends slightly inward. The number and angle of the main filaments change according to the object, and shorter side branches emerge from the middle of the filament bundle. Objects that are adjacent and of similar duration are gradually connected from both ends along a concave local curved path, and the connected section is brighter. The proximity relationship only selects connectable local object groups and does not directly draw straight lines between points; deep field mist is distributed along the tow. Special depth point series no longer draw straight lines between objects.
 
-部分外围种子另长出一条更短、更暗的外向探丝，外向层数量少于内向主丝，沿线仅有较弱雾光，以形成厚度而不恢复整齐的放射状轮廓。
+Some peripheral seeds grow another shorter, darker outward probe filament. The number of outward layers is less than that of the inward main filament. There is only a weak haze along the line to form a thickness without restoring a neat radial outline.
 
-成熟的外围丝束、连接段与膜面共用缓慢变化的空间形变场，产生有界的游动；每条路径在真实对象点处保持固定，近处丝束及“减少动态”模式不游动。此动画只影响视觉顶点，不参与对象位置、轨迹或航向计算。
+Mature peripheral filaments, connecting sections and membrane surfaces share a slowly changing spatial deformation field, resulting in bounded swimming; each path remains fixed at the real object point, and nearby filaments and the "reduce dynamic" mode do not swim. This animation only affects visual vertices and does not participate in object position, trajectory or heading calculations.
 
-接通的局部网段按图块顺序短促增亮。近处低声对象仍保留较暗的丝束与局部连接；只有相对会话尺度判为外围的相邻路径会生成朝监听者侧内凹的透明膜片。外围低声对象消失或降至静音时，视觉层沿最后一次连续位移最多预测 0.5 秒（显示位移封顶），之后再用 0.5 秒渐隐和收束；这段残影不计入活动对象与航向求解。该距离是未经米制校准的相对视觉尺度。
+Connected local network segments are briefly highlighted in tile order. Nearby low-pitched objects still retain darker filaments and local connections; only adjacent paths judged peripheral relative to conversational scale will generate transparent diaphragms concave toward the listener side. When peripheral low-pitched objects disappear or fall to silence, the visual layer predicts up to 0.5 seconds along the last continuous displacement (the display displacement is capped), and then fades out and converges in 0.5 seconds; this afterimage is not included in the solution of active objects and heading. This distance is a relative visual scale without metric calibration.
 
-实际显示瞬态光圈的对象在事件有效期及其后 0.2 秒内退出丝网和普通云雾；若随后仍持续低响度活动，重新满足约 0.65 秒连续条件后才可入网。普通云雾另要求至少 0.35 秒持续活动，因此短声不会留下云团。回放中的 onset 是高频候选事件，画面每帧只显示最强的 6 个光圈，不能把所有未显示的候选都当作已确认瞬态。浅蓝色纵深点列标记属于另一项空间分布提示，不表示瞬态分类。
+Objects that actually display transient aperture will exit the screen and ordinary clouds within the validity period of the event and 0.2 seconds thereafter; if low-loud activity continues thereafter, they can only enter the network after meeting the continuous condition for about 0.65 seconds again. Normal clouds also require at least 0.35 seconds of continuous activity, so the short sound will not leave a cloud behind. The onset in the playback is a high-frequency candidate event. Only the strongest 6 apertures are displayed in each frame. All undisplayed candidates cannot be regarded as confirmed transients. The light blue depth point column markers are another spatial distribution cue and do not represent transient classification.
 
-现场对象可能长期存活，而服务端 onset 只在身份新建或源标志出现时触发。前端在连续、完整的实测快照之间，若同一动态对象的窗口 RMS 至少升高 10 dB、当前 RMS 不低于 −42 dBFS 且峰值至少 0.05，可补一个带 450 ms 冷却的**视觉瞬态候选**；服务端已有事件优先。候选仅进入前端光圈与短时视觉排他状态，不写回遥测、运动估计或游戏语义，断帧和首帧不推断。默认显示最强 6 个光圈；若其中没有聆听位中心附近的候选，则额外保留该区域最强的 1 个，有界为 7 个。中心区域按会话固定的视觉径向尺度判断，不冒充米制距离；精确原点也能绘制朝相机的光圈。“减少动态”会关闭瞬态动画。
+On-site objects may be long-lived, while server-side onset is only triggered when an identity is created or when the source flag appears. Between consecutive and complete measured snapshots, if the window RMS of the same dynamic object increases by at least 10 dB, the current RMS is not less than −42 dBFS, and the peak value is at least 0.05, a **visual transient candidate** with 450 ms cooling can be added to the front end; existing events on the server will be given priority. Candidates only enter the front-end aperture and short-term visual exclusive state, do not write back telemetry, motion estimation or game semantics, and do not infer broken frames and first frames. By default, the 6 strongest apertures are displayed; if there are no candidates near the center of the listening position, the strongest 1 in the area will be retained, with a limit of 7. The center area is judged by a session-fixed visual radial scale, without pretending to be metric distances; the exact origin also draws the aperture toward the camera. Reduce Dynamics turns off transient animation.
 
-普通云雾由连续至少 0.35 秒、RMS 高于约 −42 dBFS 的动态对象驱动，并按画面相对径向位置调节尺寸、扩散与透明度。画面中心附近的云团收紧且变淡，外围保持原强度；这种层级不是实际声源距离或声学类别判断。
+Normal clouds are driven by dynamic objects that last for at least 0.35 seconds and have an RMS higher than about −42 dBFS, with size, diffusion, and transparency adjusted based on their relative radial position in the frame. The clouds near the center of the picture tighten and become lighter, while the outer edges maintain their original intensity; this level is not a judgment of actual sound source distance or acoustic category.
 
-云雾入场另取同一对象最初约 0.35 秒的 RMS 强度：早期较强的持续声以更亮的初始雾层、更短的渐亮时间进入；中等响度以中等亮度缓慢展开。入场后云雾的稳态强弱仍跟随当前实测能量，早期强度不永久覆盖后续变化；短声及瞬态光圈期不入场。
+The RMS intensity of the same object for the first 0.35 seconds is taken when the clouds and fog enter: the early stronger continuous sound enters with a brighter initial fog layer and a shorter fade-in time; the medium loudness slowly unfolds with medium brightness. After entering, the steady-state intensity of the clouds and fog still follows the current measured energy, and the early intensity does not permanently cover subsequent changes; the short sound and transient aperture period do not enter.
 
-一分钟回放的系统侧原始位置与导出首帧逐值一致。Windows 接口规定坐标单位为米，Wwise 可按 `fGameUnitsToMeters` 从游戏单位换算；采集未包含该游戏转换系数或独立物理尺标，故前端契约仍标 `source-unverified`。全段对象位置模长中位数约 18.67 接口单位、最大 152；约 3,152/76,800 份动态对象快照为精确原点。中心大云团的原因是原有规则把靠近原点的持续较响对象也扩成四片大雾，不是从距离数据推得的大型声源。
+The original position on the system side of the one-minute playback is consistent with the first frame of export. The Windows interface stipulates that the coordinate unit is meters, and Wwise can convert from the game unit according to `fGameUnitsToMeters`; the acquisition does not include the game conversion coefficient or independent physical scale, so the front-end contract is still marked as `source-unverified`. The median length of the entire object position modulus is about 18.67 interface units, the maximum is 152; about 3,152/76,800 dynamic object snapshots are the precise origin. The reason for the large cloud in the center is that the original rules expand the continuously loud objects close to the origin into four large fogs, which are not large sound sources inferred from the distance data.
 
-## 原始音轨人声候选试验
+## Original audio track vocal candidate test
 
-先将 `onnxruntime` 和 `silero-vad==6.2.1` 安装到 `build/voice-vad-deps`，再运行 `python modules/visualization-frontend/probe-voice.py`。脚本读取 `work/wwise-minute/sources/Slot*.wav`，在原回放目录生成独立的 `voice-candidates.json`，不改动 WAV 或已测量的回放分块。打开 `/?replay=wwise-minute&voice=probe` 可以看到候选区间对应的弧面；去掉 `voice=probe` 即回到原始回放。不要附加 `navigation=legacy`，除非有意对照旧求解器。此标签只是离线语音活动假设，不能证明是人声或对应人物，更不能从 VAD 推断说话内容。
+First install `onnxruntime` and `silero-vad==6.2.1` to `build/voice-vad-deps`, and then run `python modules/visualization-frontend/probe-voice.py`. The script reads `work/wwise-minute/sources/Slot*.wav` and generates an independent `voice-candidates.json` in the original playback directory without changing the WAV or measured playback chunks. Open `/?replay=wwise-minute&voice=probe` to see the arc surface corresponding to the candidate interval; remove `voice=probe` to return to the original playback. Do not append `navigation=legacy` unless interested in comparing to an older solver. This label is only a hypothesis of offline voice activity and cannot prove that it is a human voice or corresponding person, nor can it infer the content of the speech from VAD.
 
 ```powershell
 python -m pip install --target build/voice-vad-deps onnxruntime silero-vad==6.2.1
 python modules/visualization-frontend/probe-voice.py
 ```
 
-## 声航 V0.3 运动估计
+## Sound Navigation V0.3 motion estimation
 
-当前默认使用短期稳定参考筛选、加权 Procrustes、RANSAC/IRLS 和独立声源残差流；Wwise 回放用内部一致的源坐标估计相对转向与共同流向，单位未经米制校准。详情及输入边界见 [V0.3 审查与验证](../../docs/history/visualization-navigation-core-v03.md)。在页面地址后加 `?navigation=legacy`（已有参数则加 `&navigation=legacy`）切换到保留的 V0.2 求解器，`navigation=off` 关闭自动航向。运行 `node modules/visualization-frontend/test-registration.js`、`test-navigation-core.js`、`test-navigation.js`，以及准备好一分钟回放后的 `test-navigation-recording.js` 验证。
+The current default is to use short-term stable reference filtering, weighted Procrustes, RANSAC/IRLS, and source-independent residual streams; Wwise playback estimates relative steering and common flow direction using internally consistent source coordinates, and the units are not calibrated to metric. See V0.3 Review and Validation (reference outside this source tree) for details and input boundaries. Add `?navigation=legacy` after the page address (add `&navigation=legacy` if there are parameters) to switch to the reserved V0.2 solver, and `navigation=off` to turn off automatic heading. Run `node modules/visualization-frontend/test-registration.js`, `test-navigation-core.js`, `test-navigation.js`, and `test-navigation-recording.js` verification after one minute of ready playback.
 
-## 外围网格连线与惯性反馈
+## Peripheral grid connection and inertial feedback
 
-对象间的曲线连接按路径位置着色：两个对象端点较亮，静止时中段仅微弱可见；分块闪烁保留端点梯度，流动电流经过的位置才短暂提亮中段。连接段的雾光也按端点位置衰减。亮度变化沿用既有线段，不增加 WebGL 绘制批次或顶点数。
+The curved connections between objects are colored according to the path position: the endpoints of the two objects are brighter, and the middle section is only faintly visible when stationary; the block flashing retains the gradient of the endpoints, and the middle section is briefly brightened where the flowing current passes. The fog of the connected segment is also attenuated according to the endpoint position. Brightness changes follow existing line segments and do not increase the WebGL draw batch or vertex count.
 
-外围丝束和连接路径对可信的共同流向及相对旋转产生小幅、带回稳的视觉滞后；原始对象坐标及其连线端点保持固定。控制器预留三项平移和三项转动响应，但回放没有真实监听者 6DoF 姿态，也没有可靠米制标尺；缺失或不可信的运动轴保持零输入。手动观察、低可信状态和减少动态效果时回稳。该反馈仅用于视觉，不回写姿态估计。
+Peripheral tows and connecting paths produce small, stable visual lags for credible co-flow and relative rotation; original object coordinates and their connecting endpoints remain fixed. The controller has three translational and three rotational responses, but playback has no true listener 6DoF attitude and no reliable metric scale; missing or untrustworthy motion axes remain at zero input. Stabilizes when manually observing, low-confidence states, and reducing dynamic effects. This feedback is for vision only and does not write back pose estimates.
 
-本机 QuickJS 合成测试对 19 点连接曲线重复 19 万点计算，加入惯性后的单点处理约由 2.04 微秒增至 2.55 微秒；这是解释器压力测试，不是浏览器 CPU/GPU 帧时间。真实浏览器性能和视觉强弱仍需在回放页面观察。
-## FSA 配置入口（2026-10-23）
+The native QuickJS synthesis test repeats 190,000 point calculations on a 19-point connection curve, and the single-point processing time after adding inertia increases from approximately 2.04 microseconds to 2.55 microseconds; this is an interpreter stress test, not a browser CPU/GPU frame time. Real browser performance and visual strength still need to be observed on the replay page.
+## FSA configuration portal (2026-10-23)
 
-FSA 自动启动独立 Web API Host 后，访问 `http://127.0.0.1:8767/`，或连续三击 FSA 托盘图标。可视化首页新增“配置”链接，进入 `configuration.html`，提供既有播放、ASIO、DSP、路由、半径映射和后端 JSON 的图形编辑与完整 JSON 编辑。配置保存不控制运行，原绘图和遥测逻辑不变。单独使用旧的只读预览服务时，配置页会提示 API 不可用。详见 [Web Host 合同](../../docs/archive/decisions/web-configuration-host-20261023.md)。
+After FSA automatically starts the independent Web API Host, visit `http://127.0.0.1:8767/`, or click the FSA tray icon three times in a row. A new "Configuration" link is added to the visual homepage to enter `configuration.html`, which provides graphic editing and complete JSON editing of existing playback, ASIO, DSP, routing, radius mapping and back-end JSON. Saving the configuration does not control the operation, and the original drawing and telemetry logic remain unchanged. When using the old read-only preview service alone, the configuration page will prompt that the API is unavailable. See [Web Host Contract](../../docs/archive/decisions/web-configuration-host-20261023.md) for details.
 
-纯模型/DOM 合同验证：`npm run test:configuration` 与 `npm run test:configuration-page`；不需要浏览器自动操作。
+Pure model/DOM contract validation: `npm run test:configuration` and `npm run test:configuration-page`; no browser automation required.

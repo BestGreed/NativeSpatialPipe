@@ -1,5 +1,5 @@
-# 原生捕获模块
+# Native capture module
 
-正式 C 实现与构建入口集中在本目录：Native-Hook、Native-Hook-Control、Native-Capture、Native-Send。Zig 使用本目录的 Native-Hook.h，枚举 Hook 复用同一控制器源码。
+This directory contains the production C implementations and build entry points for Native-Hook, Native-Hook-Control, Native-Capture, and Native-Send. The Zig scheduler uses Native-Hook.h from this directory. The enumeration hook shares the controller source.
 
-原 endpoint-probe 的 Python 兼容入口、分析和自有测试夹具仍留在原目录。构建脚本通过明确路径引用夹具；产物目录、DLL 名称、ABI 和默认构建参数保持原值。构建不会自动注入系统进程。
+The compatibility Python entry points, analysis utilities, and owned-process test fixtures remain under endpoint-probe. Build scripts reference the fixtures by explicit paths. Output directories, DLL names, the ABI, and default build arguments retain their existing values. Building does not inject code into system processes.

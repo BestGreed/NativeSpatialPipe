@@ -169,86 +169,86 @@
     },
     {
       "path": "docs/archive/core/current-architecture.md",
-      "sha256": "45f091bcca4e42ea204cf8e2ae9b1f157cc603aa867b4a95d330b378124bb451",
+      "sha256": "9727789d60edcc1b9d0cafb12153c5cfff95ac810856320a700c9c07322b20e8",
       "sourceSha256": "05f549af8f4c27a3cd651cd457a3105f033800540c2d8e81f41ec3dd2094643b",
       "sourcePath": "docs/core/current-architecture.md"
     },
     {
       "path": "docs/archive/core/native-enumeration-hook-20261024.md",
-      "sha256": "3ec3318d962481076536f148e41ea01d7cfa14c34bf8e7dbb0bc41d2015f74f5",
+      "sha256": "83f62ed3dfe07a3b210404683c00a76f6efe1a2e60eb21fc4723a6734526f7b5",
       "sourceSha256": "433a0bd166054041914cea52ed50ee67e0f0dc4f7d42f21dc3d449f9983c3b46",
       "sourcePath": "docs/core/native-enumeration-hook-20261024.md"
     },
     {
       "path": "docs/archive/core/output-layout-presets-20261023.md",
-      "sha256": "8a0cac8b34cc5abbc48032d9782044ac2f3cac909d026bc8f2359baf37cfe20e",
+      "sha256": "a062023e8fb5938844f188eb40ed31c6406bc3cf6f510a9e4be857e55a528c84",
       "sourceSha256": "4f8a10c71c124f82b2f2080d4823297681035c7c5b645e010da914ee0d498982",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence",
       "sourcePath": "docs/core/output-layout-presets-20261023.md"
     },
     {
       "path": "docs/archive/core/output-pool-processing-20261022.md",
-      "sha256": "bf4bcf18dd0d5a4f4f99fe5d5a090c2bb67f507e04139c537d16a0c40e52f53d",
+      "sha256": "a02b4071f5a5ffffb5e9b2a94f97b81135263b22cf52ab33e3255fbd28b160ce",
       "sourceSha256": "a0d55beb886b9c8c1df798f747d5052db4f515aa4088b2d552f99e0053bd1df2",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence",
       "sourcePath": "docs/core/output-pool-processing-20261022.md"
     },
     {
       "path": "docs/archive/core/playback-json-configuration-20261022.md",
-      "sha256": "d6211ce43a36a944b237afc19f51c87afbfe58664476cc621754837d9e37f236",
+      "sha256": "0e4c31fc8997980fa8275f6ae3bc869423082984981520912cf374ac1793ca42",
       "sourceSha256": "32a87d2ba3d3c496fda719dd6b0c8da68f5399de46eb7b2bc945a2f70b4935e8",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence",
       "sourcePath": "docs/core/playback-json-configuration-20261022.md"
     },
     {
       "path": "docs/archive/core/playback-user-location-20261024.md",
-      "sha256": "82217b59ba7272b07e129e4ad7c6cee6c8fc6cdc4ab3264185a44eb428e296e4",
+      "sha256": "8f220361606974dc85c5310a76e7940e3ce30f9d2db9a495543f6058766de026",
       "sourceSha256": "dda1ea88992b861e0f430a110697fe090b674b28528eeb79fed7fc34d6d57bfe",
       "sourcePath": "docs/core/playback-user-location-20261024.md"
     },
     {
       "path": "docs/archive/core/recording-isolation-20261024.md",
-      "sha256": "c43c7928cb3e8c76534a47875ea40647ffb8ffe7b386810de6bf78d285e811a1",
+      "sha256": "f005c060093fbacc09860b8509a1a4ebe3e02d86b9d6dd35d6f103120386cc79",
       "sourceSha256": "631a0f57c3bc830ff88a294d64cf02077322e7b5c4efe4bfc6c4054ed4693a96",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence",
       "sourcePath": "docs/core/recording-isolation-20261024.md"
     },
     {
       "path": "docs/archive/core/renderer-backend-boundary-20261021.md",
-      "sha256": "da67cb6ad1715f1df129ff0b095d25308c5afaa9bcdf9cc9f205f10e70543471",
+      "sha256": "119209b62e9d6a5a0c30dbf52e579ff72b558e5541e61cd7070c848a436cff65",
       "sourceSha256": "1342c9c14df2eab00d4e45c34af526b93e17b79f483f802ac222ffd6354c9c19",
       "sourcePath": "docs/core/renderer-backend-boundary-20261021.md"
     },
     {
       "path": "docs/archive/core/stack-architecture-audit-20261024.md",
-      "sha256": "14b3429966df9e2d4928d3e1527df1ce7beeeddec822dce9aeef67d6f796448d",
+      "sha256": "529e3fd99cfe8b03a084c0998cf31c7d74444782de0e0d533976d634a77bcffd",
       "sourceSha256": "fcd98521539ee678cd32788fafd8e1e761839f27c183fc4b1424f58db0a630d6",
       "sourcePath": "docs/core/stack-architecture-audit-20261024.md"
     },
     {
       "path": "docs/archive/decisions/asio-module-runtime-loading-20261023.md",
-      "sha256": "2563d04534145d04a5a44c783f7c9f0abdf721eb3d6c8470aa5c9485d79f3318",
+      "sha256": "1e261ab8f4868e6cddb00821cc69a4b5e2cbe91244d9d0136a3cbb774510e822",
       "sourceSha256": "83ccbc51fc1a17023738fd702fbe80ed17c746bc49e3408e91c75b6ca9adcb8e",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence",
       "sourcePath": "docs/decisions/asio-module-runtime-loading-20261023.md"
     },
     {
       "path": "docs/archive/decisions/asio-session-lifetime-20261023.md",
-      "sha256": "4cc489f63485fdb6f092b10a43f8286bbf6fa1149a0e4fe916db1e818cf5c8ee",
+      "sha256": "940db92b4e9bea07a16a8ddb9a1d10e916bd771cc0e0abf1255e2f0b91ece006",
       "sourceSha256": "39222b41b6f04677289d0628ddd6f69993aeaeffdfed0d07206628d2b7a88db7",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence",
       "sourcePath": "docs/decisions/asio-session-lifetime-20261023.md"
     },
     {
       "path": "docs/archive/decisions/web-configuration-host-20261023.md",
-      "sha256": "24034f74d146b1fa30afa1bf302ccbd83af0b4f2acbbc95cb2201d393e232ebe",
+      "sha256": "6546f6d7d9ea2d415bb00bad108ca73417cc1c51517479fae0e5d0cc24e47916",
       "sourceSha256": "3b114933f00bb841a94ed528b7c6aa69c94fa7a0fa6178e759fe24f11ac36178",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence",
       "sourcePath": "docs/decisions/web-configuration-host-20261023.md"
     },
     {
       "path": "docs/archive/history/native-architecture-baseline-20261024.md",
-      "sha256": "c457b17d044650697b3fed67cba1c9b899d59db7e3b4abef05d833b1c99a4b9d",
+      "sha256": "16c587baf38cb500d8b01bd3842dc6b3abf9ca457276e475874d7426a428a428",
       "sourceSha256": "3ad8aa7b36b11c41865e0e9947f06ac26362be16b654ac42c70e1eb5b52ceca2",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence",
       "sourcePath": "docs/history/native-architecture-baseline-20261024.md"
@@ -331,12 +331,12 @@
     },
     {
       "path": "modules/audio-backends/LICENSING.md",
-      "sha256": "e23e3c75a602a6e71812d5b282e4d64747d1531e2cf863229b0dcf429bc3a4a1",
+      "sha256": "ae44c96c23fff27ffc8cacd334bb3c518f3660abc885d3c902dc0bf8af3b6651",
       "sourceSha256": "e23e3c75a602a6e71812d5b282e4d64747d1531e2cf863229b0dcf429bc3a4a1"
     },
     {
       "path": "modules/audio-backends/README.md",
-      "sha256": "24cd646ddd0ab346f1f3e503c44e63d507091de64b8dba7c767233b7aa215e9d",
+      "sha256": "76ccfcbcf37ff801b834a1b13aae68985f3de068c32bf73ba44ab8e19dda9e92",
       "sourceSha256": "0708a2e9bb35d5b0fc947cfe0bd32991ddfb510e9f364d55fcfca9886c9db9f4"
     },
     {
@@ -351,7 +351,7 @@
     },
     {
       "path": "modules/audio-backends/UPSTREAM-LICENSING.md",
-      "sha256": "e90e82963b79d97809c1ef21d070d2ce38e92de0407b9a9b1df46da4e51fff4c",
+      "sha256": "024087066a44ac119f703acf5d0d035a4b6b64325dfd5717745473f9e9b6aab4",
       "sourceSha256": "e90e82963b79d97809c1ef21d070d2ce38e92de0407b9a9b1df46da4e51fff4c",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
@@ -362,7 +362,7 @@
     },
     {
       "path": "modules/audio-backends/UPSTREAM-THIRD-PARTY-NOTICES.md",
-      "sha256": "02b9a2cd402f5077cae8752e5287bd56383a209365077242d7b6b8cd0e6298c6",
+      "sha256": "2414497358a68676ec8392a8a746bea22d82b25326dd5de7025b57cefb7606d4",
       "sourceSha256": "02b9a2cd402f5077cae8752e5287bd56383a209365077242d7b6b8cd0e6298c6"
     },
     {
@@ -625,7 +625,7 @@
     },
     {
       "path": "modules/browser-identity/README.md",
-      "sha256": "fc0d721cf103e288e619e28c1e0b83f1935ffff6750dacd538734457f28fc8a9"
+      "sha256": "98a38368b730f2ec852b693debc61592fe4015163bd6b351e0939c5b5e92c671"
     },
     {
       "path": "modules/browser-identity/Restart-OrdinaryEdge.ps1",
@@ -685,7 +685,7 @@
     },
     {
       "path": "modules/croksor/README.md",
-      "sha256": "83cad21a611b989473b2fdccaa397f79337299efedacf3f0f0684da40bc34769"
+      "sha256": "14c4a43761dc7ef1492abfdfa64eb1b2927581fe23e0cb6e528825350a37a5fe"
     },
     {
       "path": "modules/croksor/Test-BlockMode.py",
@@ -741,7 +741,7 @@
     },
     {
       "path": "modules/croksor/patches/README.md",
-      "sha256": "a3990ce3a45db3f4f456b5c0d380c3d9a4854d6351a748547c19201ebbb6aa70"
+      "sha256": "08f89361e9b13204d13ebacbbf3b5c86693473a16b8b4824b06bf6174d78c6ef"
     },
     {
       "path": "modules/croksor/patches/olr-block-mix.patch",
@@ -1082,7 +1082,7 @@
     },
     {
       "path": "modules/fsa-integration/README.md",
-      "sha256": "88018bbd2a6e88c70c424ae06a2155f3d42de15675a5a24192cd6c4fd47a8e99"
+      "sha256": "996d8126237b31c7a785cfd338401af9d53e332c559510e0b3764cf13503bb6b"
     },
     {
       "path": "modules/fsa-integration/Start Sonic NSp.cmd",
@@ -1098,11 +1098,11 @@
     },
     {
       "path": "modules/fsa-integration/native/README.en.md",
-      "sha256": "c281b9af7ac4b6971b3f1e20ed929a64c8110b5967182c9eac277e87bfe0ab8f"
+      "sha256": "5897d97a5ee8702eef931b189653cff98228ee0f9c397a7e66a6eba432fefca5"
     },
     {
       "path": "modules/fsa-integration/native/README.md",
-      "sha256": "fe3f61d2a58afa9613d57489a81bee5f43b9cecc8854609a2e59a27727d993e2"
+      "sha256": "05fe0f30d011c14c9d2bb5512be114adf80b53ddd36dbb1fe95765ae32a317b5"
     },
     {
       "path": "modules/fsa-integration/native/assets/2_0.ico",
@@ -1134,11 +1134,11 @@
     },
     {
       "path": "modules/fsa-integration/native/assets/README.en.md",
-      "sha256": "2ea24bde5bc379bc223d5aa77aa164f32a320978cba2bf1f907fc8a7d1d6c045"
+      "sha256": "070192b466ae74a30b233b7901bcf9ce728a73bad7113639bfb3c39788d4421b"
     },
     {
       "path": "modules/fsa-integration/native/assets/README.md",
-      "sha256": "2e649a78a34d8a26f291662dbe606846f53cb8ff10a5f001dac33e40acd607a5"
+      "sha256": "1ffe67d4235b58aeffacbfe7ac94f3968331397352dee28816787dcd3cbdc77e"
     },
     {
       "path": "modules/fsa-integration/native/audio_layout.c",
@@ -1350,7 +1350,7 @@
     },
     {
       "path": "modules/inferno-windows/NSP-INTEGRATION.md",
-      "sha256": "b37697fa57df451118a246aef946058153d64dbb5bca30472829f294e14c49b9"
+      "sha256": "324fab08e9ca98e0a9d5d46bc0790de179698f99327aa9808673a2ee887f48c4"
     },
     {
       "path": "modules/inferno-windows/NSP-SOURCE-MANIFEST.json",
@@ -1358,7 +1358,7 @@
     },
     {
       "path": "modules/inferno-windows/README.md",
-      "sha256": "51a68651211980d2fec0753b5f226ec2eb2bf8415c06c875d4e49b4428542189"
+      "sha256": "c50891abf325972f20e0f9904f35dabe34749fdd512e94b6a87ffb59d9795b3f"
     },
     {
       "path": "modules/inferno-windows/WINDOWS-TESTING.md",
@@ -2123,7 +2123,7 @@
     },
     {
       "path": "modules/lsac-capture/README.md",
-      "sha256": "53df52ca20d2609422a9b7e8853c558692c0b3f4a20b8fa866a3c053b8d6d3d2"
+      "sha256": "517af96298aa1d394e89ccab3a01cbc449c4804d0434d89f0b5592651286bde2"
     },
     {
       "path": "modules/lsac-capture/Run.ps1",
@@ -2459,7 +2459,7 @@
     },
     {
       "path": "modules/media-foundation/README.md",
-      "sha256": "6c986e2a3de6bec446a18884d4d36588ed0e55d00e0dae7f0a693224f82294c8"
+      "sha256": "a8ebea8b5ec16ceb120193c6635943e578ce15cc62e5809313025237c5af4d0c"
     },
     {
       "path": "modules/media-foundation/decoder/Cargo.lock",
@@ -2671,7 +2671,7 @@
     },
     {
       "path": "modules/media-foundation/decoder/vendor/truehd/README.md",
-      "sha256": "1ec858e4530879af6aae588850c3e3572fea3e97c87f76d9c17b6159c880d473"
+      "sha256": "82e87f44bc417c2ac07fa49fd479395df327fe16c218656605f7d95af2beb749"
     },
     {
       "path": "modules/media-foundation/decoder/vendor/truehd/src/lib.rs",
@@ -2907,7 +2907,7 @@
     },
     {
       "path": "modules/native-capture/README.md",
-      "sha256": "3c89d3338f12f3c2e69d6073761152b5cc0f7f093577b5d0b4bf8c8fcde41025"
+      "sha256": "768be0db5d45840d1307f71a977b66e509f27a7d4f8bf77f074fcea92f190e76"
     },
     {
       "path": "modules/native-receiver/Build.ps1",
@@ -3007,7 +3007,7 @@
     },
     {
       "path": "modules/pipeline-init/README.md",
-      "sha256": "9be3f54a53d0ccf9fbe0c9ae2c475eaab115298d1321c94b4142adc286ecb15f"
+      "sha256": "4351937f69ef1feec627d9a12d82c958a80dea8beb23c9b5b22bbd943dc065e9"
     },
     {
       "path": "modules/pipeline-init/Reload-Display.ps1",
@@ -3139,7 +3139,7 @@
     },
     {
       "path": "modules/semantic-separator/README.md",
-      "sha256": "9ba645ca531cc4a8a909cf3e4658397e8d1611421b133b4f22710b6012efbb95"
+      "sha256": "43b005c3177f241f823be5d74be096d4422ecf371b57d50449372f7c055be914"
     },
     {
       "path": "modules/semantic-separator/fs_residual_export.cpp",
@@ -3303,7 +3303,7 @@
     },
     {
       "path": "modules/visualization-frontend/README.md",
-      "sha256": "3ab8266515706de5fcc3663fd891e27ba6c6514ab26b53f33ce8a0ca405be379"
+      "sha256": "a2f80e590fa0d67e44afe76a1845d8a977281604d3224afb3f31499441b66f09"
     },
     {
       "path": "modules/visualization-frontend/app.js",
@@ -3311,7 +3311,7 @@
     },
     {
       "path": "modules/visualization-frontend/assets/README.md",
-      "sha256": "b26d83b80f4e4ab0f5bd79d0426540c923b9bb650ccfc2884907566c2751ab13"
+      "sha256": "89f4cae7f74f6d4e242000243d5f2dcb2dd27b9baf141ef8ede2ddae3418725a"
     },
     {
       "path": "modules/visualization-frontend/assets/build-toilet-wire.py",
@@ -3555,7 +3555,7 @@
     },
     {
       "path": "modules/zig-scheduler/README.md",
-      "sha256": "a8dcb0af53d78afbe2a107af225475685df178786e8e7bf5e3fb63f81838ac2c"
+      "sha256": "2f2a1f5e190626688c0554b5ddb27e49ed8afe5d0ad5e4f9f96b1211f46544de"
     },
     {
       "path": "modules/zig-scheduler/Run-GameTelemetry.ps1",
@@ -3790,7 +3790,7 @@
     },
     {
       "path": "tools/asio-output/README.md",
-      "sha256": "b8d530cb734c4e97ffc471cf7e38c0b52845178ea2c1440f28e0bd86e70b2a4c",
+      "sha256": "6021307fad9a7f250a9c833e3fe763ac41d156c67254398d15e62bb2568863ab",
       "sourceSha256": "0992ab83240e72524183d51b2779d52a0717851f055a7272db71015d0c4e48cd",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
@@ -4080,7 +4080,7 @@
     },
     {
       "path": "tools/fsa-integration/README.md",
-      "sha256": "191eb230c7bbd64e89dea9ae43c8f53d3b18198663bd5f823d63b663e7f92f18",
+      "sha256": "7fa7c623e32d1e20956960cd7c567823a60785b51980bc35c0e5049d092bb064",
       "sourceSha256": "0c9dcf76f22c95baf84c3d1205b7372a9c368fca96b10d659f97906c45079888",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
@@ -4101,12 +4101,12 @@
     },
     {
       "path": "tools/fsa-integration/native/README.en.md",
-      "sha256": "c281b9af7ac4b6971b3f1e20ed929a64c8110b5967182c9eac277e87bfe0ab8f",
+      "sha256": "5897d97a5ee8702eef931b189653cff98228ee0f9c397a7e66a6eba432fefca5",
       "sourceSha256": "c281b9af7ac4b6971b3f1e20ed929a64c8110b5967182c9eac277e87bfe0ab8f"
     },
     {
       "path": "tools/fsa-integration/native/README.md",
-      "sha256": "fe3f61d2a58afa9613d57489a81bee5f43b9cecc8854609a2e59a27727d993e2",
+      "sha256": "05fe0f30d011c14c9d2bb5512be114adf80b53ddd36dbb1fe95765ae32a317b5",
       "sourceSha256": "fe3f61d2a58afa9613d57489a81bee5f43b9cecc8854609a2e59a27727d993e2"
     },
     {
@@ -4146,12 +4146,12 @@
     },
     {
       "path": "tools/fsa-integration/native/assets/README.en.md",
-      "sha256": "2ea24bde5bc379bc223d5aa77aa164f32a320978cba2bf1f907fc8a7d1d6c045",
+      "sha256": "070192b466ae74a30b233b7901bcf9ce728a73bad7113639bfb3c39788d4421b",
       "sourceSha256": "2ea24bde5bc379bc223d5aa77aa164f32a320978cba2bf1f907fc8a7d1d6c045"
     },
     {
       "path": "tools/fsa-integration/native/assets/README.md",
-      "sha256": "2e649a78a34d8a26f291662dbe606846f53cb8ff10a5f001dac33e40acd607a5",
+      "sha256": "1ffe67d4235b58aeffacbfe7ac94f3968331397352dee28816787dcd3cbdc77e",
       "sourceSha256": "2e649a78a34d8a26f291662dbe606846f53cb8ff10a5f001dac33e40acd607a5"
     },
     {
@@ -4414,7 +4414,7 @@
     },
     {
       "path": "tools/pipeline-init/README.md",
-      "sha256": "b7279e93bd2c12b7a63d3f5a392ea729184e9596c6ec19cf8bdab92ccc6ecb0e",
+      "sha256": "359dafd4fc318bed338b75c748ee6bec81713c7af1f3c0ef1a7c47ec95dd2a43",
       "sourceSha256": "07e40ea8369c0030fc91e5141df79805a9d44d47cce64a779a2b6f46cd91d09e",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
@@ -4623,7 +4623,7 @@
     },
     {
       "path": "tools/roar-bridge/patches/README.md",
-      "sha256": "08d67443cb3865674e11589d5067c195c6acd03c9f8bc86a52dcd55ab97527f3",
+      "sha256": "acab4fd27db57a982ec7787dcd84f9002804c5370fdecdef9845d43dd874816e",
       "sourceSha256": "a3990ce3a45db3f4f456b5c0d380c3d9a4854d6351a748547c19201ebbb6aa70",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
@@ -4850,7 +4850,7 @@
     },
     {
       "path": "tools/visualization-frontend/README.md",
-      "sha256": "c49044af7445970ee436a6b9fa7b88f7b5cd70bb0c0151097fdc4c150294db3d",
+      "sha256": "82dfa5d2b858bacd8e8f1fd867f27f020284206fb4442d044cc1fde244a74742",
       "sourceSha256": "5c2e4d58aedd1a56172d4087f67f4bfb903cea4f5f33094054edaab3629c71a5",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },
@@ -4861,7 +4861,7 @@
     },
     {
       "path": "tools/visualization-frontend/assets/README.md",
-      "sha256": "f10a3ae7f7064b6b9f575f43899fdc9fca4050aca8dee135ff51f5976f703c27",
+      "sha256": "c70c8b75daf2009088ba8a8906267b7c9edaf3395cee6a6ed12c36c890a7528d",
       "sourceSha256": "f10a3ae7f7064b6b9f575f43899fdc9fca4050aca8dee135ff51f5976f703c27"
     },
     {
@@ -5153,7 +5153,7 @@
     },
     {
       "path": "tools/zig-scheduler/README.md",
-      "sha256": "b16038a996b1497a06bf694ba26832d5f2927543a84f47f8e0722519588471e9",
+      "sha256": "496ea91c9be123086ac4c9c6c882bb870d00190c54527e2abb4210214aefa93c",
       "sourceSha256": "1fc77a6f0b6eead0f0a3b03f25592d8bfac511adee012d444b08d8c5d907bd56",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },

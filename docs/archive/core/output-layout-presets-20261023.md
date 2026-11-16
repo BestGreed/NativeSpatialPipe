@@ -1,14 +1,14 @@
 > **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
-# 输出布局预设与 ROAR 6DoF 插槽
+# Output layout presets and ROAR 6DoF slots
 
-2026-10-23：已接入当前 `alpha-dev` 工作区。布局选择属于渲染输出配置，与捕获端点的 12 声道 bed 和动态对象数量无关。
+2026-10-23: Connected to the current `alpha-dev` workspace. Layout selection is a render output configuration and is independent of the 12-channel bed and number of dynamic objects captured at the endpoint.
 
-## 入口与生效范围
+## Entry and effective scope
 
-Web 前端的「配置 → 播放与公共 DSP → 扬声器布局」提供以下七项，也可直接修改播放 JSON 的 `outputLayout`。省略字段仍为 `7.1.4`，配置版本保持兼容。保存不自动应用，下次启动 NSp 会话时读取。
+The web front-end's "Configuration → Playback and Public DSP → Speaker Layout" provides the following seven items, and you can also directly modify the `outputLayout` that plays JSON. The omitted field is still `7.1.4`, and the configuration version remains compatible. The save is not automatically applied and will be read the next time the NSp session is started.
 
-| 简写 | JSON 值 | 输出声道数 |
+| Abbreviation | JSON value | Number of output channels |
 |---|---|---:|
 | 512 | `5.1.2` | 8 |
 | 514 | `5.1.4` | 10 |
@@ -18,13 +18,13 @@ Web 前端的「配置 → 播放与公共 DSP → 扬声器布局」提供以�
 | 914 | `9.1.4` | 14 |
 | 916 | `9.1.6` | 16 |
 
-七项均适用于 `renderer: "roar", mode: "olr"` 和 `renderer: "lira", mode: null`。选择会贯通实际渲染器、Rust 输出池、公共 DSP、输出设备路由和遥测；不是仅修改界面标签。设备输出声道必须足够，既有 12 路 DVS 网络订阅不会自动增加到 14/16 路。
+All seven items are applicable to `renderer: "roar", mode: "olr"` and `renderer: "lira", mode: null`. The selection goes through the actual renderer, Rust output pool, public DSP, output device routing, and telemetry; it doesn't just modify the interface label. The device output channels must be sufficient, and the existing 12-channel DVS network subscription will not be automatically increased to 14/16 channels.
 
-## 声道顺序与接线
+## Channel sequence and wiring
 
-唯一配置表为 [`contracts/output-layouts.json`](../../../contracts/output-layouts.json)，通过 `tools/Generate-OutputLayouts.py` 生成各语言的表。两个后端使用相同输出顺序；算法和房间行为仍各自保留。
+The only configuration table is [`contracts/output-layouts.json`](../../../contracts/output-layouts.json), and the table for each language is generated through `tools/Generate-OutputLayouts.py`. Both backends use the same output order; algorithms and room behavior remain separate.
 
-| 布局 | 渲染器标准输出顺序 |
+| Layout | Renderer stdout order |
 |---|---|
 | 5.1.2 | L R C LFE Ls Rs Ltf Rtf |
 | 5.1.4 | L R C LFE Ls Rs Ltf Rtf Ltr Rtr |
@@ -34,17 +34,17 @@ Web 前端的「配置 → 播放与公共 DSP → 扬声器布局」提供以�
 | 9.1.4 | Lw Rw C LFE Lrs Rrs L R Ls Rs Ltf Rtf Ltr Rtr |
 | 9.1.6 | Lw Rw C LFE Lrs Rrs L R Ls Rs Ltf Rtf Ltr Rtr Ltm Rtm |
 
-9.x 沿用 ROAR 原生 9.1.6 的顺序。两顶声道预设沿用 ROAR 的前顶声道对，不改成中顶声道。物理接线与上表分开，由 `routing.physicalChannels` 指定；界面显示从 1 开始，JSON 索引从 0 开始。
+9.x follows the ROAR native 9.1.6 order. The two top channels are preset to use ROAR's front top channel pair and will not be changed to mid-top channels. The physical wiring is separate from the above table and is specified by `routing.physicalChannels`; the interface display starts from 1 and the JSON index starts from 0.
 
-`outputProcessing.trim`、`delayFrames`、`routing.physicalChannels` 及自定义源排列的长度必须与所选布局一致；省略校准数组时使用中性值。DSP 始终按渲染器标准声道顺序处理，之后才映射设备输出。
+The length of `outputProcessing.trim`, `delayFrames`, `routing.physicalChannels`, and custom source arrangements must be consistent with the selected layout; neutral values are used when the calibration array is omitted. DSP is always processed in renderer standard channel order before device output is mapped.
 
-在表单切换布局时，按声道名称保留校准和既有设备接线，新增声道使用中性校准并分配未占用输出；切换后排列回到标准顺序。直接编辑完整 JSON 不会被偷偷重排，长度不符会拒绝保存。旧 `dvs-speakers` 预设仅适用于 7.1.4，其他布局使用标准或自定义路由。
+When switching layouts in the form, keep the calibration and existing device wiring by channel name, use neutral calibration for new channels and assign unoccupied outputs; the arrangement returns to the standard order after switching. Directly editing the complete JSON will not be secretly rearranged, and saving will be refused if the length does not match. The old `dvs-speakers` preset only works in 7.1.4, other layouts use standard or custom routing.
 
-## ROAR 扩展与预留插槽
+## ROAR expansion and reserved slots
 
-所钉住的 ROAR 版本原生没有 7.1.6、9.1.4。本次通过独立的 `olr-output-layouts.patch` 增加实际目标扬声器几何；对象直接渲染至该几何。NSP 固定 7.1.4 bed 按同名扬声器映射到新增布局，不先渲染 9.1.6 再丢弃声道。扩展仅保证 NSP 当前 bed 与对象输入，不宣称覆盖上游的所有 IAMF/HOA 输入组合。
+The pinned ROAR version does not have 7.1.6 or 9.1.4 natively. This time the actual target speaker geometry is added via a separate `olr-output-layouts.patch`; the object is rendered directly to this geometry. NSP fixed 7.1.4 bed mapping to new layout by speaker with the same name, without first rendering 9.1.6 and then discarding the channel. The extension only guarantees NSP current bed and object inputs and does not claim to cover all IAMF/HOA input combinations upstream.
 
-额外预留 `roar-custom-6dof`，以及以下 ROAR 专属配置元数据：
+Additional reservation `roar-custom-6dof`, and the following ROAR exclusive configuration metadata:
 
 ```json
 "roarCustomLayout": {
@@ -53,15 +53,15 @@ Web 前端的「配置 → 播放与公共 DSP → 扬声器布局」提供以�
 }
 ```
 
-`measurementFile` 非空时需为绝对路径。目前仅保存槽位元数据，不读取测量、不应用几何、不启动实时追踪；界面中的该布局不可选，运行时主动拒绝选择它。后续需单独定义测量合同、坐标系、校准和布局更新边界，不能把预留槽位视为已实现 6DoF。
+`measurementFile` must be an absolute path if it is not empty. Currently, only slot metadata is saved, measurements are not read, geometry is not applied, and real-time tracking is not started. This layout is not selectable in the interface and is actively refused to be selected at runtime. Subsequently, the measurement contract, coordinate system, calibration and layout update boundaries need to be defined separately, and the reserved slots cannot be regarded as having achieved 6DoF.
 
-## 验证与交付边界
+## Validation and delivery boundaries
 
-- ROAR/LIRA × 七布局 × bed/对象共 28 组离线实际渲染通过，覆盖输出尺寸、有效音频、遥测包和输出池归还；另有四组旧 7.1.4 音频逐字节兼容对照通过。
-- Zig 配置 10 项、输出池交接 7 项通过；七布局遥测的快照、历史与协议校验通过。原有遥测 33 项和协议 15 项回归通过。
-- 配置页面测试覆盖七种布局切换、按声道名称迁移、物理路由防冲突以及预留插槽；Web API 14 项检查通过，含七布局保存回读和预留布局拒绝。
-- 已替换当前本机默认调度器、ROAR 桥接库与 LIRA 库，并重新启动 FSA；未改用户当前布局、驱动或网络订阅，未自动启动播放。
+- ROAR/LIRA × seven layouts × bed/object, a total of 28 sets of offline actual rendering passes, covering output size, valid audio, telemetry packets and output pool return; there are also four sets of old 7.1.4 audio byte-by-byte compatibility control passes.
+- 10 items of Zig configuration and 7 items of output pool handover passed; the snapshot, history and protocol verification of seven layout telemetry passed. Regression of 33 items of original telemetry and 15 items of protocol passed.
+- The configuration page test covers seven layout switching, migration by channel name, physical routing anti-collision and reserved slots; 14 Web API checks passed, including seven layout save readback and reserved layout rejection.
+- The current local default scheduler, ROAR bridge library and LIRA library have been replaced, and FSA has been restarted; the user's current layout, driver or network subscription has not been changed, and playback has not been automatically started.
 
-本轮未进行七种布局的扬声器实播、听感验证或新的延迟压测；不据此宣称 14/16 路物理网络已连通。诊断原始文件名 `roar-714.f32` 为兼容旧工具暂保留；非 7.1.4 时必须依报告的 `outputLayout`/`outputChannels` 解读，不能根据文件名推断尺寸。
+This round did not conduct actual playback of the seven layouts of speakers, hearing verification or new delay stress testing; it is not claimed that the 14/16-channel physical network is connected based on this. The original diagnostic file name `roar-714.f32` is temporarily reserved for compatibility with old tools; when it is not 7.1.4, it must be interpreted according to the reported `outputLayout`/`outputChannels`, and the size cannot be inferred based on the file name.
 
-验证记录见 `experiments/output-layouts-20261023`（开发参考未随公开源码提供）。
+For verification records, see `experiments/output-layouts-20261023` (development reference is not provided with the open source code).

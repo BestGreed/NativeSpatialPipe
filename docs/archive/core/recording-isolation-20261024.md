@@ -1,26 +1,26 @@
 > **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
-# PCM 旁录与实时播放解耦
+# Decoupling PCM recording and real-time playback
 
-后续同日更新：播放 JSON 的[用户目录默认与兼容迁移](playback-user-location-20261024.md)已实现；本文“目录迁移待做”仅属于当时阶段，容量与保留策略仍待做。
+Follow-up update on the same day: [User Directory Default and Compatibility Migration] (playback-user-location-20261024.md) for playing JSON has been implemented; the "Directory Migration to Be Done" in this article only belongs to the current stage, and the capacity and retention strategy still need to be done.
 
-2026-10-24。用户授权拆除正常播放路径中的写盘耦合，并为 PCM 旁录、遥测快照存档提供独立开关。仅处理输出交付与诊断存档，不改 ASIO 驱动调度、时钟、SRC 或回调算法。
+2026-10-24. User authorization removes the write coupling in the normal playback path and provides independent switches for PCM side recording and telemetry snapshot archiving. Only handles output delivery and diagnostic archiving, does not change ASIO driver scheduling, clocking, SRC or callback algorithms.
 
-## 实际路径
+## actual path
 
-此前：`renderer → Rust 输出池 → 同一 writer 写文件 → 池内 DSP → 池块交付 → ASIO owner`。独立于 renderer 的 writer 仍位于播放必经路径，因此磁盘阻塞或写盘错误可能拖延甚至中断交付。
+Previously: `renderer → Rust output pool → same writer writes file → in-pool DSP → pool block delivery → ASIO owner`. The writer, which is independent of the renderer, is still on the path required for playback, so disk blocking or write errors may delay or even interrupt delivery.
 
-现在：`renderer → Rust 输出池 → 输出交付线程原地 DSP → 池块交付 → ASIO owner`。该线程不持有录音文件，也不执行文件写入、flush 或 sync。
+Now: `renderer → Rust output pool → output delivery thread in-place DSP → pool block delivery → ASIO owner`. This thread does not hold the recording file, nor does it perform file writing, flushing, or sync.
 
-只有开启旁录时，交付线程才从预分配的录音池取得空块，复制 DSP 前 PCM，再非阻塞提交给专用录音线程；原播放池块立即继续 DSP 与交付。录音池固定 32 块，未开启时不创建 PCM 录音池、录音线程或音频文件。池满、录音线程失败或文件不可创建时，只丢弃录音数据并计数，不返回播放故障；磁盘操作不持有播放租借。
+Only when side recording is enabled, the delivery thread obtains empty blocks from the pre-allocated recording pool, copies the PCM before DSP, and then submits it to the dedicated recording thread in a non-blocking manner; the original playback pool blocks immediately continue DSP and delivery. The recording pool is fixed at 32 blocks. When it is not turned on, no PCM recording pool, recording thread or audio file will be created. When the pool is full, the recording thread fails, or the file cannot be created, only the recording data is discarded and counted, and no playback failure is returned; disk operations do not hold playback leases.
 
-录音仍保留 DSP 前语义，不包含公共 DSP 额外尾音。发生录音丢块时，文件不是完整、连续的对照录音，应检查报告中的 `pcmRecording.droppedBlocks`、`error`，不能将其作为无缺口基线。录音开启时仍有一份有界内存复制以及系统资源开销，不宣称开关两态性能绝对相同。
+The recording still retains pre-DSP semantics and does not contain the common DSP extra tail. When recording block loss occurs, the file is not a complete and continuous control recording. `pcmRecording.droppedBlocks` and `error` in the report should be checked and cannot be used as a gap-free baseline. There is still a bounded memory copy and system resource overhead when recording is turned on. It is not claimed that the performance of the two states of switching is absolutely the same.
 
-会话结束时，先完成输出交付与 DSP 尾音，再在非实时收尾阶段排空录音队列、flush/sync 并收集报告。磁盘永久无响应仍可能延长诊断录音的收尾，不能把“播放不等待录音”解释为“任意磁盘故障下停止都必定即时返回”。
+At the end of the session, output delivery and DSP tailing are completed, followed by a non-real-time finishing phase of draining the recording queue, flush/sync, and collecting reports. A permanent non-responsive disk may still prolong the end of the diagnostic recording. "Playing without waiting for recording" cannot be interpreted as "any stop under any disk failure must return immediately."
 
-## 配置与前端
+## Configuration and front-end
 
-播放 JSON 新增：
+Play JSON New:
 
 ```json
 "recording": {
@@ -29,29 +29,29 @@
 }
 ```
 
-两项均默认关闭，旧 JSON 省略该对象或其中字段时也关闭。配置版本保持兼容；Web「配置 → 诊断录制」提供两个独立选项。保存后下次启动会话读取，不热切换，不自动启动播放。两项互不依赖，也不受 `outputProcessing.bypass` 控制。
+Both are off by default, and are also off when old JSON omits the object or its fields. Configuration versions remain compatible; Web "Configuration → Diagnostic Recording" provides two independent options. After saving, the session will be read next time, no hot switching will be performed, and playback will not be automatically started. The two items are independent of each other and are not controlled by `outputProcessing.bypass`.
 
-直接 host 测试可显式传 `--record-pcm` 或 `--archive-telemetry`；与 `--playback-config` 同时提供时拒绝歧义，JSON 为完整配置入口。
+Direct host testing can explicitly pass `--record-pcm` or `--archive-telemetry`; when provided together with `--playback-config`, the ambiguity is rejected, and JSON is the complete configuration entry.
 
-遥测快照存档关闭时，不启动原 Zig Recorder 查询/JSONL 录制线程。实时遥测服务、HTTP/WebSocket 和原可视化继续工作；内存历史仍可查询。小型会话配置、状态、回验和最终摘要继续保留，不属于音频/快照大文件存档。
+When telemetry snapshot archiving is turned off, the original Zig Recorder query/JSONL recording thread is not started. Real-time telemetry services, HTTP/WebSocket, and original visualizations continue to work; memory history is still queryable. Small session configuration, state, backchecks, and final summaries continue to be retained and are not part of the audio/snapshot large file archive.
 
-## 流选择与 ABI 兼容
+## Stream selection is ABI compatible
 
-原遥测流选择依赖录音文件字节增长。现在通过新增 `nsp_pipeline_progress` 读取 renderer 的单调内存进度，保持原有“最新活动输出流”、100 ms 轮询和超时规则，不合并候选流。路由报告明确标记 `progressSource: "renderer-memory-counter"`，不再依赖录音文件存在。
+Raw telemetry stream selection relies on recording file byte growth. Now the monotonic memory progress of the renderer is read by adding `nsp_pipeline_progress`, maintaining the original "latest active output stream", 100 ms polling and timeout rules, and not merging candidate streams. The routing report is clearly marked `progressSource: "renderer-memory-counter"` and no longer relies on the existence of the recording file.
 
-正式 host 使用新增 `nsp_pipeline_create_live`，支持所有已接入布局及两种 renderer，默认不写音频文件。既有 `create` / `create_with_position_mapping` / `create_spatial` / `create_layout` ABI 保留给离线测试工具，继续显式文件输出、可靠录音与旧音频对照语义。旧库缺少新实时入口时明确失败，不退回隐含写盘路径。
+The official host uses the new `nsp_pipeline_create_live`, which supports all connected layouts and two renderers. Audio files are not written by default. The existing `create` / `create_with_position_mapping` / `create_spatial` / `create_layout` ABI is reserved for offline testing tools, and explicit file output, reliable recording and old audio comparison semantics continue. If the old library lacks a new real-time entry, it will fail explicitly and the implicit write path will not be returned.
 
-最终 native 报告新增 `pcmRecording`，单列录音开关、池容量、提交/写入/丢弃块、录音帧数、错误和 flush/sync 时间。旧 `written`、`writerQueueMs`、`bufferedWriteMs` 等字段为兼容保留；实时路径上它们描述输出交付与旁录提交，不再代表磁盘完成，报告 scope 已标明。
+The final native report adds `pcmRecording`, single-column recording switch, pool capacity, commit/write/discard blocks, recording frame number, errors and flush/sync time. The old `written`, `writerQueueMs`, `bufferedWriteMs` and other fields are reserved for compatibility; on the real-time path, they describe output delivery and side-recording submission, and no longer represent disk completion, and the report scope has been marked.
 
-## 验证
+## verify
 
-- 阻塞录音线程直到 1,000 次提交全部完成：固定池接收 32 块，剩余 968 块丢弃，提交端不等待磁盘；另测录音写入失败不会变成播放错误。
-- 两种 renderer、7.1.4/9.1.6、关闭/开启/文件冲突共 12 组实际 live ABI 检查：播放 PCM 不随录音开关改变，池租借均归还；开启时录音等于 DSP 前 PCM；关闭时不创建文件，实时 tap 与进度仍可用。
-- 自有 140-slot 捕获夹具覆盖四种开关组合，每组 250 包；实时对象/输出遥测、内存进度路由、完整退出通过。两项关闭时没有 `.f32` 或快照 JSONL，开启时保留对应录制及音频对照。
-- 七布局 × 两后端 × bed/对象的 28 组渲染及旧 7.1.4 字节兼容回归通过；JSON 配置 11 项、Web API 15 项及前端表单开关验证通过。
+- Block the recording thread until all 1,000 submissions are completed: the fixed pool receives 32 blocks, and the remaining 968 blocks are discarded, and the submitting end does not wait for the disk; it is also tested that the failure to write the recording will not turn into a playback error.
+- Two renderers, 7.1.4/9.1.6, closed/on/file conflicts, a total of 12 sets of actual live ABI checks: Playback PCM does not change with the recording switch, pool rentals are returned; when turned on, recording is equal to DSP pre-PCM; when turned off, no file is created, real-time tap and progress are still available.
+- Own 140-slot capture fixture covers four switch combinations, 250 packets per set; real-time object/output telemetry, memory progress routing, full exit pass-through. There is no `.f32` or snapshot JSONL when the two items are turned off, and the corresponding recording and audio comparison are retained when they are turned on.
+- Seven layouts × two backends × bed/object 28 groups of renderings and old 7.1.4 byte compatibility regression passed; 11 JSON configuration items, 15 Web API items and front-end form switch verification passed.
 
-用户恢复 DVS 后，实际 DTS:X HT/FSA/ROAR/ASIO 启动、运行及正常停止通过；空闲运行期间 2,787 次设备回调、无欠载、无 PCM/快照文件。该次没有游戏送流，非听感或实际信号验证；测试结束保持停止/就绪。
+Actual DTS:X HT/FSA/ROAR/ASIO startup, operation, and graceful shutdown passed after user restored DVS; 2,787 device callbacks during idle operation, no underruns, and no PCM/snapshot files. There is no game streaming this time, not listening or actual signal verification; the test will remain stopped/ready.
 
-这证明移除了播放必经路径上的文件 IO，不足以断言此前所有偶发中断都来自磁盘，也不构成新的端到端延迟压测。实机状态另见验证目录。
+This proves that the removal of file IO on the necessary path for playback is not enough to conclude that all previous sporadic interruptions came from the disk, and does not constitute a new end-to-end latency stress test. See also the verification directory for actual machine status.
 
-证据见 `experiments/recording-isolation-20261024`（开发参考未随公开源码提供）。此前生成的大文件未在本轮删除。
+For evidence, see `experiments/recording-isolation-20261024` (development reference is not provided with the open source code). Large files generated previously are not deleted in this round.

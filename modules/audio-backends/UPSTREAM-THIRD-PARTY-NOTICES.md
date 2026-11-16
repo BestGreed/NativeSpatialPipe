@@ -1,31 +1,31 @@
-# 第三方许可
+# third party license
 
-Spatial ASIO 自有原创代码与项目作者提供的 Spatial Pip 组件采用 Apache-2.0；四个 ASIO 接入文件保留 GPL-3.0-only。包含 GPLv3 部分的完整组合程序按 GPL-3.0-only 分发，并保留 Apache-2.0 的声明与 NOTICE。具体范围见 [LICENSING.md](LICENSING.md)，全文见 `LICENSE` 和 `LICENSE-APACHE-2.0`。以下第三方材料保留其原始归属与许可，不属于自有代码的默认 Apache 授权范围。
+Spatial ASIO's own original code and the Spatial Pip component provided by the project author use Apache-2.0; the four ASIO access files remain GPL-3.0-only. The complete combined program, including the GPLv3 portion, is distributed under GPL-3.0-only and retains the Apache-2.0 Notice and NOTICE. See [LICENSING.md](LICENSING.md) for the specific scope, and `LICENSE` and `LICENSE-APACHE-2.0` for the full text. The following third-party material retains its original attribution and license and is not covered by the default Apache license for own code.
 
-| 组件 | 许可/用途 | 来源 |
+| Components | License/Use | Source |
 |---|---|---|
-| Steinberg ASIO SDK 接口头文件 | 选择 GPLv3 分支；接口定义 | https://www.steinberg.net/developers/ |
-| Python 3.12.10 embedded x64 | PSF License；捕获宿主运行时 | https://www.python.org/downloads/release/python-31210/ |
-| Frida 17.23.3 未修改 Windows wheel | wxWindows Library Licence 3.1；用户态捕获 | https://github.com/frida/frida/tree/17.23.3 |
-| iced-x86 1.21.0 未修改 Windows wheel | MIT；离线核对捕获相关函数指令与结构偏移 | https://github.com/icedland/iced |
-| .NET / Windows Desktop 10.0.8 | MIT 及各自第三方 notices；桌面运行时 | https://github.com/dotnet/runtime / https://github.com/dotnet/wpf |
-| Inno Setup 安装器与简体中文消息 | Inno Setup License；安装器 | https://github.com/jrsoftware/issrc |
-| Source Han Sans CN Regular 2.005 | SIL Open Font License 1.1；内置简体中文界面字体 | https://github.com/adobe-fonts/source-han-sans/tree/2.005R |
-| libsamplerate 0.2.2 高质量 sinc 系数表 | BSD-2-Clause；自适应重采样滤波系数 | https://github.com/libsndfile/libsamplerate/tree/0.2.2 |
+| Steinberg ASIO SDK interface header file | Select GPLv3 branch; interface definition | https://www.steinberg.net/developers/ |
+| Python 3.12.10 embedded x64 | PSF License; capture host runtime | https://www.python.org/downloads/release/python-31210/ |
+| Frida 17.23.3 Unmodified Windows wheel | wxWindows Library License 3.1; User mode capture | https://github.com/frida/frida/tree/17.23.3 |
+| iced-x86 1.21.0 unmodified Windows wheel | MIT; offline verification captures relevant function instructions and structure offsets | https://github.com/icedland/iced |
+| .NET / Windows Desktop 10.0.8 | MIT and respective third-party notices; Desktop runtime | https://github.com/dotnet/runtime / https://github.com/dotnet/wpf |
+| Inno Setup installer and Simplified Chinese messages | Inno Setup License; Installer | https://github.com/jrsoftware/issrc |
+| Source Han Sans CN Regular 2.005 | SIL Open Font License 1.1; built-in Simplified Chinese interface font | https://github.com/adobe-fonts/source-han-sans/tree/2.005R |
+| libsamplerate 0.2.2 High-quality sinc coefficient table | BSD-2-Clause; adaptive resampling filter coefficients | https://github.com/libsndfile/libsamplerate/tree/0.2.2 |
 
-ASIO 许可原文：`third_party/asio/LICENSE.txt`（源码）、`Licenses/ASIO.txt`（安装版）。
-libsamplerate 系数表来自提交 `c96f5e3de9c4488f4e6c97f59f5245f22fda22f7`，原表未改动；流处理、系数插值和时钟控制由本项目实现。许可位于 `third_party/libsamplerate/LICENSE` 和安装版 `Licenses/libsamplerate.txt`。
-Python 许可：`Tools/NativeSpatial/python/LICENSE.txt`。
-Frida 许可：`Tools/NativeSpatial/deps/frida-17.23.3.dist-info/licenses/COPYING`，该版本源代码与构建脚本可从上方对应标签获得。
-iced-x86 许可随其 wheel 保留在 `Tools/NativeSpatial/deps/iced_x86-1.21.0.dist-info/`。
-.NET 许可与第三方 notices 随安装版置于 `Licenses/`。安装器中文消息的作者与来源保留在 `packaging/languages/ChineseSimplified.isl`。
+ASIO license original text: `third_party/asio/LICENSE.txt` (source code), `Licenses/ASIO.txt` (installation version).
+The libsamplerate coefficient table comes from submission `c96f5e3de9c4488f4e6c97f59f5245f22fda22f7`, and the original table has not been changed; stream processing, coefficient interpolation and clock control are implemented by this project. The license is located in `third_party/libsamplerate/LICENSE` and the installation version `Licenses/libsamplerate.txt`.
+Python license: `Tools/NativeSpatial/python/LICENSE.txt`.
+Frida license: `Tools/NativeSpatial/deps/frida-17.23.3.dist-info/licenses/COPYING`, the source code and build script of this version are available from the corresponding tag above.
+The iced-x86 license remains with its wheel at `Tools/NativeSpatial/deps/iced_x86-1.21.0.dist-info/`.
+.NET licensing and third-party notices are included with the installation at `Licenses/`. The author and source of the installer's Chinese messages remain in `packaging/languages/ChineseSimplified.isl`.
 
-思源黑体原文件来自 Adobe 官方仓库，提交 `6c709ca72d3d7c46ab42ebecc1a26e7d69595a37`，`SubsetOTF/CN/SourceHanSansCN-Regular.otf`，未修改；SHA-256 `e2bc8a2e7f37474b774fff8db758681ece40bb6947a90d571bce9dd60671a8e4`。许可位于 `third_party/SourceHanSans-LICENSE.txt` 和安装版 `Licenses/SourceHanSans-LICENSE.txt`。英文字标使用系统自带 Bahnschrift，不分发该字体文件。
+The original file of Siyuan Helvetica comes from the official Adobe warehouse, submitted `6c709ca72d3d7c46ab42ebecc1a26e7d69595a37`, `SubsetOTF/CN/SourceHanSansCN-Regular.otf`, unmodified; SHA-256 `e2bc8a2e7f37474b774fff8db758681ece40bb6947a90d571bce9dd60671a8e4`. License is in `third_party/SourceHanSans-LICENSE.txt` and installation version `Licenses/SourceHanSans-LICENSE.txt`. The English logo uses Bahnschrift that comes with the system and does not distribute the font file.
 
-ASIO 是 Steinberg Media Technologies GmbH 的商标。本项目没有以任何第三方品牌作背书，也不包含音频接口厂商驱动。
+ASIO is a trademark of Steinberg Media Technologies GmbH. This project is not endorsed by any third-party brand, nor does it include audio interface manufacturer drivers.
 
-Windows 端点准备整合参考并改编自 BestGreed/Native_Spatial_pipe 的
-`a62cf460386d8f9890c8ce1b194a22f140096fe9`：pipeline-init 与 edid-probe。
-保留其来源与原始归属，整合说明位于 `Tools/EndpointSpatial/README.md`。
-此本地预览安装包不包含 Dolby / DTS 编解码器或 OEM 驱动；实际格式由已安装的
-Windows 空间音频组件提供。临时许可查询响应适配不构成授予 Dolby 产品授权。
+Windows endpoint ready integration reference and adapted from BestGreed/Native_Spatial_pipe
+`a62cf460386d8f9890c8ce1b194a22f140096fe9`: pipeline-init and edid-probe.
+Preserving its provenance and original attribution, integration instructions are located at `Tools/EndpointSpatial/README.md`.
+This local preview installation package does not contain Dolby/DTS codecs or OEM drivers; the actual format is determined by the installed
+Provided by Windows Spatial Audio component. Temporary license query response adaptation does not constitute the grant of a Dolby product license.

@@ -1,24 +1,24 @@
 > **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
-# ASIO 模块依赖部署与启动修复
+# ASIO module dependency deployment and startup repair
 
-2026-10-23：布局更新后的实际 FSA 启动暴露了 ASIO 模块部署问题。失败会话 `<development-session>` 在 Hook 注入前退出，`host-stderr.txt` 为 `NSp Zig scheduler: FileNotFound`；外围随后报告 `Observer not ready` 和未确认正常停止。这些是主机启动失败的后果。
+2026-10-23: Actual FSA launch after layout update exposed ASIO module deployment issues. Failed session `<development-session>` exited before hook injection, `host-stderr.txt` as `NSp Zig scheduler: FileNotFound`; the peripheral subsequently reported `Observer not ready` and unacknowledged normal stop. These are the consequences of host startup failure.
 
-## 原因与修复
+## Cause and fix
 
-`NSP.AsioOutput.dll` 存在，但其隔离目录缺少 LLVM-MinGW 的 `libc++.dll` 与 `libunwind.dll`。原先的模块测试通过给子进程追加编译器 PATH、给 Python 添加 DLL 目录来加载，未覆盖 FSA 的独立运行环境。同时，Zig 的默认 `DynLib.open` 不保证从目标 DLL 旁搜索其依赖，单纯补文件仍不能作为可靠修复。
+`NSP.AsioOutput.dll` exists, but its isolation directory is missing LLVM-MinGW's `libc++.dll` and `libunwind.dll`. The original module test was loaded by adding the compiler PATH to the child process and adding the DLL directory to Python, which did not cover the independent running environment of FSA. At the same time, Zig's default `DynLib.open` does not guarantee that its dependencies will be searched from the side of the target DLL, and simply patching the file still cannot be used as a reliable repair.
 
-- 将上述两个匹配构建工具链的运行库部署到 ASIO DLL 同目录。
-- ASIO 适配器使用 `native_library.zig`，将模块路径转为绝对路径，按 `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS` 加载。失败时输出模块路径与 Win32 错误码，不扩大全局 PATH，不修改 ASIO 实时处理或缓冲算法。
-- `Test-DeviceModule.py` 的构建产物同时携带运行库，避免后续移动产物时再次丢失依赖。开源构建入口 `Build-Alpha.ps1` 本来已有对应复制步骤。
-- 新增不打开设备的隔离加载回归：移除编译器 PATH，工作目录与 DLL 目录不同；缺依赖时明确失败，依赖齐全但使用旧加载方式仍失败，新加载方式可解析真实 ASIO ABI。
+- Deploy the above two runtime libraries matching the build tool chain to the same directory as ASIO DLL.
+- The ASIO adapter uses `native_library.zig`, converts the module path to an absolute path, and loads it as `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS`. On failure, the module path and Win32 error code are output, the global PATH is not expanded, and the ASIO real-time processing or buffering algorithm is not modified.
+- The built product of `Test-DeviceModule.py` also carries the runtime library to avoid losing dependencies again when moving the product later. The open source build entry `Build-Alpha.ps1` already has corresponding copying steps.
+- Added a new regression of isolated loading without opening the device: remove the compiler PATH, the working directory is different from the DLL directory; it will explicitly fail when dependencies are missing, the dependencies are complete but the old loading method still fails, and the new loading method can parse the real ASIO ABI.
 
-## 实测结果
+## Actual measurement results
 
-隔离加载回归通过；输出控制线程测试六项通过，一项需显式提供假驱动 DLL 的测试跳过。使用安全退出与恢复证据清理旧失败会话后，替换默认调度器并重新启动 FSA，保留用户的播放 JSON、DTS:X HT、ROAR/OLR、7.1.4 及 DVS 接线。
+Isolated loading regression passed; six output control thread tests passed, and one test that required a fake driver DLL to be explicitly provided was skipped. After cleaning old failed sessions using safe exit and recovery evidence, replace the default scheduler and restart FSA, preserving the user's playback JSON, DTS:X HT, ROAR/OLR, 7.1.4 and DVS wiring.
 
-新会话 `<development-session>` 实际进入 `running`，FSA 为 `nspCode=0`、`NSp frontend: verified`，无启动错误；会话保持开启等待音频。此结果确认实际设备模块及驱动启动成功，不代表已验证本轮扬声器听感。
+New session `<development-session>` actually enters `running`, FSA is `nspCode=0`, `NSp frontend: verified`, no startup error; the session remains open waiting for audio. This result confirms that the actual device module and driver are successfully started, but does not mean that the listening experience of the current round speaker has been verified.
 
-上一轮七布局离线渲染和配置测试没有打开实际 ASIO 设备，不能替代上述运行环境检查。原始失败日志保留，没有通过删除状态文件绕过退出回验。
+The previous round of seven-layout offline rendering and configuration testing did not open the actual ASIO device and cannot replace the above running environment check. The original failure log is retained, and there is no way to bypass exit verification by deleting the status file.
 
-验证材料见 `experiments/asio-startup-fix-20261023`（开发参考未随公开源码提供）。
+For verification materials, see `experiments/asio-startup-fix-20261023` (development reference is not provided with the open source code).

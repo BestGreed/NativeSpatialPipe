@@ -1,26 +1,26 @@
-# NSP 的 ROAR 补丁
+# ROAR patch for NSP
 
-新增第七项 `olr-direct-single.patch`：单对象安全直接写调用方 planar 输出，去掉内部 PCM 工作区／清零／复制；双对象及更大配置保留添加时分配的一块工作区，逐对象复用，维持原始叠加顺序。[实现、回归及首包分配结果](../../../experiments/roar-direct-output-20261022/README.md)。
+Added the seventh item `olr-direct-single.patch`: Single object safe direct writing to the caller planar output, removing the internal PCM workspace/clear/copy; dual-object and larger configurations retain a workspace allocated when added, reused object by object, and maintain the original overlay sequence. Implementation, regression and first packet allocation results (reference outside this source tree).
 
-标准构建在临时隔离仓库逆序校验整条补丁链，避免后续 patch 修改早期上下文造成误判，不 reset 真实源码。固定 HEAD 全新应用完整链与重复构建均已验证。
+The standard is built in a temporary isolation warehouse to verify the entire patch chain in reverse order to avoid misjudgments caused by subsequent patches modifying early context and not resetting the real source code. Fixed HEAD New application complete chain and duplicate builds verified.
 
-固定上游提交：`60c96e566c1dd2838468006b63ada716549f82b2`。`../Build.ps1` 按顺序校验／应用，已应用的补丁不会重复应用；冲突立即报错。
+Fixed upstream commit: `60c96e566c1dd2838468006b63ada716549f82b2`. `../Build.ps1` Verify/apply in order, applied patches will not be re-applied; conflicts will report an error immediately.
 
-1. `olr-block-mix.patch`：既有单对象输出复制优化，保留多对象累加顺序。
-2. `olr-zero-gain.patch`：2026-10-22 加入；Fixed／Interp 精确零增益跳过，不改非零计算表达式、插值或累加顺序，不使用近零阈值。
-3. `olr-silent-block.patch`：只在实际重叠输入范围全部为精确零时跳过乘加；仍推进对象元数据、时间和队列，保留尺寸错误检查。
-4. `olr-preserve-interp.patch`：合并双端点插值遍历，逐样本保持先全部 start 输入、再全部 end 输入的加法顺序，不合并浮点表达式。
-5. `olr-gain-reuse.patch`：不可变增益计算器显式选择启用；每解释器 4 项精确坐标增益池，64 次查询衰减计分，命中低于 12.5% 时每周期最多淘汰一项。无坐标量化、动态扩容、跨线程锁或后台 GC。
-6. `olr-context-geometry.patch`：同一 ROAR 上下文的对象元素共享一份不可变几何；NSP 在捕获开始前显式准备，按既有 block→管线绑定隔离。四条上下文准备四次，包处理和对象替换不重建。对象增益池、位置、插值历史与工作区仍独立。
+1. `olr-block-mix.patch`: Existing single-object output copy optimization retains multi-object accumulation order.
+2. `olr-zero-gain.patch`: Added on 2026-10-22; Fixed/Interp Exact zero gain skip, does not change non-zero calculation expressions, interpolation or accumulation order, does not use near-zero thresholds.
+3. `olr-silent-block.patch`: Skip multiply-add only if the actual overlapping input range is all exact zero; still advance object metadata, time and queue, retain size error checking.
+4. `olr-preserve-interp.patch`: Combine double-endpoint interpolation traversal, maintain the addition order of all start inputs first, and then all end inputs sample by sample, and do not merge floating point expressions.
+5. `olr-gain-reuse.patch`: Explicit opt-in of immutable gain calculator; 4-item exact-coordinate gain pool per interpreter, 64-query decay scoring, up to one elimination per cycle on hits below 12.5%. No coordinate quantization, dynamic expansion, cross-thread locks or background GC.
+6. `olr-context-geometry.patch`: Object elements of the same ROAR context share an immutable geometry; NSP is explicitly prepared before the capture starts, and is isolated according to the existing block→pipeline binding. The four contexts are prepared four times, and package processing and object replacement are not rebuilt. Object gain pools, position, interpolation history and workspace remain independent.
 
-零增益补丁用于 NSP 已验证有限 PCM 的 OLR 路径。NSP 在核心调用前拒绝 NaN／Inf；本补丁不承诺保持任意非有限输入的传播行为。任意预置负零累加器可能保留零符号，测试允许这种数值等价；NSP 正常初始化的完整输出则要求逐字节一致，方向／完整半径两种模式各 800 包已通过。
+Zero gain patches are used for OLR paths of NSP verified limited PCM. NSP rejects NaN/Inf before core calls; this patch makes no commitment to preserve propagation behavior for arbitrary non-finite inputs. Any preset negative zero accumulator may retain the zero sign, and the test allows this numerical equivalence; the complete output of the NSP normal initialization requires byte-by-byte consistency, and 800 packets in both direction/full radius modes are passed.
 
-验证工具：`../Test-ZeroGain.py`。覆盖真实处理块代码、多种帧数、声道数、重叠边界、缺失插值端点、正负零、非零极小增益和输出尺寸错误。
+Verification tool: `../Test-ZeroGain.py`. Covers real processing block code, various frame numbers, channel numbers, overlapping boundaries, missing interpolation endpoints, positive and negative zeros, non-zero minimum gain, and output size errors.
 
-`../Test-GainReuse.py` 额外验证精确键、连续变位、4 项容量、单次淘汰、错误不缓存、计算器 opt-in、实例隔离和静音期间元数据连续性。池为 552 字节／对象（当前 x64 构建），128 项约 69 KiB；这是固定的空间增益缓存，不是对象身份或槽位 GC。
+`../Test-GainReuse.py` additionally validates exact keys, contiguous transpositions, 4-item capacity, single eviction, errors not cached, calculator opt-in, instance isolation, and metadata continuity during quiescing. The pool is 552 bytes/object (current x64 build), ~69 KiB for 128 entries; this is a fixed space gain cache, not an object identity or slot GC.
 
-[本轮候选逐项验证](../../../experiments/roar-candidates-20261022/README.md)包含原素材、全零、静音切换和零命中变位工况。诊断计数仅存在于隔离构建，生产补丁不引入对应统计模块或 ABI。
+This round of candidate verification (reference outside this source tree) includes original material, all-zero, silent switching and zero-hit displacement conditions. Diagnostic counts only exist in isolated builds, production patches do not introduce corresponding statistics modules or ABIs.
 
-[按 block 共享几何的构建、生命周期及音频验证](../../../experiments/roar-shared-geometry-20261022/README.md)。这不代表动态布局／6DOF 已实现；当前固定布局在上下文存活期间沿用，不按包重复构造。
+Building, lifecycle and audio validation of shared geometry by block (reference outside this source tree). This does not mean that dynamic layout/6DOF has been implemented; the current fixed layout is inherited while the context is alive and is not re-constructed per package.
 
-[单轮 Sonic 140 槽现场压测](../../../experiments/roar-zero-gain-stress-20261022/README.md)。补丁来源文件保留上游 BSD 3-Clause Clear／专利许可声明，未改变其来源许可。
+Single-round Sonic 140 tank field pressure test (reference outside this source tree). The patch source file retains the upstream BSD 3-Clause Clear/Patent License Statement and does not change its source license.

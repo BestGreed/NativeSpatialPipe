@@ -1,13 +1,13 @@
-# 图标资源
+# Icon resources
 
-简体中文 | [English](README.en.md)
+Simplified Chinese | [English](README.en.md)
 
-本目录为项目提供的图标资源；许可范围见 [LICENSE.txt](LICENSE.txt)，不将图形或第三方商标视为公共领域。
+This directory is an icon resource provided by the project; for the scope of the license, please see [LICENSE.txt](LICENSE.txt). Graphics or third-party trademarks are not considered public domain.
 
-| 文件 | 用途 |
+| Documentation | Purpose |
 |---|---|
-| FSA.ico | 程序标识；本 NSp 集成在 Sonic 与 Hook 验证成功后也作为托盘状态图标 |
-| 2_0.ico / 5_1.ico / 7_1.ico | PCM 状态 |
-| ATMOS.ico / DTSX.ico | 空间音频状态 |
+| FSA.ico | Program identification; this NSp integration also serves as the tray status icon after Sonic and Hook verification are successful |
+| 2_0.ico / 5_1.ico / 7_1.ico | PCM Status |
+| ATMOS.ico / DTSX.ico | The State of Spatial Audio |
 
-图标编译进 EXE。菜单中的 CheckMark 和 ChevronLeft 使用系统 Segoe Fluent Icons，不打包或重新分发该字体。
+The icon is compiled into an EXE. CheckMark and ChevronLeft in the menu use system Segoe Fluent Icons and do not package or redistribute the font.

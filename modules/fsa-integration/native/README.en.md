@@ -1,6 +1,6 @@
 # Native source
 
-[简体中文](README.md) | English
+[Companion guide](README.md) | English
 
 Pure C11 / Win32 implementation. Build with `build.ps1`; package with `release.ps1` in the repository root.
 

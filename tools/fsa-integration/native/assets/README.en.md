@@ -1,6 +1,6 @@
 # Icon resources
 
-[简体中文](README.md) | English
+[Companion guide](README.md) | English
 
 Project artwork is covered by [LICENSE.txt](LICENSE.txt); artwork and third-party marks are not placed in the public domain.
 

@@ -1,28 +1,28 @@
 > **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
-# 公共输出池 DSP 与租借交接
+# Common Output Pool DSP and Lease Handover
 
-2026-10-24 更新：本文描述的“writer 先写盘再处理/交付”已被[独立可选旁录](recording-isolation-20261024.md)替代。当前实时交付不执行文件 IO；PCM 旁录与遥测存档默认关闭，流选择改为读取内存进度。下文保留当时改造边界作为历史说明。
+2026-10-24 Update: The "writer writes to disk first and then processes/deliveries" described in this article has been replaced by [Independent optional recording] (recording-isolation-20261024.md). Currently real-time delivery does not perform file IO; PCM side recording and telemetry archiving are turned off by default, and the stream selection is changed to read memory progress. The reconstruction boundary at that time is retained below as a historical illustration.
 
-后续运行配置：已按用户要求另建成套 FSA 副本并以管理员权限启动，仅管理入口就绪，未自动启用 Hook 或播放，见 FSA 输出链路记录（开发参考未随公开源码提供）。下文隔离验收结论不扩大为本次真实 DVS 播放已验。
+Subsequent running configuration: A copy of the FSA set has been created according to user requirements and started with administrator privileges. Only the management entrance is ready, and Hook or playback is not automatically enabled. See the FSA output link record (development reference is not provided with the open source code). The isolation acceptance conclusion below does not extend to the actual DVS playback verification.
 
-2026-10-22，DEV16。用户本轮明确授权优化公共输出级路径；范围仅为 DSP 前移、可配置跳过及移除 Rust 池到 ASIO 提交边界之间的两次 PCM 复制。不恢复此前已终止的 ASIO 驱动调度、时钟、SRC、回调 ring 或延迟优化，不恢复已弃用的临时 WPF 入口。
+2026-10-22, DEV16. Users are explicitly authorized to optimize the common output stage path this round; the scope is only DSP forwarding, configurable skipping, and removal of two PCM copies between the Rust pool and the ASIO commit boundary. Do not restore previously terminated ASIO driver schedules, clocks, SRCs, callback rings, or latency optimizations, and do not restore deprecated temporary WPF entry points.
 
-## 实际路径
+## actual path
 
-旧：`renderer → Rust interleaved 池 → Zig PCM 队列（复制）→ scratch（复制、DSP）→ ASIO submit`
+Old: `renderer → Rust interleaved pool → Zig PCM queue (replication) → scratch (replication, DSP) → ASIO submit`
 
-新：`renderer → Rust interleaved 池块 → 池内原地 DSP / bypass → 有界池块描述符 → ASIO owner 直接提交池地址 → 归还池块`
+New: `renderer → Rust interleaved pool block → in-pool DSP/bypass → bounded pool block descriptor → ASIO owner commits pool address directly → returns pool block`
 
-ROAR/OLR 和 LIRA 共用此路径。Zig 不再分配 32 块 PCM 队列或 scratch，只保留 32 项指针/帧数/归还函数描述符。标准 480 帧 × 12 声道 Float32 的原两处 staging 存储共 760,320 字节已移除；这不是整机内存实测差值，也不是全链路零复制声明。
+ROAR/OLR and LIRA share this path. Zig no longer allocates 32 blocks of PCM queue or scratch, only retains 32 pointer/frame number/return function descriptors. A total of 760,320 bytes of the original two staging storage of standard 480 frame × 12 channel Float32 have been removed; this is not a measured difference in the entire machine memory, nor is it a full-link zero-copy statement.
 
-ASIO owner 通过现有 C ABI 同步提交借用地址，ASIO 模块直接读取 Rust 池内存。**ASIO 内部仍复制到自己的 PCM 队列，随后进行设备时钟/SRC/ring/格式处理。** 本轮不改这些算法，也不让硬件回调操作 Rust 池或等待渲染器。它不是新增驱动线程主动调用 Rust 的 pull 接口；达到的是设备提交边界直接借用池块。
+The ASIO owner commits the borrowed address synchronously via the existing C ABI, and the ASIO module reads Rust pool memory directly. **ASIO internally still copies to its own PCM queue, followed by device clock/SRC/ring/format processing. ** These algorithms are not changed in this round, and hardware callbacks are not allowed to operate the Rust pool or wait for the renderer. It is not that a new driver thread actively calls Rust's pull interface; it reaches the device submission boundary and directly borrows pool blocks.
 
-## DSP 位置与配置
+## DSP location and configuration
 
-沿用 Zig `output_processing.zig` 算法，通过进程内 C ABI 回调，在 Rust 输出 writer 独占的可写池块上执行。没有将算法再移植一份 Rust 实现，也没有新增处理线程。计算发生在发布池块之前；输出设备线程只提交，不再处理一次 DSP。
+Following the Zig `output_processing.zig` algorithm, executed via in-process C ABI callbacks on a writable pool block exclusive to the Rust output writer. The algorithm was not ported to a Rust implementation, and no new processing threads were added. The computation occurs before the pool block is released; the output device thread only submits and does not process the DSP once.
 
-在完整播放 JSON 的 `outputProcessing` 中设置：
+Set in `outputProcessing` for full JSON playback:
 
 ```json
 {
@@ -32,36 +32,36 @@ ASIO owner 通过现有 C ABI 同步提交借用地址，ASIO 模块直接读取
 }
 ```
 
-- `bypass: true`：跳过全部公共 DSP，包含根字段 `master`、逐声道 trim、校准 delay 和 limiter/前视；保存的参数不丢失，下一次关闭 bypass 后重新生效。
-- `bypass: false`（默认）：按配置处理；若 master/trim 全为 1、delay 全为 0 且 limiter 关闭，则自动跳过样本处理。
-- 跳过时不扫描/改写 PCM，不分配 delay、lookahead、peak 历史，不生成 DSP 尾帧。块布局、顺序、生命周期检查及 ASIO 提交的非有限样本检查保留。
-- 不热切换：仍在停止后修改 JSON、启动新会话。无效配置即使 bypass 开启也会被拒绝。
-- 声道语义、48 kHz 源帧单位及 DSP 在物理路由之前的顺序保持不变；未加入新的声学算法。
+- `bypass: true`: Skip all public DSP, including root field `master`, channel-by-channel trim, calibration delay and limiter/look ahead; the saved parameters are not lost and will take effect again after turning off bypass next time.
+- `bypass: false` (default): processed according to configuration; if master/trim is all 1, delay is all 0 and limiter is turned off, sample processing will be automatically skipped.
+- When skipping, the PCM is not scanned/rewritten, delay, lookahead, and peak history are not allocated, and DSP tail frames are not generated. Block layout, ordering, lifecycle checks, and non-limited sample checks for ASIO submissions are preserved.
+- No hot-switching: Still modifying JSON and starting new sessions after stopping. Invalid configurations will be rejected even if bypass is enabled.
+- Channel semantics, 48 kHz source frame units, and DSP order before physical routing remain unchanged; no new acoustic algorithms have been added.
 
-`validate-playback` 的 `effectiveOutputProcessing` 会显示 `bypass`、`effectiveBypass`、`placement` 和有效前视；实际输出报告提供同样的旁路/位置状态，以及 `outputHandoff` 的池块接收/归还计数和 DSP 尾帧数。
+`effectiveOutputProcessing` for `validate-playback` will display `bypass`, `effectiveBypass`, `placement` and valid lookahead; the actual output report provides the same bypass/position status, as well as pool block receive/return count and DSP tail frame count for `outputHandoff`.
 
-**历史（10/22，已替代）：** 当时 writer 先写文件再处理/交付的行为仅作为迁移证据保留。**当前（10/24）：** renderer PCM 可选旁录仍位于公共 DSP 前，但写入独立录音池和线程；播放交付在输出池中执行 DSP 后发布租借描述符，不等待磁盘。遥测仍为独立旁路。见[旁录解耦](recording-isolation-20261024.md)，不能因旧名称 writer 而重新把磁盘 IO 接回播放线程。
+**History (10/22, superseded):** At that time, the writer's behavior of writing files first and then processing/delivering them was only retained as migration evidence. **Current (10/24):** The renderer PCM optional side-recording still sits in front of the common DSP, but writes to a separate recording pool and thread; the playback delivery issues the lease descriptor after the DSP is executed in the output pool and does not wait for disk. Telemetry remains independent bypass. See [Decoupling of side-recording] (recording-isolation-20261024.md), the disk IO cannot be reconnected to the playback thread due to the old name writer.
 
-## 所有权与结束行为
+## Ownership and closing actions
 
-Rust 在初始化时创建有界池和稳定的块 token，不逐包分配租借描述符。新增 `nsp_pipeline_set_pool_output` 入口，配置在首次输入提交之前完成，与旧同步 sink 互斥；旧 sink 导出继续保留供已有调用者使用，新 host 不静默退回旧复制路径。
+Rust creates bounded pools and stable block tokens on initialization and does not allocate lease descriptors on a per-packet basis. Added `nsp_pipeline_set_pool_output` entry, the configuration is completed before the first input is submitted, and is mutually exclusive with the old synchronization sink; the old sink export continues to be reserved for existing callers, and the new host does not silently fall back to the old replication path.
 
-1. Rust 独占块，原地处理后发布只读 PCM 地址和 token。
-2. 发布成功，设备侧持有租借；发布失败，所有权仍归 Rust，调用方不得归还该 token。
-3. owner 从描述符取出块，调用既有同步 `nsp_asio_submit`，返回后归还一次；即使 submit 报错也归还当前块。
-4. 故障立即归还所有尚在描述符队列中的块。已经取出、正在 submit 的块由 owner 归还，防止重复释放或提前重用。
-5. pipeline 销毁后仍可能存在待播放块；Stream 单独持有 bridge DLL 加载引用，归还函数和块 token 的生命周期不依赖 Pipeline 实例。worker 退出且全部块归还后才卸载此引用。
+1. Rust exclusive block, publishes read-only PCM address and token after processing in place.
+2. If the release is successful, the device side holds the lease; if the release fails, the ownership still belongs to Rust, and the caller cannot return the token.
+3. owner takes out the block from the descriptor, calls the existing synchronization `nsp_asio_submit`, and returns it once; even if submit reports an error, the current block is returned.
+4. The failure immediately returns all blocks still in the descriptor queue. The blocks that have been taken out and are being submitted are returned by the owner to prevent repeated release or early reuse.
+5. There may still be blocks to be played after the pipeline is destroyed; Stream holds the bridge DLL loading reference alone, and the life cycle of the return function and block token does not depend on the Pipeline instance. This reference is unloaded after the worker exits and all blocks are returned.
 
-LIRA 的原 512 帧 renderer 尾音先处理完，再由公共 DSP 在池块中排空自己的校准/前视尾音。`receivedFrames` 保持 renderer 帧数，DSP 额外尾帧单独计数，`submittedFrames` 包含两者。结束时可复用已有空闲块生成尾帧，不创建 scratch。
+LIRA's original 512-frame renderer tail is processed first, and then the common DSP drains its own calibration/lookahead tail in a pool block. `receivedFrames` keeps the renderer frame number, DSP extra last frames are counted separately, `submittedFrames` includes both. At the end, existing free blocks can be reused to generate a tail frame without creating a scratch.
 
-实时块队列满仍明确失败，不丢旧块续播。只有非实时 EOF 尾帧允许等描述符空位；以既有 `drainTimeoutMs` 约束整段尾帧的发布等待，故障/超时退出并归还资源。没有增加正常块的等待聚合目标。
+Even if the real-time block queue is full, it will still clearly fail and old blocks will not be discarded for continuation. Only non-real-time EOF tail frames are allowed to wait for descriptor vacancies; the existing `drainTimeoutMs` constrains the release wait for the entire tail frame, exits on failure/timeout, and returns resources. No waiting aggregation targets for normal blocks are added.
 
-## 验证与候选构建
+## Validation and candidate builds
 
-复现入口：`python tools/desktop/Test-OutputPool.py`。在 `build/output-pool-direct-20261022/` 构建成套候选，使用自有捕获夹具和原有模拟 ASIO DLL，不打开真实端点、WPF 界面或 DVS。
+Reappearance entrance: `python tools/desktop/Test-OutputPool.py`. Build candidate set at `build/output-pool-direct-20261022/`, using own capture fixture and native emulated ASIO DLL, without opening real endpoints, WPF interface or DVS.
 
-本轮通过：6 项池块/超时检查、8 项 DSP 检查、8 项配置检查；8 条实际 host 软件路径的回调 PCM 对照（两 renderer、DSP、默认中性及显式旁路、最长 48,000 帧校准＋4,800 帧前视尾音）；12 组播放/重缓冲/超时/设备故障回归，均检查池块接收与归还计数一致；9 类错误配置启动前拒绝；原生 FSA JSON 转发通过。非界面 C# ClientProbe 的 bypass 转发及会话归属检查也通过，不构成恢复维护临时桌面。
+Passed this round: 6 pool block/timeout checks, 8 DSP checks, 8 configuration checks; 8 callback PCM comparisons of actual host software paths (two renderers, DSP, default neutral and explicit bypass, up to 48,000 frame calibration + 4,800 frame lookahead tail); 12 groups of playback/rebuffering/timeout/device failure regression, all checking that pool block reception and return counts are consistent; 9 Class error configuration pre-launch reject; native FSA JSON forwarding passes. The bypass forwarding and session ownership checks of the non-interface C# ClientProbe also pass, and do not constitute a temporary desktop for restoration and maintenance.
 
-证据：完整隔离验收（开发参考未随公开源码提供）、host PCM 对照（开发参考未随公开源码提供）、客户端转发回归（开发参考未随公开源码提供）。原 ASIO 模拟 DLL 与 LIRA DLL 哈希保持不变。
+Evidence: Complete isolation acceptance (development reference is not provided with the open source code), host PCM comparison (development reference is not provided with the open source code), client forwarding regression (development reference is not provided with the open source code). The original ASIO emulation DLL and LIRA DLL hashes remain unchanged.
 
-新 host 与含新增 pool ABI 的 bridge 应成套使用。候选 bridge 位于 `build/output-pool-direct-20261022/bridge/release/nsp_roar_bridge.dll`，播放 JSON 的 `bridgeDll` 应指向该成套构建；老 bridge 缺少导出时明确失败。未替换当前运行的 FSA、宿主或模块；本轮结果仅证明隔离软件路径，真实设备播放/持续压力及性能测量仍需后续有界验证。
+The new host and the bridge with the new pool ABI should be used as a set. The candidate bridge is at `build/output-pool-direct-20261022/bridge/release/nsp_roar_bridge.dll`, and `bridgeDll` playing JSON should point to that suite of builds; the old bridge fails explicitly with missing exports. Currently running FSAs, hosts or modules are not replaced; this round of results only demonstrates the isolation of software paths, real device playback/sustained stress and performance measurements still require subsequent bounded verification.

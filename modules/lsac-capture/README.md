@@ -12,13 +12,13 @@ browser fullscreen. Start a device-free rehearsal with:
 Open `http://127.0.0.1:8769/`. Live mode reuses the existing independent A/B
 tracking broker and four-channel recording pipeline. Guidance is explicitly
 geometry-only; it does not certify acoustic uncertainty or CEA-2034 accuracy.
-See [setup and operating guide](../../docs/research/lsac-sphere-scan.md).
+See setup and operating guide (reference outside this source tree).
 
 Latest measurement priority: use the full Ambisonic spatial response across
 125 Hz–16 kHz to evaluate direction-related structure and its stability across
 the listening region; scalar FR is a tone/output constraint. The read-only
 `Tools.ps1 coverage` observer now provides per-band/L/R/LR/near-middle-far
-coverage navigation. See [coverage guide](../../docs/research/lsac-live-coverage.md).
+coverage navigation. See coverage guide (reference outside this source tree).
 Its 45/65/85 cm screen-centre distances are proposed sampling layers; angular
 acceptance and acoustic band quality are not certified by the display.
 
@@ -33,9 +33,9 @@ not establish a broadband DSP correction or a spatial-audio improvement.
 
 Independent research module inside **Native Spatial Pipe**, branch `lsac`. It does not change the NSP renderer, EDID work, system defaults, USB drivers, or Steam configuration. The current target is continuous hand scanning: H3-VR four-channel audio + two independent trackers + raw IMU + known excitation reference. Band coverage/navigation/maps come later. This supersedes the early point-by-point FR workflow for this task.
 
-**Current 6DoF result (2026-11-01):** receiver B now produces actual fused position and quaternion callbacks with the pinned source-built DLL. Two gen1 lighthouse positions were solved, 7,084 poses recorded, and configuration reuse after restart produced poses again. Physical movement/return/occlusion recovery and audio-pose timing remain unvalidated. See [6DoF evidence and operation](../../docs/research/lsac-6dof-20261101.md). Earlier compatibility/pairing blockers below are historical; do not repeat global diagnostics or pairing.
+**Current 6DoF result (2026-11-01):** receiver B now produces actual fused position and quaternion callbacks with the pinned source-built DLL. Two gen1 lighthouse positions were solved, 7,084 poses recorded, and configuration reuse after restart produced poses again. Physical movement/return/occlusion recovery and audio-pose timing remain unvalidated. See 6DoF evidence and operation (reference outside this source tree). Earlier compatibility/pairing blockers below are historical; do not repeat global diagnostics or pairing.
 
-**Current toolkit:** use `Tools.ps1` for the shared A/B rig, A plane samples, B triplet/heading, combined capture/render and offline path analysis. Both Trackers have now streamed in one context; combined four-channel audio/A/B recording passed XDF replay. See [current local toolchain and evidence](../../docs/research/lsac-toolchain-20261101.md). Historical `Run.ps1 record`/`tracker-diagnostic` entries are not the current hardware workflow; receiver allowlists are now mandatory. H3-VR USB Ambisonic Mode must be checked: four USB channels alone do not establish AmbiX.
+**Current toolkit:** use `Tools.ps1` for the shared A/B rig, A plane samples, B triplet/heading, combined capture/render and offline path analysis. Both Trackers have now streamed in one context; combined four-channel audio/A/B recording passed XDF replay. See current local toolchain and evidence (reference outside this source tree). Historical `Run.ps1 record`/`tracker-diagnostic` entries are not the current hardware workflow; receiver allowlists are now mandatory. H3-VR USB Ambisonic Mode must be checked: four USB channels alone do not establish AmbiX.
 
 ## What works now
 
@@ -93,9 +93,9 @@ Any `window` result is currently **arrival-time association only**, explicitly i
 
 Original sources stay in ignored `work/lsac-upstream`; binary releases and wheels stay in ignored `work/lsac-binaries` / `work/lsac-python`. No upstream code was copied into this module. Root project Apache-2.0 terms cover new adapter code; third-party packages retain their own licenses, including transitive bundled libraries. No redistribution package has been created.
 
-Detailed phase plan, first capture results and unresolved hardware steps: [2026-11-01 progress](../../docs/research/lsac-continuous-core-20261101.md).
+Detailed phase plan, first capture results and unresolved hardware steps: 2026-11-01 progress (reference outside this source tree).
 
-Receiver-specific next step (no HMD startup): [pairing plan and one-shot command](../../docs/research/lsac-receiver-pairing-20261101.md). Timing statistic interpretation: [raw packet analysis](../../docs/research/lsac-h3vr-timing-analysis-20261101.md).
+Receiver-specific next step (no HMD startup): pairing plan and one-shot command (reference outside this source tree). Timing statistic interpretation: raw packet analysis (reference outside this source tree).
 
 ## Capture thread scheduling
 
@@ -153,7 +153,7 @@ pose before covariance averaging. Directional correlations are not calibrated
 physical intensity. Interpolation averages linear power, leaves unsupported
 regions empty and does not solve a wave equation. Grid spacing is a display
 parameter, not measurement resolution. See
-[field model details](../../docs/research/lsac-field-model.md).
+field model details (reference outside this source tree).
 
 The calibrated laptop view uses the palm-rest plane as horizontal, with the
 screen angle derived from both measured plane normals. The physical screen
@@ -185,7 +185,7 @@ and measured table geometry enters the propagation hypotheses. It does not
 fit a cardioid emission pattern to the laptop or identify individual FR.
 `field-view --table-reference <table.json> --multisource-fit <fit.json>` shows
 measured planes, categorical nominal regions and residuals. See
-[multisource model and checks](../../docs/research/lsac-multisource-model.md).
+multisource model and checks (reference outside this source tree).
 `direction-check` compares static-rotation records without automatically
 certifying channel conventions or angular accuracy. Playback preparation now
 accepts fixed `--channel-gains 1 0` for the first stereo output channel, with

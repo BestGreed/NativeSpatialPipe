@@ -1,25 +1,25 @@
 > **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
-# 播放配置迁移到用户目录
+# Migrate playback configuration to user directory
 
-2026-10-24：默认播放配置改为 `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`，与后端 `config.json` 同处用户目录；不再默认向 FSA 安装目录写配置。Web 配置保存不修改安装目录 INI，修订锁也在目标 JSON 同目录。
+2026-10-24: The default playback configuration is changed to `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`, which is in the same user directory as the backend `config.json`; the configuration is no longer written to the FSA installation directory by default. Web configuration saving does not modify the installation directory INI, and the revision lock is also in the same directory as the target JSON.
 
-## 选择与迁移规则
+## Selection and migration rules
 
-- 显式 `PlaybackConfig` 指向其他自定义绝对路径时继续使用，不搬移、不覆盖。
-- 未配置该项，或它恰好指向旧 FSA INI 同目录的 `playback.json` 时，使用用户目录默认文件。
-- 用户目录已有文件时优先使用，绝不拿旧文件覆盖。
-- 用户目录无文件、旧同目录文件存在时，Web Host 启动将旧字节复制到同目录临时文件，完成同步后以不替换目标的原子移动建立用户副本。旧文件保留；重复启动不重复覆盖。畸形 JSON 也原样迁移，由既有配置页显示错误供修复。
-- 没有任何配置时，查询只返回默认模板和用户目标路径，不创建文件或启动后端。首次有效保存才创建用户配置。
+- Explicit `PlaybackConfig` will continue to be used when pointing to other customized absolute paths, and will not be moved or overwritten.
+- When this entry is not configured, or it happens to point to `playback.json` in the same directory as the old FSA INI, the user directory default file is used.
+- If there are already files in the user directory, they will be used first and old files will never be overwritten.
+- When there is no file in the user directory and the old file in the same directory exists, the Web Host starts copying the old bytes to a temporary file in the same directory. After completing the synchronization, the user copy is established by atomic movement without replacing the target. Old files are retained; repeated starts will not overwrite them. Malformed JSON is also migrated unchanged, and errors are displayed on the existing configuration page for repair.
+- Without any configuration, the query just returns the default template and user target path, without creating files or starting the backend. The user configuration is created only after the first valid save.
 
-原生 FSA 与 Web 采用相同默认规则。FSA 在 Web 迁移尚未完成时可只读回退到旧文件；迁移完成或首次保存后即选用户副本。无文件时仍保持捕获/遥测而不启用 ASIO。要继续使用一个独立自定义配置，请显式指定非旧默认位置；清空 INI 不会忽略一个已经存在的用户默认文件。
+Native FSA uses the same default rules as web. FSA can read-only fallback to the old file while the web migration is not complete; user copies can be selected after the migration is complete or after the first save. Keep capturing/telemetry without enabling ASIO when there is no file. To continue using an independent custom configuration, explicitly specify a location other than the old default; clearing the INI will not ignore an existing user default file.
 
-保存配置仍在下次启动会话时生效。PCM/快照存档默认关闭，迁移不改变驱动、布局、路由、DSP 或录音设置。后端状态与日志目录不变。`--home` 为隔离测试/显式后端目录覆盖，默认取启动用户的 `LOCALAPPDATA`；普通 Web Host 与提权 FSA 应处于同一 Windows 用户配置上下文。
+Saved configurations still take effect the next time you start a session. PCM/snapshot archiving is turned off by default and migration does not change drivers, layout, routing, DSP or recording settings. The backend status and log directory remain unchanged. `--home` is an isolation test/explicit backend directory coverage, which defaults to `LOCALAPPDATA` of the startup user; ordinary Web Host and privilege-elevated FSA should be in the same Windows user configuration context.
 
-## 有限验证与发布
+## Limited verification and release
 
-Web API 回归覆盖新默认目录和不写安装 INI；六种隔离迁移场景各启动两次，覆盖无配置、旧文件/旧默认指针、用户文件优先、自定义路径及畸形 JSON。原生 FSA 测试覆盖默认/回退/显式路径的实际启动参数选择，不打开音频设备。
+Web API regression covers the new default directory and does not write the installation INI; each of the six isolation migration scenarios is started twice, covering no configuration, old file/old default pointer, user file priority, custom path and malformed JSON. The native FSA test overrides the actual boot parameter selection for default/fallback/explicit paths and does not open the audio device.
 
-本机默认调度器与 FSA 同步更新，通过实际配置 API 核对用户目录副本；测试与部署摘要见 `experiments/playback-user-location-20261024`。旧开发配置保留为回退副本，不继续作为默认保存目标。
+The local default scheduler is updated synchronously with FSA, and the user directory copy is checked through the actual configuration API; see `experiments/playback-user-location-20261024` for a summary of testing and deployment. The old development configuration remains as a rollback copy and does not continue to be the default save target.
 
-本轮同步主仓库 `alpha-dev/main`；公开源码沿既有公开历史清洗导出，更新主仓库 `open-source` 和公开仓库 `alpha-dev/main`。公开导出不携带用户配置、录音、凭据或私有实验载荷；Apache 原创代码、GPL ASIO/SDK 和 FSA 独立条款保持原有范围，不因本次目录迁移或分支同步重新授权。
+This round synchronizes the main warehouse `alpha-dev/main`; the public source code is cleaned and exported along the existing public history, and the main warehouse `open-source` and the public warehouse `alpha-dev/main` are updated. Public export does not carry user configurations, recordings, credentials or private experimental payloads; Apache original code, GPL ASIO/SDK and FSA independent terms maintain their original scope and will not be reauthorized due to this directory migration or branch synchronization.

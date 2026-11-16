@@ -1,28 +1,28 @@
 > **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
-# ASIO 输出随 NSp 会话常驻
+# ASIO output persists with NSp session
 
-用户确认：ASIO 是设备输出后端，正确配置后跟随 NSp 会话运行，不按音源播放生命周期启停。去掉从有限播放场景继承的“无首包超时退出、重缓冲超时退出、累计欠载次数超限退出”策略。
+User confirmation: ASIO is the device output backend. After correct configuration, it runs with the NSp session and does not start or stop according to the audio source playback life cycle. Remove the "no first packet timeout exit, heavy buffering timeout exit, and accumulated underload times exceeding the limit" strategy inherited from the limited playback scenario.
 
-## 行为与实现边界
+## Behavior and implementation boundaries
 
-- 驱动只在会话启动时 Start，一直按设备时钟调用输出回调；尚无 PCM、应用暂停/关闭或输入间歇时持续写静音。
-- 输入达到原有有界预缓冲门槛后恢复消费；等待时不伪造源 PCM、包序号或 EOF，不增长无界缓存，不重开驱动。
-- C++ C ABI 输出后端原本已经支持空等静音、hold 期间持续回调、源时钟冻结以及恢复时重置漂移估计。本轮沿用它，不新增 PCM 复制、调度优化或新的 ASIO 实现。
-- 改动在 Zig 生命周期策略：`.waiting` 和 `.rebuffering` 可以无限等待；欠载/恢复次数继续作为诊断指标，不能据此终止会话。
-- 只有显式会话停止/上游明确结束才执行 finish、DSP 尾部与有界排空，再关闭设备。`drainTimeoutMs` 仍生效。
-- 设备故障、驱动重置请求、非连续输入、队列溢出和捕获/传输故障仍走原有失败与安全收尾；没有增加自动换设备或故障续播。
+- The driver only starts when the session starts, and always calls the output callback according to the device clock; there is no PCM, application pause/close, or continuous write silence when the input is intermittent.
+- Consumption is resumed after the input reaches the original bounded pre-buffering threshold; the source PCM, packet sequence number or EOF is not forged while waiting, the unbounded cache is not increased, and the driver is not restarted.
+- The C++ C ABI output backend already supports empty wait muting, persistent callbacks during hold, source clock freezing, and reset of drift estimates on recovery. It will be used in this round and no new PCM replication, scheduling optimization or new ASIO implementation will be added.
+- Changes in the Zig life cycle policy: `.waiting` and `.rebuffering` can wait indefinitely; the number of underloads/recoveries continues to be used as a diagnostic indicator, and the session cannot be terminated based on this.
+- Only perform finish, DSP tail and bounded drain before shutting down the device if the session is explicitly stopped/upstream explicitly ended. `drainTimeoutMs` is still in effect.
+- Device failures, driver reset requests, discontinuous input, queue overflows, and capture/transmission failures still follow the original failures and safe endings; there is no addition of automatic device replacement or failure continuation.
 
-## 配置兼容
+## Configuration compatible
 
-`startupTimeoutMs`、`rebufferTimeoutMs`、`maxRebuffers` 及对应 Zig/CLI 字段保留解析兼容，默认和有效值为 0，旧的非零值不再触发正常无流退出。它们不是用来配置“等待多久才开始常驻”的开关。`validate-playback` 的 `effectiveOutputLifecycle` 和 host 的 `playbackPolicy` 明确报告 `lifetime=session`、`noInput=silence`。
+`startupTimeoutMs`, `rebufferTimeoutMs`, `maxRebuffers` and the corresponding Zig/CLI fields remain parsing compatible. The default and valid values are 0. Old non-zero values no longer trigger normal flow-free exit. They are not switches to configure "how long to wait before settling". `effectiveOutputLifecycle` for `validate-playback` and `playbackPolicy` for host explicitly report `lifetime=session`, `noInput=silence`.
 
-`prebufferFrames`、设备时钟匹配、通道路由、公共 DSP、池块所有权不变。ASIO 的驱动打开/关闭错误和显式停止超时不因常驻而忽略。原测试用的有限文件结束语义仅用于主动结束测试，不代表正常源缺席。
+`prebufferFrames`, device clock matching, channel routing, public DSP, pool block ownership unchanged. ASIO's driver open/close errors and explicit stop timeouts are not ignored due to persistence. The limited file end semantics used in the original test are only used to actively end the test and do not represent the absence of normal sources.
 
-## 本轮验收范围
+## Acceptance scope of this round
 
-使用既有 ROAR 桥接 DLL 和自有虚拟 ASIO 驱动，不重建/优化渲染器，不操作真实 DVS、系统默认输出或 EDID。验证初次空等超过旧超时、反复停源超过旧次数上限、静音回调持续、后续 PCM 能恢复，以及设备故障仍报告失败。非时钟同步路径对恢复后的 PCM 逐帧精确比较，池块必须全部归还。真实设备长时间常驻与跨应用切换仍需要后续实机回归。
+Uses existing ROAR bridge DLL and own virtual ASIO driver, does not rebuild/optimize renderer, does not operate real DVS, system default output or EDID. Verify that the initial idle wait exceeds the old timeout, repeated power outages exceed the old upper limit, the silent callback persists, subsequent PCM can recover, and device failure still fails to be reported. Non-clock synchronized paths perform an exact frame-by-frame comparison on the recovered PCM, and the pool blocks must be returned in full. Long-term persistence of the real device and cross-application switching still require subsequent return of the real device.
 
-本轮不自动给 FSA 增加 `PlaybackConfig` 或选择用户的 ASIO 设备；配置是否启用播放后端与输出后端的会话寿命是两个独立问题。
+This round does not automatically add `PlaybackConfig` to the FSA or select the user's ASIO device; configuring whether to enable the playback backend and the session life of the output backend are two independent issues.
 
-本轮结果：13 个软件播放/故障场景及 21 项单元测试通过，包括无首包静音后恢复、反复停源恢复、始终无输入时正常停止，以及显式排空停滞仍报 `OutputTimeout`。证据见 软件验证结果（开发参考未随公开源码提供）。管理员查询确认旧会话停止后，已部署新 `build/zig-scheduler/nsp-scheduler.exe` 并正常重启 FSA；没有打开真实 ASIO 设备进行长时间实测。
+Results of this round: 13 software playback/fault scenarios and 21 unit tests passed, including recovery after muting without the first packet, recovery after repeated source interruption, normal stop when there is no input, and explicit emptying stall still reporting `OutputTimeout`. For evidence, see the software verification results (the development reference is not provided with the open source code). After the administrator query confirmed that the old session was stopped, the new `build/zig-scheduler/nsp-scheduler.exe` was deployed and the FSA was restarted normally; the real ASIO device was not opened for long-term actual testing.

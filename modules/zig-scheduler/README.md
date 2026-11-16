@@ -1,40 +1,40 @@
-# NSP 原生调度与配置宿主
+# NSP native scheduling and configuration host
 
-更新于 2026-11-08。当前分工和验收状态见[活跃进度](../../docs/core/active-progress.md)。N05–N12阶段接线与旧部署说法移到[历史快照](../../docs/archive/pipeline-convergence-20261027/zig-scheduler-before-convergence.md)。
+Updated on 2026-11-08. For the current module responsibilities and validation status, see [Active Progress](../../README.md#goals-support-and-progress). Phase N05–N12 wiring and old deployment statements have been moved to Historical Snapshot (reference outside this source tree).
 
-## 职责
+## Responsibilities
 
-Zig负责FSA控制协议、会话、所有者与停止证明、配置校验、ASIO owner控制、AoIP常驻协调和普通权限Web Host。PCM由C/Rust/C++原生模块处理；公共DSP在Rust writer，`output_processing.zig`仅保留配置/timing/ABI，不逐块回调处理PCM。
+Zig is responsible for FSA control protocol, session, owner and stop attestation, configuration verification, ASIO owner control, coordination of the persistent AoIP process and general permissions Web Host. PCM is processed by the C/Rust/C++ native module; the public DSP is in the Rust writer, `output_processing.zig` only retains the configuration/timing/ABI, and does not process PCM with block-by-block callbacks.
 
-产品主入口是原生FSA，调度器只支持Zig。旧Python控制后端及其诊断已完整归档，FSA和游戏托管入口不再接受旧调度选择。Python/PowerShell仍分别用于准备/遥测和前端WinRT格式选择/恢复；不能把“Zig调度”说成整条管理链已原生化。
+Native FSA is the product entry point, and the scheduler only supports Zig. The old Python control backend and its diagnostics have been fully archived, and the FSA and game hosting portals no longer accept old scheduling selections. Python/PowerShell are still used for preparation/telemetry and front-end WinRT format selection/recovery respectively; "Zig scheduling" cannot be said to mean that the entire management chain has been native.
 
-## 构建
+## Build
 
-- 既有ASIO宿主：`powershell -ExecutionPolicy Bypass -File modules/zig-scheduler/Build.ps1`，输出`build/nsp-product/nsp-scheduler.exe`。
-- AoIP配套宿主/桥接：`powershell -File tools/Build-Product.ps1 -Python <python.exe>`。
-- Zig固定0.13.0；ABI不匹配必须拒绝，host和bridge成套使用。Inferno 使用仓库内 modules/inferno-windows，C 头文件来自 modules/native-capture；ROAR 和工具链仍有本地准备依赖，并非发行安装器。网络诊断在 tools/network-diagnostics，不是 AoIP 产品启动步骤。
+- Existing ASIO host: `powershell -ExecutionPolicy Bypass -File modules/zig-scheduler/Build.ps1`, output `build/nsp-product/nsp-scheduler.exe`.
+- AoIP supporting host/bridge: `powershell -File tools/Build-Product.ps1 -Python <python.exe>`.
+- Zig is fixed in 0.13.0; ABI mismatch must be rejected, host and bridge are used as a set. Inferno uses modules/inferno-windows in the warehouse, and the C header files come from modules/native-capture; ROAR and the tool chain still have local preparation dependencies, and are not released installers. Network diagnostics are in tools/network-diagnostics, not the AoIP product startup step.
 
-新版本先构建独立候选，正常关闭FSA/NSP后再替换使用；不热覆盖加载中的DLL。不同build目录不代表相同能力或已经部署。
+The new version first builds an independent candidate, and then replaces it after shutting down FSA/NSP normally; it does not hot overwrite the loaded DLL. Different build directories do not mean the same capabilities or deployment.
 
-## 运行入口
+## Run entry
 
-| 命令/模块 | 当前用途 |
+| Command/Module | Current Use |
 | --- | --- |
-| 控制CLI / `serve` | FSA会话、状态、受保护停止及恢复；主要实现`control.zig/backend.zig` |
-| `host` | 捕获、渲染与输出；ASIO/WASAPI 使用会话宿主，统一 WASAPI 将四个空间入口和一路 PCM 接到同一个 ROAR 实例 |
-| `media-foundation` | FSA 控制入口，按播放 JSON 调用 MFT 控制器，并写出用户目录的 `mft-status.json` |
-| `standby-start` / `aoip-resident` | FSA拥有的AoIP常驻网络宿主，无PCM发静音 |
-| `resident-session` | 控制等待器，将捕获会话挂入常驻宿主；不传PCM |
-| `web-host` | 普通权限状态/配置/静态前端，默认127.0.0.1:8767，不暴露音频启停 |
-| `validate-playback --playback-config <absolute-json>` | 不打开设备的配置校验与有效配置说明 |
-| 后端`select-output`动作 | AoIP运行时选流，不等于后端热切换；需匹配owner/session |
+| Control CLI/`serve` | FSA sessions, status, protected stop and resume; mainly implements `control.zig/backend.zig` |
+| `host` | Capture, rendering and output; ASIO/WASAPI uses session host, unifies WASAPI to connect four space entrances and one PCM to the same ROAR instance |
+| `media-foundation` | FSA control portal, press play JSON to call the MFT controller, and write out the user directory `mft-status.json` |
+| `standby-start` / `aoip-resident` | AoIP resident network host owned by FSA, mute without PCM |
+| `resident-session` | Control the waiter and hook the capture session to the resident host; do not transmit PCM |
+| `web-host` | Common permission status/configuration/static front end, default 127.0.0.1:8767, does not expose audio start and stop |
+| `validate-playback --playback-config <absolute-json>` | Configuration verification and valid configuration instructions of the device without opening |
+| Backend `select-output` action | AoIP stream selection when running, does not equal backend hot switch; needs to match owner/session |
 
-配置见 [JSON Schema](playback.schema.json)、[模块开关](../../docs/archive/core/playback-json-configuration-20261022.md#可选模块开关)与 [WASAPI 示例](playback.wasapi.example.json)。`validate-playback` 分别报告核心 `outputLayout` 和物理 `deviceOutputLayout`。修改输出路径后重新建立对应会话或 AoIP 常驻实例。AoIP 运行时选流使用独立接口。
+For configuration, see [JSON Schema](playback.schema.json), [Module Switch](../../docs/archive/core/playback-json-configuration-20261022.md#radius-recovery-and-new-switches) and [WASAPI Example](playback.wasapi.example.json). `validate-playback` reports core `outputLayout` and physical `deviceOutputLayout` respectively. Re-establish the corresponding session or persistent AoIP process after modifying the output path. AoIP runtime selects streams using independent interfaces.
 
-通用用户目录为`%LOCALAPPDATA%/NativeSpatialPipe`，默认播放文件`playback.json`；明确的FSA INI PlaybackConfig可覆盖，当前AoIP候选使用同目录`output.json`。`--home`用于显式隔离，不能拿隔离测试状态冒充实际用户会话。
+The general user directory is `%LOCALAPPDATA%/NativeSpatialPipe`, and the default playback file is `playback.json`; the explicit FSA INI PlaybackConfig can be overridden, and the current AoIP candidate uses the same directory `output.json`. `--home` is used for explicit isolation, and the isolation test status cannot be used to pretend to be an actual user session.
 
-## 验证与未完成项
+## Validation and outstanding items
 
-现有配置/路由/控制/输出池测试继续保留，具体命令及fixture见同目录测试、`tools/integration-tests`与`tools/aoip/Test-Configuration.py`。软件测试、FSA有限实网、用户确认出声分别记录，不相互替代。
+The existing configuration/routing/control/output pool test will continue to be retained. For specific commands and fixtures, see the same directory test, `tools/integration-tests` and `tools/aoip/Test-Configuration.py`. Software testing, FSA limited live network, and user confirmation are recorded separately and do not replace each other.
 
-P0仍包括固定hash/profile跨系统兼容、Hook稳定性、确定性捕获绑定、Inferno依赖闭包、输出fault诊断和常驻启动失败回收；WDM、长期SRC、配置loaded revision及遥测故障隔离尚未完成。顺序见[修复计划](../../docs/plans/nsp-pipeline-reliability-plan-20261027.md)。历史“未接N07/只待首轮真实音频”不再作为当前状态。
+P0 still includes fixed hash/profile cross-system compatibility, Hook stability, deterministic capture binding, Inferno dependency closure, output fault diagnosis and resident startup failure recovery; WDM, long-term SRC, configuration loaded revision and telemetry fault isolation have not yet been completed. See Repair Plan (reference outside this source tree) for the sequence. The historical "Missed N07/Only waiting for the first round of real audio" is no longer the current status.

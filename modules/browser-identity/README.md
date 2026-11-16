@@ -4,7 +4,7 @@ This module associates ordinary WASAPI PCM queues with real Edge tab and documen
 
 ## Runtime
 
-Enable the top-level `browserIdentity.enabled` in playback JSON alongside `pcmCapture.enabled`. The observer uses `pcmCapture.inputEndpointId` and shares queue discovery with PCM capture. The legacy nested field is accepted on read. See the [playback settings](../../docs/archive/core/playback-json-configuration-20261022.md#可选模块开关).
+Enable the top-level `browserIdentity.enabled` in playback JSON alongside `pcmCapture.enabled`. The observer uses `pcmCapture.inputEndpointId` and shares queue discovery with PCM capture. The legacy nested field is accepted on read. See the [playback settings](../zig-scheduler/playback.schema.json).
 
 The MV3 extension reports tab/window IDs, target IDs, active document IDs and internal renderer IDs to the loopback agent on port 8784. The agent reads audio-controller metadata in its own `edge://media-internals` target. A version-pinned native observer verifies the controller-to-WASAPI-object references and compares the Windows Event object with the audiodg queue event. The capture and ingress DLLs attach the verified identity to ring version 2 descriptors.
 

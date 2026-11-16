@@ -1,10 +1,10 @@
-# 抽离模块来源与许可
+# Extract module sources and licenses
 
-来源：原 `SpatialASIO/` 的 0.2.7-preview.14 快照和 DEV16 模块化改动。移动目录不改变原授权；代码中的 SPDX 和第三方原始声明保持不变。
+Source: 0.2.7-preview.14 snapshot of the original `SpatialASIO/` and DEV16 modular changes. Moving the directory does not change the original license; SPDX and third-party original claims in the code remain unchanged.
 
-- LIRA、自有公共支持及多数测试：保留文件原 Apache-2.0 声明，许可全文 [UPSTREAM-LICENSE-APACHE-2.0](UPSTREAM-LICENSE-APACHE-2.0)。
-- ASIO 接入、设备配置、布局适配和设备 C ABI：保留 GPL-3.0-only 声明，全文 [UPSTREAM-LICENSE](UPSTREAM-LICENSE)。
-- `third_party/asio`：保留 SDK 原声明及本次沿用的 GPLv3 分支；`third_party/libsamplerate` 保留自身 LICENSE/ORIGIN。
-- 含上述 GPL 部分的组合发行边界沿用此前决定，不能因为模块迁移便将它标成纯 Apache。发行目标与材料整理仍后置，本次不发布。
+- LIRA, own public support and most testing: keep the file's original Apache-2.0 statement, full license [UPSTREAM-LICENSE-APACHE-2.0](UPSTREAM-LICENSE-APACHE-2.0).
+- ASIO access, device configuration, layout adaptation, and device C ABI: GPL-3.0-only statement retained, full text [UPSTREAM-LICENSE](UPSTREAM-LICENSE).
+- `third_party/asio`: retain the original statement of the SDK and the GPLv3 branch adopted this time; `third_party/libsamplerate` retains its own LICENSE/ORIGIN.
+- The distribution boundary of the combination containing the above GPL parts follows the previous decision, and it cannot be marked as pure Apache just because the module is migrated. The issuance target and material compilation are still pending and will not be released this time.
 
-`UPSTREAM-LICENSING.md`、`UPSTREAM-NOTICE`、`UPSTREAM-THIRD-PARTY-NOTICES.md` 是原完整工程的来源快照，其中 GUI/字体/安装器路径不代表这些内容仍在本模块。当前源码集以本目录实际文件和 `source-manifest.json` 为准。
+`UPSTREAM-LICENSING.md`, `UPSTREAM-NOTICE`, and `UPSTREAM-THIRD-PARTY-NOTICES.md` are source snapshots of the original complete project. The GUI/font/installer paths do not mean that these contents are still in this module. The current source code set is based on the actual files in this directory and `source-manifest.json`.

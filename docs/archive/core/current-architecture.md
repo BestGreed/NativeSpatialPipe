@@ -1,51 +1,51 @@
 > **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
-# 当前架构与技术栈边界
+# Current architecture and technology stack boundaries
 
-2026-10-24。本页描述当前产品运行入口；历史设计、诊断工具和将来规划均不能替换本页的运行路径。核对细项见[技术栈与文档复审](stack-architecture-audit-20261024.md)。
+2026-10-24. This page describes the current product operation entry; historical design, diagnostic tools, and future planning cannot replace the operation path on this page. Please see [Technology Stack and Documentation Review] (stack-architecture-audit-20261024.md) for verification details.
 
-## 音频数据路径
+## audio data path
 
 ```text
-Windows 对象提交 / audiodg
- → 原生 MinHook / C 快照、捕获 worker
- → C 有界共享内存与事件
- → Rust 接收、公共输入转换、预热 renderer 实例
- → ROAR（当前 OLR 模式）或 C++ LIRA
- → Rust interleaved 输出池
- → Zig DSP 回调在池块内原地处理 / bypass
- → 有界池块租借描述符
- → ASIO owner 同步提交池地址
- → C++ ASIO 内部队列、SRC、设备时钟、ring、物理声道转换
+windows object submission/audiodg
+ → Native MinHook/C snapshot, capture worker
+ → C bounded shared memory and events
+ → Rust reception, public input conversion, warm-up renderer instances
+ → ROAR (current OLR mode) or C++ LIRA
+ → Rust interleaved output pool
+ → Zig DSP callbacks are handled in-place/bypassed within the pool block
+ → bounded pool block lease descriptor
+ → ASIO owner synchronously submits the pool address
+ → C++ ASIO internal queue, SRC, device clock, ring, physical channel conversion
 ```
 
-已移除的是 Rust 池与 ASIO 提交之间的 Zig PCM staging 队列及 scratch 复制；仍有有界描述符队列，也保留 ASIO 内部复制。不能称为全链路零复制或硬件回调直接拉取 Rust 池。公共 DSP 算法仍在 Zig，通过进程内 C ABI 回调执行，不是新增一份 Rust DSP。
+Removed are the Zig PCM staging queue and scratch replication between the Rust pool and ASIO commits; there are still bounded descriptor queues, as well as ASIO internal replication. It cannot be called full-link zero-copy or hardware callbacks to pull directly from the Rust pool. The public DSP algorithms are still in Zig, executed through in-process C ABI callbacks, not a new Rust DSP.
 
-PCM 录音位于公共 DSP 前，显式开启时复制到独立有界录音池，由专用线程写盘；队列满或磁盘故障不等待、不挟持播放池。对象/输出遥测使用独立 tap 和有界旁路，由独立 Python 服务计量、聚合并提供 HTTP/WebSocket。旁路仍有复制及发布成本，不等于完全无实时开销。快照存档由独立线程执行。PCM 和快照存档默认关闭，选流读取内存进度，不看录音文件增长。
+PCM recording is located in front of the public DSP. When explicitly turned on, it is copied to an independent bounded recording pool and written to the disk by a dedicated thread; the queue is full or the disk fails without waiting or hijacking the playback pool. Object/output telemetry uses independent taps and bounded bypasses, with HTTP/WebSockets metered, aggregated, and served by independent Python services. Bypass still has copy and release costs, which does not mean there is no real-time overhead at all. Snapshot archiving is performed by a separate thread. PCM and snapshot archiving are turned off by default, the stream is selected to read the memory progress, and the recording file growth is not watched.
 
-## 模块、语言与运行依赖
+## Modules, languages and runtime dependencies
 
-| 模块 / 入口 | 技术与进程边界 | 不应混入的职责 |
+| Modules/entrances | Technology and process boundaries | Responsibilities that should not be mixed |
 |---|---|---|
-| `tools/fsa-integration/native` | 原生 C / Win32 FSA；端点快照、规则、模式、会话启动和回验 | 不承载 DSP、ASIO 回调或第二套 Web 控制状态机 |
-| `tools/pipeline-init` | Python 准备控制与枚举监督；PowerShell/WinRT 查询、选择、通知及显式 EDID 辅助 | 不接收逐包 PCM，不持续代替 FSA 管理端点，不自动写 EDID |
-| `Enum-Hook.c`、`Native-Hook-Control.c` | C / MinHook；AudioSrv 枚举与 audiodg 捕获共用固定引擎和控制器源码 | 不加载 Frida/JS 引擎；两个目标进程的生命周期仍各自管理 |
-| `tools/zig-scheduler` | Zig 调度、后端会话、专用设备控制线程、公共 DSP | 回调不执行阻塞设备打开/关闭、网络控制或文件录音 |
-| `tools/native-receiver`、`tools/roar-bridge` | Rust 接收、适配、输出池和 ROAR 桥；进程内 C ABI | 公共输入不引入 LIRA 房间投影、裁剪或槽位 GC |
-| ROAR / LIRA | ROAR 为 Rust 后端，当前接入 OLR；LIRA 为独立 C++ 后端 | OLR 是 ROAR 的模式，不与 LIRA 并列为后端；ROAR OBR 尚非当前接通模式 |
-| `modules/audio-backends` | 抽离的原生 C++ LIRA 和 ASIO；独立模块 C ABI 留在本目录 | 不依赖完整 Spatial ASIO 工程、WPF 或 .NET 10 |
-| `tools/telemetry/standalone.py` | 独立 Python 服务，可加载 C 计量 DLL（也有 Python 参考实现）；历史、HTTP/WebSocket（默认 8766） | 不负责音频控制，不在 renderer 中计算全套计量 |
-| `nsp-scheduler.exe web-host` | 独立 Zig 进程，随 FSA 启动；状态、配置校验/保存、前端静态资源（默认 8767） | 保存不自动应用，无启停、模式、Hook、EDID 或急停 API |
-| `tools/visualization-frontend` | 浏览器原生 JS / HTML / CSS / WebGL；默认浏览器打开 | Node 用于开发测试；产品不要求 Node 服务、WebView2 壳或 .NET 桌面 |
+| `tools/fsa-integration/native` | Native C/Win32 FSA; endpoint snapshots, rules, patterns, session startup and backtesting | Does not host DSP, ASIO callbacks or second set of web control state machines |
+| `tools/pipeline-init` | Python preparation control and enumeration supervision; PowerShell/WinRT query, selection, notification and explicit EDID assistance | Does not receive packet-by-packet PCM, does not continuously replace FSA management endpoints, does not automatically write EDID |
+| `Enum-Hook.c`, `Native-Hook-Control.c` | C/MinHook; AudioSrv enumeration and audiodg capture share fixed engine and controller source code | Frida/JS engine is not loaded; the life cycle of the two target processes is still managed separately |
+| `tools/zig-scheduler` | Zig scheduling, backend session, dedicated device control thread, public DSP | Callbacks do not execute blocking device open/close, network control or file recording |
+| `tools/native-receiver`, `tools/roar-bridge` | Rust receive, adapt, output pool, and ROAR bridge; in-process C ABI | Public inputs do not introduce LIRA room projection, clipping, or slot GC |
+| ROAR / LIRA | ROAR is the Rust backend, currently connected to OLR; LIRA is an independent C++ backend | OLR is the mode of ROAR, and is not listed as a backend alongside LIRA; ROAR OBR is not currently connected to the mode |
+| `modules/audio-backends` | Extracted native C++ LIRA and ASIO; independent module C ABI stays in this directory | Does not depend on full Spatial ASIO project, WPF or .NET 10 |
+| `tools/telemetry/standalone.py` | Standalone Python service, can load C metering DLL (also has Python reference implementation); history, HTTP/WebSocket (default 8766) | Not responsible for audio control, does not calculate the full set of metering in the renderer |
+| `nsp-scheduler.exe web-host` | Independent Zig process, started with FSA; status, configuration verification/save, front-end static resources (default 8767) | Save is not automatically applied, no start/stop, mode, Hook, EDID or emergency stop API |
+| `tools/visualization-frontend` | Browser native JS/HTML/CSS/WebGL; default browser opens | Node is used for development and testing; product does not require Node service, WebView2 shell or .NET desktop |
 
-Python 不只用于遥测，也仍用于准备模块。PowerShell 的 WinRT/Add-Type 辅助依赖 Windows 自带的托管互操作环境；显式 EDID `plan` / HT Support 预检及 `inspect` 还调用旧 `work/OemEndpointProbe.exe`（C# / 系统 .NET Framework），并非仅历史测试代码。因此“原生音频 DLL 无 .NET”不等于“所有辅助脚本完全不经过 CLR”；不要求安装 .NET 10/WPF。该探针可由 `tools/endpoint-probe/Build-EndpointProbe.ps1` 单独构建，不进入音频热路径，也不把可选 ClientProbe/WwiseProbe 加回默认依赖。LLVM-MinGW 构建的 LIRA/ASIO 要带匹配的 `libc++.dll`、`libunwind.dll`；ROAR 的 unwind 依赖也应随其构建材料核对。
+Python is not only used for telemetry but also for preparing modules. PowerShell's WinRT/Add-Type helper relies on Windows' native managed interop environment; explicit EDID `plan` / HT Support preflight and `inspect` also calls the old `work/OemEndpointProbe.exe` (C# / System .NET Framework), not just historical test code. So "native audio DLL without .NET" does not equal "all helper scripts without going through the CLR at all"; .NET 10/WPF installation is not required. This probe can be built separately from `tools/endpoint-probe/Build-EndpointProbe.ps1` without entering the audio hot path or adding the optional ClientProbe/WwiseProbe back to the default dependency. LIRA/ASIO built by LLVM-MinGW must have matching `libc++.dll` and `libunwind.dll`; ROAR's unwind dependency should also be checked with its construction materials.
 
-## 配置、生命周期与尚未实施项
+## Configuration, lifecycle, and yet-to-be-implemented items
 
-播放配置默认为 `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`，兼容显式自定义路径。旧安装目录默认文件只迁移为用户副本，不覆盖已有目标。Web 保存配置供下次会话读取，不做热应用。FSA 配置及后端状态的存储合同没有因此统一迁移。
+The playback configuration defaults to `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` and is compatible with explicit custom paths. The default files in the old installation directory are only migrated to user copies and do not overwrite existing targets. The web saves the configuration for reading in the next session and does not perform hot application. Storage contracts for FSA configuration and backend status are not uniformly migrated as a result.
 
-ASIO 随 NSp 会话常驻，无输入时静音送流；不再因首包等待或反复欠载自动结束会话，旧超时字段仅兼容解析。捕获/传输严重故障及设备故障仍应安全退出。音频自有工作线程和设备回调的 MMCSS 注册各有实现边界，不能据此声称整个进程硬实时。
+ASIO is resident with the NSP session and streams silently when there is no input; the session is no longer automatically terminated due to waiting for the first packet or repeated underload, and the old timeout field is only compatible with parsing. Capture/transmission critical failures and device failures should still result in a safe exit. The audio's own worker thread and the MMCSS registration of the device callback each have implementation boundaries, and the entire process cannot be claimed to be hard real-time based on this.
 
-七种输出布局已接通：5.1.2、5.1.4、7.1.2、7.1.4、7.1.6、9.1.4、9.1.6。自定义 6DoF 插槽仅预留；原生 AoIP / Inferno 移植仍是评估路线，未成为默认输出。WDM 补全不是当前产品输入链，OBR 名称的耳机捕获模式不等于已接入 ROAR OBR 渲染。
+Seven output layouts are switched on: 5.1.2, 5.1.4, 7.1.2, 7.1.4, 7.1.6, 9.1.4, 9.1.6. Custom 6DoF slots are reserved only; the native AoIP/Inferno port is still an evaluation route and has not become the default output. WDM completion is not the current product input chain, and the headset capture mode of the OBR name does not mean that the ROAR OBR rendering is plugged in.
 
-详细合同：[输出池](output-pool-processing-20261022.md)、[旁录](recording-isolation-20261024.md)、[布局](output-layout-presets-20261023.md)、[准备枚举](native-enumeration-hook-20261024.md)、[Web](../decisions/web-configuration-host-20261023.md)。[10/16–10/19 原架构页](../history/native-architecture-baseline-20261024.md)只保留历史证据，不作为当前依赖或性能承诺。
+Detailed contract: [Output Pool](output-pool-processing-20261022.md), [Aside Recording](recording-isolation-20261024.md), [Layout](output-layout-presets-20261023.md), [Preparing for Enumeration](native-enumeration-hook-20261024.md), [Web](../decisions/web-configuration-host-20261023.md). [10/16–10/19 Original architecture page](../history/native-architecture-baseline-20261024.md) Only historical evidence is retained and is not used as a current dependency or performance commitment.

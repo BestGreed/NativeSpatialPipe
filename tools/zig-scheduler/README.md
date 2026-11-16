@@ -1,63 +1,63 @@
-# NSp Zig 调度层
+# NSp Zig Scheduling Layer
 
-当前技术栈与文档权威入口见[架构](../../docs/archive/core/current-architecture.md)。Zig 负责默认调度和公共 DSP；Python 仍用于准备控制与独立遥测，PowerShell/WinRT 仍执行系统互操作。下方 DEV16 分轮日志只作历史证据，其中“未接线”、固定布局、旧 WPF 或有限播放策略不构成当前待办，不得重新引入产品链。
+For the authoritative entrance to the current technology stack and documentation, see [Architecture](../../docs/archive/core/current-architecture.md). Zig is responsible for default scheduling and common DSP; Python is still used for preparation control and independent telemetry, and PowerShell/WinRT still performs system interop. The DEV16 split log below is for historical evidence only, where "unwired", fixed layout, old WPF or limited playback strategies do not constitute the current backlog and may not be reintroduced into the product chain.
 
 2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/archive/core/playback-user-location-20261024.md).
 
-## 当前实现（2026-10-24）
+## Current implementation (2026-10-24)
 
-正式 host 通过 `nsp_pipeline_create_live` 初始化 ROAR/OLR 或 LIRA，支持七种输出布局、池内 DSP 与池块租借。`recording.pcm`、`recording.telemetrySnapshots` 默认均关闭；旁录使用独立线程与 32 块专用录音池，播放交付不执行文件 IO。遥测候选流通过 `nsp_pipeline_progress` 内存计数选取，不依赖录音文件。旧桥缺少 live 导出时明确失败。
+The official host initializes ROAR/OLR or LIRA through `nsp_pipeline_create_live`, supporting seven output layouts, in-pool DSP and pool block leasing. `recording.pcm` and `recording.telemetrySnapshots` are turned off by default; side recording uses independent threads and 32 dedicated recording pools, and file IO is not executed during playback delivery. Telemetry candidate streams are selected by `nsp_pipeline_progress` memory counting and do not rely on recording files. Old Bridge is missing a live export that fails explicitly.
 
-独立 `web-host` 随 FSA 启动，默认 `8767`，仅查询状态、校验/保存 JSON，不提供运行控制。默认播放 JSON 为 `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`，显式自定义 `PlaybackConfig` 路径继续有效；旧安装目录默认文件迁移为用户副本，保留原件且不覆盖已有目标。默认保存及修订锁不写安装目录。保存后下次启动会话生效；后端状态目录保持不变。
+The independent `web-host` is started with FSA, and the default is `8767`. It only queries status, verifies/saves JSON, and does not provide run control. The default playback JSON is `%LOCALAPPDATA%/NativeSpatialPipe/playback.json`, and the explicitly customized `PlaybackConfig` path continues to be valid; the default files in the old installation directory are migrated to user copies, retaining the originals and not overwriting existing targets. By default, save and revision locks do not write to the installation directory. After saving, it will take effect the next time you start the session; the backend status directory remains unchanged.
 
-默认完整半径映射 `scaled/1`。ASIO 会话内常驻，无输入时静音；旧首包/重缓冲超时字段保留但不生效。模块运行库从 DLL 目录加载。已完成有限实机启停，14/16 路实际接线、6DoF 插槽启用及长期稳定性另验。
+Default full radius mapping `scaled/1`. Permanent in the ASIO session, muted when no input; the old first packet/rebuffer timeout field is retained but does not take effect. The module runtime is loaded from the DLL directory. Limited actual machine start-up and stop, 14/16-channel actual wiring, 6DoF slot activation and long-term stability verification have been completed.
 
-参见[布局](../../docs/archive/core/output-layout-presets-20261023.md)、[旁录与 ABI](../../docs/archive/core/recording-isolation-20261024.md)、本轮验证（开发参考未随公开源码提供）。下方 N05–N12 的“未部署/未接线”只描述当时状态。
+See [Layout](../../docs/archive/core/output-layout-presets-20261023.md), [Side Recording and ABI](../../docs/archive/core/recording-isolation-20261024.md), and this round of verification (development reference is not provided with the open source code). “Not Deployed/Not Wired” for N05–N12 below only describes the current status.
 
-2026-10-23 启动修复：默认渲染桥、preflight 和 Web 候选路径统一为 `build/roar-native/release/nsp_roar_bridge.dll`，支持当前默认完整半径映射。无 Hook 身份记录的启动失败须通过进程退出、端点恢复及实时 Hook 基线证据后才解除锁定，原失败报告保留。DTS:X HT 实机启动/停止闭环通过，见 修复与验证（开发参考未随公开源码提供）。
+2026-10-23 Startup fix: Default render bridge, preflight and web candidate paths are unified to `build/roar-native/release/nsp_roar_bridge.dll`, supporting the current default full radius mapping. A startup failure without Hook identity record must be unlocked after process exit, endpoint recovery and real-time Hook baseline evidence, and the original failure report is retained. DTS:X HT real machine start/stop closed loop passed, see Repair and Verification (development reference is not provided with the open source code).
 
-2026-10-23：已修正 [ASIO 会话寿命](../../docs/archive/decisions/asio-session-lifetime-20261023.md)：输入缺席时持续静音回调，不再触发首包等待、重缓冲超时或次数退出。显式停止仍有排空期限，设备和捕获/传输故障仍须安全退出。旧超时 JSON 字段保留解析兼容，新的有效策略通过 `effectiveOutputLifecycle` / `playbackPolicy` 报告。此更新替代下文历史轮次中的有限播放策略。
+2026-10-23: Fixed [ASIO Session Lifetime](../../docs/archive/decisions/asio-session-lifetime-20261023.md): Continuously mute callbacks when input is absent, no longer trigger first packet wait, rebuffer timeout or count exit. Explicit stops still have a drain period, and device and capture/transmission failures still require a safe exit. The old timeout JSON field remains parsed compatible, the new effective policy is reported via `effectiveOutputLifecycle` / `playbackPolicy`. This update replaces the limited play strategy in the historical rounds below.
 
-**当前状态（2026-10-23，alpha-dev）：** N03–N12 已完成限定开发集成，FSA 参数已接通，ROAR／OLR 与 LIRA 共用公共输出和 ASIO；DVS 12 路数字回送及两组 Wwise HT 实测已完成。池内 DSP／bypass 和池块租借已接通，临时 WPF 已弃用。ASIO 已改为会话内常驻送流；独立 Web API Host 和图形配置页已实现，仅读状态、读写配置，不提供运行控制。D15 与 OG27QH EDID 驱动重载实机回归等仍单独跟踪。以下按轮次排列的“尚未接线／未做真实播放”描述仅对应当时阶段，不能覆盖当前状态。
+**Current status (2026-10-23, alpha-dev):** N03–N12 has completed limited development integration, FSA parameters have been connected, ROAR/OLR and LIRA share common output and ASIO; DVS 12-channel digital loopback and two sets of Wwise HT actual measurements have been completed. In-pool DSP/bypass and pool block leasing are on, temporary WPF is deprecated. ASIO has been changed to resident streaming within the session; independent Web API Host and graphics configuration page have been implemented, only read status, read and write configuration, and no operation control is provided. D15 and OG27QH EDID driver reloading and actual machine return are still tracked separately. The following descriptions of "not yet connected/not actually played" arranged by round only correspond to the current stage and cannot cover the current status.
 
-公共 DSP 已前移到 Rust 输出池块，并支持 `outputProcessing.bypass` 及中性配置自动跳过。设备 owner 通过池块租借提交，移除 Zig PCM 队列和 scratch 复制；ASIO 内部算法不变。成套候选及验证见 [输出池记录](../../docs/archive/core/output-pool-processing-20261022.md)。
+Public DSP has been moved to the Rust output pool block and supports `outputProcessing.bypass` and neutral configuration auto-skipping. Device owner commits via pool block lease, removes Zig PCM queue and scratch replication; ASIO internal algorithm unchanged. See [Output Pool Record](../../docs/archive/core/output-pool-processing-20261022.md) for the set of candidates and verification.
 
-DEV16 N11 曾增加独立桌面客户端和可选会话 `playback` 配置；旧 FSA 请求保持兼容，其新参数在 N12 接线。**临时 WPF 桌面已于 2026-10-22 弃用**，会话与端点管理以 FSA 为准；公共播放配置和控制接口继续保留。原因与历史边界见 已弃用临时桌面（开发参考未随公开源码提供） 和 N11交付记录（开发参考未随公开源码提供）。
+DEV16 N11 had added standalone desktop client and optional session `playback` configuration; old FSA requests remain compatible with their new parameters wired in N12. **The temporary WPF desktop has been deprecated on 2026-10-22**, session and endpoint management are subject to FSA; public playback configuration and control interfaces continue to be retained. For reasons and historical boundaries, see Deprecated Temporary Desktop (development reference is not provided with the open source code) and N11 Delivery Records (development reference is not provided with the open source code).
 
-DEV16 N10 已接入 LIRA（Lazy Immersive Rendering Architecture）：`--renderer lira --lira-renderer-dll <绝对DLL路径> --render-bridge-dll <本轮bridge路径>`。旧 `spatial` 参数保留兼容。默认仍为 OLR；LIRA 拒绝 OLR 专属 position 参数。共享公共输入、可靠输出与 ASIO 路径，保留 512 帧固有延迟及完整尾部；接口、构建与限定验证（开发参考未随公开源码提供）。本轮独立产物位于 `build/dev16-n10-renderer/`，未替换运行目录。
+DEV16 N10 has been connected to LIRA (Lazy Immersive Rendering Architecture): `--renderer lira --lira-renderer-dll <absolute DLL path> --render-bridge-dll <current bridge path>`. The old `spatial` parameters remain compatible. The default is still OLR; LIRA rejects the OLR-specific position parameter. Shared common inputs, reliable outputs, and ASIO paths, retaining 512-frame inherent latency and full tail; interface, build, and qualification verification (development reference not provided with open source code). This round of independent products is located at `build/dev16-n10-renderer/`, and the running directory has not been replaced.
 
-DEV16 N05 新增 `output_control.zig` 专用后端worker和 `asio_control.zig` 生命周期适配；不自动挂入当前会话。调用/代次/退出合同见 N05交付（开发参考未随公开源码提供）。独立完整检查：`python tools/asio-output/Test-ControlWorker.py`，仅模拟后端与假ASIO DLL；实时输出接线在N07。
+DEV16 N05 adds `output_control.zig` dedicated backend worker and `asio_control.zig` life cycle adaptation; it will not automatically hook into the current session. See the N05 delivery for the call/generation/exit contract (development reference is not provided with the open source code). Independent complete check: `python tools/asio-output/Test-ControlWorker.py`, only analog backend with fake ASIO DLL; live output wired at N07.
 
-N06新增 `output_processing.zig` 公共PCM处理器，配置与尾部合同见 N06交付（开发参考未随公开源码提供）。离线检查：`python tools/zig-scheduler/Test-OutputProcessing.py`。默认位一致直通，limiter默认关闭；实际播放调用留N07。
+N06 adds the `output_processing.zig` public PCM processor. For configuration and tail contract, see N06 delivery (development reference is not provided with the open source code). Offline check: `python tools/zig-scheduler/Test-OutputProcessing.py`. The default bit is consistent passthrough, and the limiter is turned off by default; the actual playback call is left at N07.
 
-N07已通过 `output_stream.zig` / `output_playback.zig` 接入可靠PCM和owner服务循环，正式host提供显式ASIO启用参数；见 接线、参数与测试（开发参考未随公开源码提供）。`python tools/asio-output/Test-Playback.py`验证实际OLR到假ASIO回调的软件闭环；现阶段未部署、未做真实驱动播放。
+N07 has been connected to the reliable PCM and owner service loop through `output_stream.zig` / `output_playback.zig`, and the official host provides explicit ASIO enable parameters; see Wiring, Parameters and Testing (development reference is not provided with the open source code). `python tools/asio-output/Test-Playback.py` verifies the software closed loop from actual OLR to fake ASIO callback; at this stage, it has not been deployed and no real driver playback has been performed.
 
-N09：新DEV16 host默认 `--position-mode scaled --position-reference 1`，保持完整源半径数值，仅换轴、不额外缩放。`--position-mode direction` 保留旧方向基线；reference仅允许正有限值，direction下仅接受1。scaled需要配套新桥接DLL的增量导出，缺失时明确失败，不静默回退。详情与声音变化见N09记录（开发参考未随公开源码提供）。这不是物理房间标定；现用二进制未部署替换。N08实机与网络回送证据见对应记录。
+N09: The new DEV16 host defaults to `--position-mode scaled --position-reference 1`, maintaining the complete source radius value, only changing the axis, and no additional scaling. `--position-mode direction` retains the old direction baseline; reference only allows positive finite values, and direction only accepts 1. scaled needs to support the incremental export of the new bridge DLL. If it is missing, it will fail explicitly and will not fall back silently. See the N09 record for details and sound changes (development reference is not provided with the open source code). This is not a physical room calibration; it is now replaced with a binary undeployed one. N08 actual machine and network feedback evidence can be found in the corresponding records.
 
-迁移对象是原 Python 管理与编排层，现有 C Hook、C 捕获/共享内存和 Rust 接收/渲染 DLL 均保持不变。遥测仍按原顺序先启动，计算与 HTTP/WebSocket 服务继续使用原 Python 实现。本阶段没有把遥测从启动链中拆开。
+The migration object is the original Python management and orchestration layer, and the existing C Hooks, C capture/shared memory, and Rust receiving/rendering DLLs remain unchanged. Telemetry still starts first in the original order, and calculations and HTTP/WebSocket services continue to use the original Python implementation. Telemetry is not separated from the startup chain at this stage.
 
-## 已迁移
+## Migrated
 
-- `backend.zig`：常驻后端、单实例、配置与会话持久化、HTTP 控制及前端文件服务、子进程监控、停止超时和恢复锁定。
-- `control.zig`：FSA 的 preflight/start/status/stop/emergency-stop、目标实例检查、关联状态文件与新鲜度协议。
-- `native.zig`：直接调用现有管线与接收端 C ABI，调用原生 Hook 控制器；不经过 ctypes/Python 编排。
-- `host.zig`：四条原生管线预热、遥测进程管理、原生接收端启动、Hook 生命周期、非实时遥测转发、可选快照存档及结束排空。
-- `routing.zig`：按 renderer 内存进度选择遥测候选流，轮询 100 ms、失效 1 s、新候选两次增长后抢占；不受录音开关影响。
-- FSA 默认 `[NSP] Scheduler=Zig`；`ControlExecutable` 可指定 Zig EXE，留空时按正式构建布局解析。`Python` 配置仅传给遥测服务。缺少 Zig 不隐式回退；旧管理路径必须显式设置 `Scheduler=Python`。
+- `backend.zig`: Resident backend, single instance, configuration and session persistence, HTTP control and front-end file serving, child process monitoring, stop timeout and recovery lock.
+- `control.zig`: FSA's preflight/start/status/stop/emergency-stop, target instance checks, associated status files, and freshness protocols.
+- `native.zig`: Directly calls the existing pipeline and receiver C ABI, and calls the native Hook controller; without ctypes/Python orchestration.
+- `host.zig`: Four native pipeline preheating, telemetry process management, native receiver startup, Hook life cycle, non-real-time telemetry forwarding, optional snapshot archiving and end draining.
+- `routing.zig`: Select the telemetry candidate stream according to the renderer memory progress, polling for 100 ms, invalidation for 1 s, new candidates preempted after two growths; not affected by the recording switch.
+- FSA defaults to `[NSP] Scheduler=Zig`; `ControlExecutable` can specify Zig EXE. If left blank, it will be parsed according to the formal build layout. The `Python` configuration is only passed to the telemetry service. There is no implicit fallback for missing Zig; the old management path must be explicitly set to `Scheduler=Python`.
 
-启动顺序：首条原生管线准备 → Python 遥测就绪 → 其余三条管线与原生接收端准备 → Hook 启用。遥测启动失败会阻止 Hook 启用。
+Startup sequence: The first native pipeline is ready → Python telemetry is ready → The remaining three pipelines and the native receiver are ready → Hook is enabled. Failure to start telemetry prevents hooks from being enabled.
 
-退出顺序：确认 Hook 关闭并恢复指令 → 等待已捕获包接收 → 接收端停止并确认线程退出 → 遥测桥接/记录线程退出 → 渲染排空并读取最后 tap → 销毁管线 → 关闭遥测。无法确认 Hook/接收端停止时保持资源，不强杀现场进程。
+Exit sequence: Confirm Hook closed and resume instructions → Wait for captured packet reception → Receiver stops and confirms thread exit → Telemetry bridging/recording thread exit → Render drain and read last tap → Destroy pipeline → Close telemetry. Unable to confirm that resources are retained when the Hook/receiver is stopped and the on-site process is not forcibly killed.
 
-空间格式的设置和恢复仍使用现有 `Run-GameTelemetry.ps1`（Windows 自带 PowerShell/WinRT）；它的原生分支直接启动 Zig host，不执行 `Sync-Hook.py`。现阶段仅迁移正式托管模式，历史 Frida、离线实验和原 Python 测试工具保留。
+The setting and recovery of space format still use the existing `Run-GameTelemetry.ps1` (Windows comes with PowerShell/WinRT); its native branch starts the Zig host directly and does not execute `Sync-Hook.py`. At this stage, only the official hosting mode will be migrated, and the historical Frida, offline experiments, and original Python testing tools will be retained.
 
-## 构建
+## Build
 
-固定使用 Zig 0.13.0，避免编译器标准库版本漂移。编译器仅用于构建，运行时无需安装 Zig。
+Fixed use of Zig 0.13.0 to avoid compiler standard library version drift. The compiler is used only for building, no Zig installation is required for runtime.
 
-- 官方下载：<https://ziglang.org/download/0.13.0/zig-windows-x86_64-0.13.0.zip>
-- ZIP SHA-256：`d859994725ef9402381e557c60bb57497215682e355204d754ee3df75ee3c158`
-- 默认工具链位置：`work/zig-bootstrap/zig-windows-x86_64-0.13.0/zig.exe`，也可给构建脚本传 `-Zig`。
+- Official download: <https://ziglang.org/download/0.13.0/zig-windows-x86_64-0.13.0.zip>
+- ZIP SHA-256:`d859994725ef9402381e557c60bb57497215682e355204d754ee3df75ee3c158`
+- The default tool chain location: `work/zig-bootstrap/zig-windows-x86_64-0.13.0/zig.exe`, you can also pass `-Zig` to the build script.
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/zig-scheduler/Build.ps1
@@ -65,56 +65,56 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/fsa-integration/Build-
 python tools/zig-scheduler/Test-Scheduler.py
 ```
 
-输出：`build/zig-scheduler/nsp-scheduler.exe`。已有原生 DLL 及其依赖仍按当前目录布局保留；本阶段没有重新打包或重新构建音频核心。
+Output: `build/zig-scheduler/nsp-scheduler.exe`. Existing native DLLs and their dependencies are still retained according to the current directory layout; there is no repackaging or rebuilding of the audio core at this stage.
 
-## 现场切换
+## Live switching
 
-默认路径现已统一为 Zig；集成构建会迁移 FSA 的调度配置并保留规则/快照，但不会重启现场进程。不要为了验证而自动重启现场后端；已有 Python 管理服务必须在明确授权的停机窗口正常退出后再接管。
+Default paths are now unified to Zig; integration builds migrate FSA's scheduling configuration and preserve rules/snapshots, but do not restart live processes. Do not automatically restart the live backend for validation; existing Python management services must exit gracefully during an explicitly authorized downtime window before taking over.
 
-在用户明确选择的停机窗口，先通过原入口正常停止 NSp 并确认指令与端点恢复，然后退出旧控制后端。FSA 退出也要确认完成，再修改正式构建目录上一级的 `final-spatial-audio.ini`：
+In the shutdown window explicitly selected by the user, first stop the NSp normally through the original entrance and confirm the command and endpoint recovery, and then exit the old control backend. FSA exit must also be confirmed and completed, and then modify `final-spatial-audio.ini` at the upper level of the official build directory:
 
 ```ini
 [NSP]
 Scheduler=Zig
 ControlExecutable=C:\path\to\NativeSpatialPipe\build\zig-scheduler\nsp-scheduler.exe
-Python=<现有遥测 Python 的绝对路径>
+Python=<absolute path to existing telemetry Python>
 ```
 
-重新启动正式 FSA 后，菜单仍然使用原接口。`ControlScript` 可保留供显式 `Scheduler=Python` 对照，但默认 Zig 不执行它。原 Python 管理后端还活着时，Zig 会拒绝接管，不会主动终止它。游戏托管脚本和单独一分钟测试也默认 Zig，Python 对照须显式选择；标准单流研究脚本保留其历史测量边界。
+After restarting the official FSA, the menu still uses the original interface. `ControlScript` can be reserved for explicit `Scheduler=Python` comparison, but Zig does not implement it by default. While the original Python management backend is still alive, Zig will refuse to take over and will not actively terminate it. Game hosting scripts and individual one-minute tests also default to Zig, Python controls must be explicitly selected; standard single-stream study scripts retain their historical measurement bounds.
 
-也可只启动独立、无音频的控制服务用于查看界面（不会启用 Hook）：
+You can also only start an independent control service without audio for viewing the interface (Hook will not be enabled):
 
 ```powershell
-build/zig-scheduler/nsp-scheduler.exe backend-start --home build/zig-trial-state --port 18765 --telemetry-port 18766 --python <python.exe绝对路径>
+build/zig-scheduler/nsp-scheduler.exe backend-start --home build/zig-trial-state --port 18765 --telemetry-port 18766 --python <python.exe absolute path>
 build/zig-scheduler/nsp-scheduler.exe request --home build/zig-trial-state --action status
 build/zig-scheduler/nsp-scheduler.exe request --home build/zig-trial-state --action exit
 ```
 
-`--home` 应使用绝对路径或从同一工作目录执行；FSA 正式接入使用原 `%LOCALAPPDATA%/NativeSpatialPipe` 状态目录。独立 UI 预览的端口不自动改写前端已保存的遥测地址。
+`--home` should use an absolute path or be executed from the same working directory; FSA formal access uses the original `%LOCALAPPDATA%/NativeSpatialPipe` state directory. The port of the standalone UI preview does not automatically overwrite the telemetry address saved by the front end.
 
-## 验证范围和限制
+## Validation Scope and Limitations
 
-DEV16 新播放路径的渲染选择分两层：`--renderer roar --renderer-mode olr`，或 `--renderer lira --lira-renderer-dll <绝对路径>`。默认 ROAR／OLR；旧 `--renderer olr` 仅为兼容简写。JSON 播放配置对应 `renderer: "roar", mode: "olr"` 或 `renderer: "lira", mode: null`，报告分别记录 `renderer` 和 `rendererMode`。本轮不接入 ROAR 其他模式；`--asio-channel-order olr` 仅指定既有声道排列。职责及历史范围见[边界更正](../../docs/archive/core/renderer-backend-boundary-20261021.md)。
+The rendering selection of DEV16's new playback path is divided into two levels: `--renderer roar --renderer-mode olr`, or `--renderer lira --lira-renderer-dll <absolute path>`. The default is ROAR/OLR; the old `--renderer olr` is only a compatibility abbreviation. The JSON playback configuration corresponds to `renderer: "roar", mode: "olr"` or `renderer: "lira", mode: null`, and the report records `renderer` and `rendererMode` respectively. This round does not access other ROAR modes; `--asio-channel-order olr` only specifies the existing channel arrangement. For the responsibilities and historical scope, see [Boundary Correction](../../docs/archive/core/renderer-backend-boundary-20261021.md).
 
-隔离测试覆盖本地 HTTP、鉴权、单实例、FSA 原生入口与关联磁盘状态、配置保存、故障恢复证据，以及普通/FullTiming 两种自有 fixture 音频流程。每轮 250 包、128 动态对象加 12 静态声道，输出 12 声道，确认 Hook 恢复、捕获与传输库释放、接收和渲染排空、快照记录。
+Isolation testing covers local HTTP, authentication, single instance, FSA native entry and associated disk status, configuration saving, failure recovery evidence, and two in-house fixture audio processes: normal/FullTiming. 250 packets per round, 128 dynamic objects plus 12 static channels, output 12 channels, confirm Hook recovery, capture and transmission library release, receive and render emptying, snapshot recording.
 
-详细结果生成在 `build/zig-scheduler/fixture-validation.json` 和 `full-timing-validation.json`。fixture 不是游戏或设备播放验收，不代表完成真实游戏延迟、长时间稳定性或 CPU 对照测试。原生管理程序的 PE 导入检查也应与现有 DLL 依赖分开理解。
+Detailed results are generated at `build/zig-scheduler/fixture-validation.json` and `full-timing-validation.json`. Fixtures are not game or device playback acceptance and do not represent completion of real-world game latency, long-term stability, or CPU benchmark testing. The native hypervisor's PE import checks should also be understood separately from existing DLL dependencies.
 
-两种模式还分别对照原 Python 控制接口提交的相同输入，前 8 个渲染块的实际 PCM 字节完全一致。原有主管线队列容量 64、其余管线容量 8、MMCSS 设置及遥测 1 MiB UDP 发送缓冲均保留。
+The two modes also compare the same input submitted by the original Python control interface, and the actual PCM bytes of the first 8 rendering blocks are exactly the same. The original main line queue capacity of 64, the remaining pipeline capacity of 8, MMCSS settings and telemetry 1 MiB UDP send buffer are retained.
 
-`Benchmark-Control.py` 仅比较独立空闲目录中的 FSA 状态查询：本机最终 20 次采样中位耗时约 Python 98.9 ms、Zig 23.1 ms。它包含程序启动与磁盘状态写入，不是核心音频或遥测计算性能结论。摘要位于 `docs/scheduler.md`。
+`Benchmark-Control.py` only compares the FSA status query in the independent free directory: the median time of the last 20 samples of this machine is about 98.9 ms for Python and 23.1 ms for Zig. It covers program startup and disk status writing, not core audio or telemetry calculation performance conclusions. The abstract is located at `docs/scheduler.md`.
 
-原生 Rust 的处理块绑定回收问题未在此次迁移中修改。旧 hookGeneration=1 的故障恢复需先由原控制入口完成；新托管会话使用 generation=2，Zig 对不支持的旧恢复状态返回未知并保持锁定。
+The problem with native Rust's handling of block binding recycling has not been modified in this migration. Failure recovery of the old hookGeneration=1 needs to be completed by the original control entry first; the new hosting session uses generation=2, and Zig returns unknown and remains locked for the unsupported old recovery state.
 
-Python 现在仅在默认托管路径中承载遥测服务，实验/测试脚本仍可以使用 Python。Zig 已是默认调度；真实会话切换需在用户授权的停机时机执行。
+Python now only hosts the telemetry service in the default hosting path, lab/test scripts can still use Python. Zig is the default schedule; real session switching needs to be performed during user-authorized downtime.
 
-## 一分钟实测与存储排期（2026-10-19）
+## One-minute actual measurement and storage schedule (2026-10-19)
 
-已完成专用 Wwise 工程 Python/Zig 各一分钟对照，每轮 6,000 次位置更新，128 动态对象 + 12 bed 声道，捕获/接收/渲染检查及 Hook/端点恢复通过。宿主加遥测整机 CPU 为 3.47%→2.92%，该组顺序对照下降约 15.8%；宿主包含原生 DSP。渲染 work P99 为 1.447→1.435 ms，不是设备端到端延迟。此结果不替代长时、异常恢复或跨机器验收。
+Completed dedicated Wwise project Python/Zig one minute comparison, 6,000 position updates per round, 128 dynamic objects + 12 bed channels, capture/receive/render checks and Hook/endpoint recovery passed. The CPU of the host plus telemetry machine is 3.47% → 2.92%, and the sequence of this group decreases by about 15.8%; the host contains a native DSP. Rendering work P99 is 1.447→1.435 ms, not device end-to-end latency. This result does not replace long-term, exception recovery, or cross-machine acceptance.
 
-开发阶段继续完整录音及约 10 Hz 的新快照记录，支持审查和回溯。12 通道 Float32/48 kHz PCM 约 8.29 GB/h，加快照已观察约 10–12 GB/h；默认用户状态目录的 `sessions/` 也承载这些大体积数据。D15 落盘治理待音频接口实际出声后实施，当前不自动关闭记录或清理。正式部署前应理解这一存储行为；完整记录仍是当前遥测文件增长选流的依赖。
+The development phase continues with full recording and new snapshot recording at approximately 10 Hz, supporting review and backtracking. 12-channel Float32/48 kHz PCM is about 8.29 GB/h, and snapshots have been observed about 10–12 GB/h; `sessions/` in the default user status directory also carries these large volumes of data. D15 disk placement management will be implemented after the audio interface actually produces sound. Recording or cleaning will not be automatically closed at this time. This storage behavior should be understood before formal deployment; complete logging is still required for current telemetry file growth and selection streams.
 
-DEV16 合并功能的统一 JSON 字段、默认值、声道顺序与只读校验入口见 [播放配置说明](../../docs/archive/core/playback-json-configuration-20261022.md)。新增 DSP、半径、自定义路由和既有输出策略字段；使用同批构建的客户端及 host，现有运行实例未替换。
+For the unified JSON fields, default values, channel order and read-only verification entry of DEV16 merge function, see [Playback Configuration Instructions](../../docs/archive/core/playback-json-configuration-20261022.md). Added DSP, radius, custom routing and existing output policy fields; use the client and host built in the same batch, and the existing running instance is not replaced.
 ## Web configuration host (2026-10-23)
 
 `nsp-scheduler.exe web-host --fsa-config <absolute FSA INI> --owner-pid <FSA PID>` runs the separate loopback-only configuration/status server on `http://127.0.0.1:8767/`. FSA starts it without opening a browser; triple-click the tray icon to open the existing frontend. The new configuration page edits the existing playback and backend JSON contracts, validates and atomically saves with a revision check. Saving never starts/restarts a session or opens an audio device. Playback changes apply on the next session; backend defaults require backend restart. Runtime control is intentionally not exposed. See [the implemented contract](../../docs/archive/decisions/web-configuration-host-20261023.md).

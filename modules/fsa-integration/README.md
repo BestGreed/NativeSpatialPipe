@@ -1,92 +1,92 @@
-# Sonic NSp / FSA 集成候选版
+# Sonic NSp / FSA Integration Candidate
 
-2026-11-08。随可选 MFT 产物构建 FSA 时使用 `Build-Integration.ps1 -FsaOnly -MediaFoundation`。运行期读取同一播放 JSON 的 `mediaFoundation.enabled`，经 Zig 启停 FSA 管理的 MFT 注册与播放器路由。输出可选 LSAC/WASAPI，端点和 Hook 仍由 FSA 管理。见 [模块边界](../../docs/core/lsac-module-integration.md)及 [MFT 构建说明](../media-foundation/README.md)。
+2026-11-08. Use `Build-Integration.ps1 -FsaOnly -MediaFoundation` when constructing FSA with optional MFT product. During runtime, the same playback JSON `mediaFoundation.enabled` is read, and MFT registration and player routing managed by FSA are started and stopped via Zig. Output is optional LSAC/WASAPI, endpoints and hooks are still managed by FSA. See [Module Boundaries](../../docs/runtime-details.md) and [MFT Build Instructions](../media-foundation/README.md).
 
-2026-10-27原生AoIP候选：播放JSON使用 `outputBackend="aoip"` 与 `aoip` 网络配置，FSA启动时即建立待命服务，捕获在同一常驻进程中挂接。停止Hook不关闭AoIP；无PCM持续静音，短时欠载重缓冲并计数。真实10秒／60秒送流及反复停止已通过，长期SRC未实现。该阶段证据见[历史验证记录](../../docs/archive/pipeline-convergence-20261027/aoip-fsa-resident-20261027.md)。
+2026-10-27 Native AoIP candidate: Play JSON using `outputBackend="aoip"` and `aoip` network configurations. The standby service is established when FSA starts, and the capture is mounted in the same resident process. Stopping Hook does not close AoIP; there is no PCM continuous mute, short-term underload buffering and counting. Real 10-second/60-second streaming and repeated stopping have been passed, but long-term SRC has not been implemented. For evidence of this stage, see Historical Verification Record (reference outside this source tree).
 
 2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/archive/core/playback-user-location-20261024.md).
 
-## 运行说明（更新2026-10-27）
+## Operating instructions (updated 2026-10-27)
 
-已接通 HT 手动准备、端点能力与 PCM 快照职责拆分、正常停止/急停反馈、ASIO 会话常驻和独立 Web API Host。原生 FSA 负责模式、Hook、端点互验及启停；Web 仅查状态、校验/保存配置。托盘连续三击打开 `http://127.0.0.1:8767/`。
+HT manual provisioning, split of endpoint capabilities and PCM snapshot responsibilities, normal stop/emergency stop feedback, ASIO session persistence and independent Web API Host are turned on. The native FSA is responsible for modes, hooks, endpoint mutual verification, and start and stop; the Web only checks the status and verifies/saves the configuration. Click the tray three times in succession to open `http://127.0.0.1:8767/`.
 
-HT Support 为手动 EDID 入口；普通启动/枚举不自动注入，缺少能力的 HT 模式按可用性隐藏。过滤和 HT 勾选状态由 FSA 枚举负责，符合条件且缺能力时才调用准备模块，写入后重载/回验；安装入口尚未实现。见[EDID 菜单](../../docs/decisions/fsa-edid-menu-20261023.md)。
+HT Support is a manual EDID entry; normal startup/enumeration is not automatically injected, and the HT mode that lacks capabilities is hidden according to availability. The filtering and HT check status are handled by FSA enumeration. The preparation module is called only when the conditions are met and the capability is lacking. It is reloaded/rechecked after writing; the installation entry has not yet been implemented. See EDID menu (reference outside this source tree).
 
-播放 JSON 已支持七布局、DSP、接线和两项 `recording` 开关。当前 Zig host 的 PCM/快照默认均不落盘；未填 `PlaybackConfig` 时先解析用户目录默认文件，并兼容旧安装目录默认文件，解析后仍没有配置才仅捕获/遥测。不能用 INI 字段空白推断 ASIO 未启用。旧 Python 对照和离线工具的录制合同单独保留。详见[播放配置](../../docs/archive/core/playback-json-configuration-20261022.md)和[旁录隔离](../../docs/archive/core/recording-isolation-20261024.md)。现行AoIP网络参数、选流与生效方式见[用户配置](../../docs/integration/aoip-user-configuration-20261027.md)。下面标日期段落为历史交付说明，不能覆盖[活跃进度](../../docs/core/active-progress.md)。
+Playback JSON has support for seven layouts, DSP, wiring and two `recording` switches. The current Zig host's PCM/snapshots are not saved to the disk by default; if `PlaybackConfig` is not filled in, the default file in the user directory will be parsed first, and it will be compatible with the default file in the old installation directory. If there is still no configuration after parsing, only capture/telemetry will be taken. A blank INI field cannot be used to infer that ASIO is not enabled. Recording contracts for legacy Python controls and offline tools remain separate. For details, see [Playback Configuration](../../docs/archive/core/playback-json-configuration-20261022.md) and [Side Recording Isolation](../../docs/archive/core/recording-isolation-20261024.md). For the current AoIP network parameters, flow selection and validation methods, see User Configuration (reference outside this source tree). The date-marked paragraph below is a historical delivery description and cannot cover [active progress](../../README.md#goals-support-and-progress).
 
-当前技术边界：FSA 为 C / Win32，默认调度为 Zig；Python 同时用于端点准备控制和独立遥测。额外枚举已迁移为 C / MinHook，不再调用 Frida。PowerShell/WinRT 仍是准备/选择/恢复辅助，不把它误称为逐包音频处理。见[当前架构](../../docs/archive/core/current-architecture.md)。
+Current technology boundaries: FSA is C/Win32, default dispatch is Zig; Python is used for both endpoint readiness control and standalone telemetry. Extra enumerations have been migrated to C/MinHook and no longer call Frida. PowerShell/WinRT is still a preparation/selection/recovery aid, don't mistake it for packet-by-packet audio processing. See [Current Architecture](../../docs/archive/core/current-architecture.md).
 
-2026-10-18。基于本机 `Final_Spatial_Audio-published` 的 `decba9b`，来源为
-[BestGreed/Final_Spatial_Audio](https://github.com/BestGreed/Final_Spatial_Audio)。
-`native/` 是该提交的源码集成副本，原许可证见 `LICENSE`；未修改原仓库或
-`D:\Final Spatial Audio` 已安装文件。上游原始构建说明仍保留，本页描述本次新增行为。
+2026-10-18. `decba9b` based on native `Final_Spatial_Audio-published`, sourced from
+[BestGreed/Final_Spatial_Audio](https://github.com/BestGreed/Final_Spatial_Audio).
+`native/` is an integrated copy of the submitted source code. For the original license, see `LICENSE`; the original repository or
+`D:\Final Spatial Audio` file installed. The original upstream build instructions are still retained, and this page describes this new behavior.
 
-## 构建与运行
+## Build and run
 
-DEV16 N12增加可选 `[NSP] PlaybackConfig=<绝对JSON路径>`，使用与桌面相同的单会话播放合同。`renderer=roar, mode=olr` 或 `renderer=lira, mode=null`，并显式指定渲染桥、ASIO模块、驱动等；该N12早期行为已被用户目录配置解析替代：当前留空时仍查找用户默认文件，只有实际无配置才仅捕获/遥测，录制默认关闭。`Configure-Scheduler.ps1 -PlaybackConfig <路径> -ControlExecutable <开发host>` 可写入指定INI；未提供PlaybackConfig参数时保留既有值，显式空值清除。只在启动时传递，停止/急停不依赖该文件。此能力要求Zig，不能静默转给旧Python调度。N12构建与测试使用隔离目录，执行本页旧的正式构建/配置命令仍应按部署时机安排。详见[N12范围、证据及剩余实机步骤](../../docs/integration/integration-round-n12-closeout-20261021.md)。
+DEV16 N12 adds optional `[NSP] PlaybackConfig=<absolute JSON path>`, using the same single-session playback contract as the desktop. `renderer=roar, mode=olr` or `renderer=lira, mode=null`, and explicitly specify the rendering bridge, ASIO module, driver, etc.; this early behavior of N12 has been replaced by user directory configuration parsing: when currently left blank, the user default file is still searched, and only capture/telemetry is performed only if there is no actual configuration, and recording is turned off by default. `Configure-Scheduler.ps1 -PlaybackConfig <path> -ControlExecutable <development host>` can be written to the specified INI; when the PlaybackConfig parameter is not provided, the existing value is retained and explicit null values are cleared. It is only passed during startup, stop/emergency stop does not depend on this file. This capability requires Zig and cannot be silently transferred to old Python scheduling. N12 builds and tests use isolated directories, and executing the old formal build/configuration commands on this page should still be scheduled according to deployment timing. For details, see N12 scope, evidence and remaining actual steps (reference outside this source tree).
 
-本目录为 NSp 专用集成源码，尚未回传 FSA 独立仓库主线。2026-10-28 起只支持 `[NSP] Scheduler=Zig`，旧 Python 控制调度器及诊断已归档；`Python`仍用于准备/遥测。`ControlExecutable` 留空时按正式构建布局解析，缺少 Zig 不回退。配置迁移清除旧 ControlScript 并保留规则、快照，不会重启服务。部署、启动顺序与验证见[Zig 调度说明](../zig-scheduler/README.md)。
+This directory is the NSp-specific integrated source code and has not yet been returned to the FSA independent warehouse mainline. Only `[NSP] Scheduler=Zig` is supported from 2026-10-28, the old Python control scheduler and diagnostics have been archived; `Python` is still used for preparation/telemetry. When `ControlExecutable` is left blank, it will be parsed according to the formal build layout. If Zig is missing, there will be no fallback. Configuration migration clears old ControlScript and retains rules and snapshots without restarting the service. For deployment, startup sequence and verification, see [Zig Scheduling Instructions](../zig-scheduler/README.md).
 
-集成版 EXE 现嵌入 `requireAdministrator` 启动清单，双击时由 Windows 请求管理员授权；已经在管理员上下文中启动时无需再次提权。测试用 EXE 不携带这份提权清单。
+The integrated version EXE is now embedded in the `requireAdministrator` startup list, and Windows will request administrator authorization when double-clicking it; there is no need to elevate the rights again when it is already started in the administrator context. The test EXE does not carry this privilege escalation list.
 
-仅更新 FSA 可给构建命令增加 `-FsaOnly`，不会重建或覆盖正在使用的 Hook／遥测 DLL。构建直接生成并检查正式的 `build/fsa-integration/bin/FinalSpatialAudio.exe`。如果 EXE 被占用则构建失败，不关闭进程，也不生成 pending 副本。
+Only updating the FSA adds `-FsaOnly` to the build command and does not rebuild or overwrite the Hook/Telemetry DLL in use. The build directly generates and checks the official `build/fsa-integration/bin/FinalSpatialAudio.exe`. If the EXE is occupied, the build fails, the process is not closed, and a pending copy is not generated.
 
-在 NSp 仓库根目录执行：
+Execute in the NSp warehouse root directory:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File modules/fsa-integration/Build-Integration.ps1
 ```
 
-产物是 `build/fsa-integration/bin/FinalSpatialAudio.exe`。构建脚本准备独立运行目录，
-第一次复制已安装 FSA 的规则和快照；每次构建以 `Configure-Scheduler.ps1` 写入默认 Zig 选择及 EXE、遥测 Python 和旧对照脚本路径。
-以后构建保留其他规则和快照。完整构建先编译 Zig，`-FsaOnly` 要求已有 Zig 产物。音频 DLL、Python、工具链仍使用本机 NSp 仓库，
-这不是可脱离仓库安装的发布包。FSA 使用原有单实例互斥量，安装版运行时候选版不会另开实例。
+The product is `build/fsa-integration/bin/FinalSpatialAudio.exe`. The build script prepares an independent running directory,
+The first copy of the rules and snapshots of the installed FSA; each build writes the default Zig selection and EXE, telemetry Python, and old control script paths as `Configure-Scheduler.ps1`.
+Additional rules and snapshots are retained for future builds. Compile Zig first for a complete build. `-FsaOnly` requires a Zig product. Audio DLL, Python, toolchain still use the native NSp repository,
+This is not a release that can be installed out of the repository. FSA uses the original single-instance mutex and will not open another instance when the installation version is running.
 
-运行请使用 `modules/fsa-integration/Start Sonic NSp.cmd`，由 Windows UAC 提权并直接启动 Sonic NSp。也可右键以管理员身份运行候选 EXE 后选择 Sonic NSp。
-备用命令为 `Start-SonicNSp.ps1 -Action Start|Stop|EmergencyStop`。
+Please use `modules/fsa-integration/Start Sonic NSp.cmd` to run, escalate privileges by Windows UAC and start Sonic NSp directly. You can also right-click and run the candidate EXE as administrator and select Sonic NSp.
+The alternate command is `Start-SonicNSp.ps1 -Action Start|Stop|EmergencyStop`.
 
-菜单显示 **Sonic NSp**，状态图标使用 **FSA 应用自己的图标**。
-初始化期间使用旋转的立体声图标；仅在 Sonic、端点及 Hook 验证成功后切换为 FSA 图标。动画帧按当前 DPI 预生成，成功、失败或停止后关闭动画计时器，常驻就绪状态不持续刷新图标。
-选中后暂停普通规则，先预检目标访问权限、保护级别、构建和依赖，再恢复并核验 Sonic，保存到独立的 Sonic 快照槽，显式启动 NSp。预检不通过时不切换音频。
-运行期间其他受支持音频模式保持可选：点击后先停止 NSp，核实 Hook 禁用、原指令恢复及后端收尾完成，再应用所选模式。停止失败或状态未知时保留锁定。自动规则切换及意图捕获仍暂停；停止和急停保持可用。
+The menu displays **Sonic NSp** and the status icon uses the **FSA application's own icon**.
+Uses the rotating stereo icon during initialization; switches to the FSA icon only after successful Sonic, endpoint, and hook verification. Animation frames are pre-generated according to the current DPI. The animation timer is turned off after success, failure or stop. The permanent ready state does not continuously refresh the icon.
+After selection, normal rules are paused, target access permissions, protection levels, builds and dependencies are pre-checked, then Sonic is restored and verified, saved to a separate Sonic snapshot slot, and NSp is explicitly started. The audio will not be switched if the preflight fails.
+Other supported audio modes remain selectable during runtime: stop the NSp after clicking, verify that hooks are disabled, original instructions restored, and backend wrap-up complete before applying the selected mode. The lock is retained on stop failure or unknown status. Automatic rule switching and intent capture remain suspended; Stop and E-Stop remain available.
 
-## 持久化与状态
+## Persistence and state
 
-本机用户状态位于 `%LOCALAPPDATA%\NativeSpatialPipe`：
+The local user status is located at `%LOCALAPPDATA%\NativeSpatialPipe`:
 
-| 文件 | 作用 |
+| File | Function |
 |---|---|
-| `config.json` | 原子保存音频配置；重启恢复设置，不自动启动音频 |
-| `session.json` | 会话 ID、输出目录、FSA 所有者和端点、状态与错误 |
-| `owner.lock` | 控制服务进程独占锁；不同端口也不能重复管理同一用户状态 |
-| `runtime.json` | 当前后端进程、地址及本地命令令牌；正常退出删除 |
-| `hook-status.json` / `.ini` | 实际查询结果；INI 带请求关联 ID 与时间，由 FSA 磁盘模块回读 |
-| `sessions/<id>/observed/hook-session.json` | Hook 目标 PID 与进程创建时间，用于防止 PID 复用误操作 |
+| `config.json` | Atomicly save audio configuration; restart to restore settings without automatically starting audio |
+| `session.json` | Session ID, output directory, FSA owner and endpoint, status and errors |
+| `owner.lock` | Control service process exclusive lock; different ports cannot repeatedly manage the same user status |
+| `runtime.json` | Current back-end process, address and local command token; delete normally by exiting |
+| `hook-status.json` / `.ini` | Actual query results; INI with request association ID and time, read back by the FSA disk module |
+| `sessions/<id>/observed/hook-session.json` | Hook target PID and process creation time, used to prevent PID reuse and misoperation |
 
-配置和状态分开：`idle → starting → running → stopping → stopped`；
-异常进入 `faulted`，控制服务重启发现未结束会话进入 `recovery-required`。
-重连页面仅恢复遥测订阅，不启动 Hook。没有数据可处于等待/过期，不能据此反复挂钩。
+Configuration and status are separated: `idle → starting → running → stopping → stopped`;
+The abnormality enters `faulted`. When the control service is restarted, it is found that the unfinished session enters `recovery-required`.
+The reconnect page only restores the telemetry subscription and does not start the Hook. No data can be waiting/expired, and it cannot be hooked repeatedly based on this.
 
-FSA 只有在 **Sonic 选择、端点身份及 Hook 工作状态都通过回读** 时显示 Sonic NSp。
-停止确认需要 Hook 禁用且原指令恢复，或原目标进程实例已退出；后者明确记录为
-`targetExited`，不伪造指令恢复读数。下游收尾和端点恢复尚未完成时继续锁定。
-新会话不会继承上次的运行状态。故障不自动重挂；用户显式停止且恢复报告完整后才能解锁。
+FSA only displays Sonic NSp if **Sonic selection, endpoint identity, and Hook job status all pass readback**.
+Stop confirmation requires Hook to be disabled and the original command to be restored, or the original target process instance to have exited; the latter is explicitly recorded as
+`targetExited`, restore readings without forging instructions. Locking continues while downstream closure and endpoint recovery have not yet completed.
+New sessions do not inherit the last running state. Failure does not automatically re-hang; the user must explicitly stop and the recovery report is complete before it can be unlocked.
 
-## 常驻、退出与急停
+## Permanent, exit and emergency stop
 
-FSA 管理的会话使用 `duration=0`，取消固定 20 分钟截止和累计捕获字节预算；
-原定时实验仍可使用有限时长。音频侧队列仍有界。常驻并不表示已通过长时间性能验收。
+FSA-managed sessions use `duration=0`, removing the fixed 20-minute cutoff and cumulative capture byte budget;
+Original timed experiments are still available for a limited time. The audio side queue is still bounded. Residency does not imply long-term performance acceptance.
 
-Hook 的保护线程持有 FSA 和原生捕获宿主进程句柄，任一退出即触发禁用和排空。
-窗口/浏览器退出不停止音频。显式退出 FSA 先请求音频停止、等待报告，必要时急停；
-FSA 进程最终退出仍有句柄保护。控制服务可常驻，音频会话不因服务重启自动恢复。
+Hook's protection thread holds the FSA and native capture host process handles, and any exit will trigger disabling and draining.
+Window/browser exit does not stop audio. Explicitly exit FSA by first requesting the audio to stop, waiting for the report, and emergency stop if necessary;
+The final exit of the FSA process is still protected by the handle. The control service can be resident, and the audio session will not be automatically restored due to service restarts.
 
-“停止 NSp”通过持久停止文件通知原编排器，按生产者停止、下游排空、端点恢复顺序收尾。
-“急停 NSp”从界面独立派发适配器，绕过正在等待的仲裁线程；先通知原生 Hook 停止，
-再查询禁用/原指令恢复，停止文件让编排器继续完成下游收尾。停止超时保留故障，
-不会杀死 `audiodg.exe` 或强制销毁仍在使用的接收器。
+"Stop NSp" notifies the original orchestrator through a persistent stop file, and ends in the order of producer stop, downstream draining, and endpoint recovery.
+"Emergency Stop NSp" dispatches the adapter independently from the interface, bypassing the waiting arbitration thread; first notifies the native Hook to stop,
+Then query the disabled/original command to restore, stop the file and let the orchestrator continue to complete the downstream finishing. Stop timeout retention fault,
+Will not kill `audiodg.exe` or force the destruction of receivers that are still in use.
 
-命令行备用入口：
+Command line alternative entry:
 
 ```powershell
 build/nsp-product/nsp-scheduler.exe status
@@ -94,18 +94,18 @@ build/nsp-product/nsp-scheduler.exe stop
 build/nsp-product/nsp-scheduler.exe emergency-stop
 ```
 
-命令应使用当前 FSA INI 的 ControlExecutable 指向的同一原生程序；上面路径是当前候选示例。不要启动归档 Python 后端来诊断现行会话。
-启动端点和 FSA PID 由 FSA 显式传入，不使用历史实验端点作为 FSA 路径的默认值。
+The command should use the same native program that the current FSA INI's ControlExecutable points to; the path above is a current candidate example. Do not start the archive Python backend to diagnose the current session.
+The launch endpoint and FSA PID are passed in explicitly by FSA, historical experimental endpoints are not used as the default for the FSA path.
 
-## 验证与边界
+## Validation and Boundaries
 
-见 [集成验收记录](../../docs/history/fsa-nsp-integration-20261018.md)。受控验收及真实 Sonic 切换、捕获、正常停止、急停和重新启动均已通过。仍未替换安装版，长期性能与跨系统兼容验收另计。
+See Integration Acceptance Record (reference outside this source tree). Controlled acceptance and real Sonic switching, capture, normal stops, emergency stops and restarts all passed. The installation version has not been replaced yet, and long-term performance and cross-system compatibility acceptance are subject to separate review.
 
-新 Hook 单独输出到 `build/native-hook-managed-v2/nsp_managed_hook_v2.dll`，避免覆盖已驻留的旧构建。
-目标内已有旧 `nsp_native_hook.dll` 时，必须经原控制器核实停止、原指令恢复与资源释放，才允许复用；旧 Hook 活动或无法核验时拒绝混用。目标中不同构建也拒绝按错误导出偏移调用。
-遇到此情况保持未知/故障状态，不能通过删除状态文件假装完成停止。
+The new Hook is exported to `build/native-hook-managed-v2/nsp_managed_hook_v2.dll` separately to avoid overwriting the old build that already resides.
+When there is an old `nsp_native_hook.dll` in the target, it must be verified by the original controller to stop, restore the original command, and release resources before reuse is allowed; mixed use is refused when the old Hook is active or cannot be verified. Different builds in the target are also rejecting calls at wrong export offsets.
+In this case it remains in an unknown/faulty state and cannot be stopped by pretending to be complete by deleting the status file.
 
-DEV16 的 `[NSP] PlaybackConfig` 文件可统一设置公共 DSP、ROAR/OLR 半径、物理路由与既有 ASIO 输出策略。修改后在下一次启动生效，端点互验继续归 FSA。详见 [播放 JSON 配置及示例](../../docs/archive/core/playback-json-configuration-20261022.md)。旧 host 不识别新增字段，应使用对应的新构建；本轮未替换现有 FSA 实例。
-## Web 配置入口（2026-10-23）
+DEV16's `[NSP] PlaybackConfig` file can uniformly set public DSP, ROAR/OLR radius, physical routing and existing ASIO output strategies. The modification will take effect on the next startup, and endpoint mutual verification will continue to belong to FSA. For details, see [Playback JSON configuration and examples](../../docs/archive/core/playback-json-configuration-20261022.md). The old host does not recognize the new fields and should use the corresponding new build; the existing FSA instance is not replaced in this round.
+## Web configuration portal (2026-10-23)
 
-FSA 启动时创建独立的 Zig Web API Host，地址 `http://127.0.0.1:8767/`，不自动弹浏览器。托盘连续三击左键用默认浏览器打开原可视化首页；首页新增“配置”入口。单击/双击待多击窗口结束后显示原菜单，右键立即显示菜单。Web 仅查询状态、校验并保存现有 JSON，不提供启停、Hook、EDID 或其他控制。管理员 FSA 使用普通用户令牌启动 HTTP Host；服务失败不影响 FSA。详见 [实现边界与使用说明](../../docs/archive/decisions/web-configuration-host-20261023.md)。
+When FSA starts, it creates an independent Zig Web API Host with address `http://127.0.0.1:8767/` and does not automatically launch the browser. Left-click the tray three times in a row to open the original visual homepage with the default browser; a new "Configuration" entry is added to the homepage. Click/double-click to display the original menu after the multi-click window ends, and right-click to display the menu immediately. Web only queries status, verifies and saves existing JSON, and does not provide start/stop, Hook, EDID or other controls. The administrator FSA starts the HTTP Host using a normal user token; service failure does not affect the FSA. See [Implementation Boundaries and Usage Instructions](../../docs/archive/decisions/web-configuration-host-20261023.md) for details.
