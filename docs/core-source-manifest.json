@@ -196,7 +196,7 @@
     },
     {
       "path": "docs/history/native-architecture-baseline-20261024.md",
-      "sha256": "eb2be481b33256551e2881b295e02789da299545b9e5dfd659af668bf054c10f",
+      "sha256": "68ca81a3f145a677f29422ebecc34824c340dcf17f704d0381e1ef3e38db920a",
       "sourceSha256": "3ad8aa7b36b11c41865e0e9947f06ac26362be16b654ac42c70e1eb5b52ceca2",
       "adaptation": "Public dependency layout, source-only documentation, or omitted private evidence"
     },

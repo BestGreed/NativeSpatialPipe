@@ -33,7 +33,7 @@ Zig 或保留的 Python 控制层创建进程/映射、选择模式并汇总结�
 
 ## 运行与构建
 
-当前捕获入口：`python tools/endpoint-probe/Run-Native.py F:/TMPE/<new-run> <audiodg-pid> --duration 90`。调用前须完成系统版本核验和 H16/Sonic 配置；入口不自行切换端点。默认启用捕获、接收、渲染三条自有线程 MMCSS（显式设置 NSP_RENDER_MMCSS=1）；`--normal-scheduling` 明确关闭三条线程的 MMCSS，为普通调度对照，`--full-timing` 使用独立诊断 DLL。该入口限定单流和 480 帧，不启用原始 NSP 录制。
+当前捕获入口：`python tools/endpoint-probe/Run-Native.py <output-directory> <audiodg-pid> --duration 90`。调用前须完成系统版本核验和 H16/Sonic 配置；入口不自行切换端点。默认启用捕获、接收、渲染三条自有线程 MMCSS（显式设置 NSP_RENDER_MMCSS=1）；`--normal-scheduling` 明确关闭三条线程的 MMCSS，为普通调度对照，`--full-timing` 使用独立诊断 DLL。该入口限定单流和 480 帧，不启用原始 NSP 录制。
 
 H16/Wwise 一分钟实验使用 `Run-CaptureScheduler.ps1`；它包含端点设置/恢复和完整负载校验。全节点普通/双 MMCSS 对照由 `Run-FullLatencyComparison.ps1` 编排。启动时检查单 Wwise 实例及 WAAPI 监听归属。
 
