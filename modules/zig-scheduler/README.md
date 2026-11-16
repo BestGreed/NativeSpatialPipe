@@ -29,7 +29,7 @@ Zig负责FSA控制协议、会话、所有者与停止证明、配置校验、AS
 | `validate-playback --playback-config <absolute-json>` | 不打开设备的配置校验与有效配置说明 |
 | 后端`select-output`动作 | AoIP运行时选流，不等于后端热切换；需匹配owner/session |
 
-配置见 [JSON Schema](playback.schema.json)、[模块开关](../../docs/core/playback-json-configuration-20261022.md#可选模块开关)与 [WASAPI 示例](playback.wasapi.example.json)。`validate-playback` 分别报告核心 `outputLayout` 和物理 `deviceOutputLayout`。修改输出路径后重新建立对应会话或 AoIP 常驻实例。AoIP 运行时选流使用独立接口。
+配置见 [JSON Schema](playback.schema.json)、[模块开关](../../docs/archive/core/playback-json-configuration-20261022.md#可选模块开关)与 [WASAPI 示例](playback.wasapi.example.json)。`validate-playback` 分别报告核心 `outputLayout` 和物理 `deviceOutputLayout`。修改输出路径后重新建立对应会话或 AoIP 常驻实例。AoIP 运行时选流使用独立接口。
 
 通用用户目录为`%LOCALAPPDATA%/NativeSpatialPipe`，默认播放文件`playback.json`；明确的FSA INI PlaybackConfig可覆盖，当前AoIP候选使用同目录`output.json`。`--home`用于显式隔离，不能拿隔离测试状态冒充实际用户会话。
 

@@ -12,9 +12,9 @@ WASAPI 逐块诊断通过 `Build-Wasapi.ps1 -DiagnosticTrace -TargetDirectory bu
 
 历史实机验证使用 `tools/lsac/Run-NotebookJoc.py` 使用电影与电视 → MFT JOC 解码 → 标准 Windows 空间对象提交 → NSp audiodg 捕获 → ROAR OLR 2.0 → Rust 池 → 笔记本 WASAPI → EqAPO。`build/lsac/notebook-joc-live-008/report.json` 记录通过的有界试播及撤销状态；默认诱饵 DTS:X HT 端点保持不变，临时 MFT 注册和控制器在退出时撤销。`Test-WasapiPool.py` 为独立设备消费/租借压力验证，`Test-RoarStereo.py` 为不打开设备的真实 OLR Stereo 验证。当前 FIFO 曾达到 64 个 480 帧块，不能把这轮结果宣称为低延迟或已完成音画同步验收。
 
-2026-10-24：两后端支持 5.1.2、5.1.4、7.1.2、7.1.4、7.1.6、9.1.4、9.1.6 的共享声道顺序，唯一预设表为 `contracts/output-layouts.json`。LIRA 新增 `nsp_spatial_create_layout`，旧 create 默认 7.1.4；512 帧固有延迟及房间行为保持独立。ROAR 6DoF 槽仅预留。见[布局合同](../../docs/core/output-layout-presets-20261023.md)。
+2026-10-24：两后端支持 5.1.2、5.1.4、7.1.2、7.1.4、7.1.6、9.1.4、9.1.6 的共享声道顺序，唯一预设表为 `contracts/output-layouts.json`。LIRA 新增 `nsp_spatial_create_layout`，旧 create 默认 7.1.4；512 帧固有延迟及房间行为保持独立。ROAR 6DoF 槽仅预留。见[布局合同](../../docs/archive/core/output-layout-presets-20261023.md)。
 
-公共 DSP、录音和遥测归档归 NSP 宿主/桥接层；ASIO 只承担设备职责，会话内常驻。旁录默认关闭，开启后也不在输出交付或设备回调线程写盘。设备 DLL 须配套 `libc++.dll`、`libunwind.dll` 并从模块目录加载。见[旁录隔离](../../docs/core/recording-isolation-20261024.md)。
+公共 DSP、录音和遥测归档归 NSP 宿主/桥接层；ASIO 只承担设备职责，会话内常驻。旁录默认关闭，开启后也不在输出交付或设备回调线程写盘。设备 DLL 须配套 `libc++.dll`、`libunwind.dll` 并从模块目录加载。见[旁录隔离](../../docs/archive/core/recording-isolation-20261024.md)。
 
 只保留从 Spatial ASIO 抽离且供 NSP 使用的模块：LIRA C ABI/核心、ASIO 设备 C ABI/核心、必要公共头文件、系数/SDK及隔离测试。两套生产 DLL 分别构建，不链接旧完整引擎。
 

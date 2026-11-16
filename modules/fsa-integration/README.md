@@ -4,7 +4,7 @@
 
 2026-10-27原生AoIP候选：播放JSON使用 `outputBackend="aoip"` 与 `aoip` 网络配置，FSA启动时即建立待命服务，捕获在同一常驻进程中挂接。停止Hook不关闭AoIP；无PCM持续静音，短时欠载重缓冲并计数。真实10秒／60秒送流及反复停止已通过，长期SRC未实现。该阶段证据见[历史验证记录](../../docs/archive/pipeline-convergence-20261027/aoip-fsa-resident-20261027.md)。
 
-2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/core/playback-user-location-20261024.md).
+2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/archive/core/playback-user-location-20261024.md).
 
 ## 运行说明（更新2026-10-27）
 
@@ -12,9 +12,9 @@
 
 HT Support 为手动 EDID 入口；普通启动/枚举不自动注入，缺少能力的 HT 模式按可用性隐藏。过滤和 HT 勾选状态由 FSA 枚举负责，符合条件且缺能力时才调用准备模块，写入后重载/回验；安装入口尚未实现。见[EDID 菜单](../../docs/decisions/fsa-edid-menu-20261023.md)。
 
-播放 JSON 已支持七布局、DSP、接线和两项 `recording` 开关。当前 Zig host 的 PCM/快照默认均不落盘；未填 `PlaybackConfig` 时先解析用户目录默认文件，并兼容旧安装目录默认文件，解析后仍没有配置才仅捕获/遥测。不能用 INI 字段空白推断 ASIO 未启用。旧 Python 对照和离线工具的录制合同单独保留。详见[播放配置](../../docs/core/playback-json-configuration-20261022.md)和[旁录隔离](../../docs/core/recording-isolation-20261024.md)。现行AoIP网络参数、选流与生效方式见[用户配置](../../docs/integration/aoip-user-configuration-20261027.md)。下面标日期段落为历史交付说明，不能覆盖[活跃进度](../../docs/core/active-progress.md)。
+播放 JSON 已支持七布局、DSP、接线和两项 `recording` 开关。当前 Zig host 的 PCM/快照默认均不落盘；未填 `PlaybackConfig` 时先解析用户目录默认文件，并兼容旧安装目录默认文件，解析后仍没有配置才仅捕获/遥测。不能用 INI 字段空白推断 ASIO 未启用。旧 Python 对照和离线工具的录制合同单独保留。详见[播放配置](../../docs/archive/core/playback-json-configuration-20261022.md)和[旁录隔离](../../docs/archive/core/recording-isolation-20261024.md)。现行AoIP网络参数、选流与生效方式见[用户配置](../../docs/integration/aoip-user-configuration-20261027.md)。下面标日期段落为历史交付说明，不能覆盖[活跃进度](../../docs/core/active-progress.md)。
 
-当前技术边界：FSA 为 C / Win32，默认调度为 Zig；Python 同时用于端点准备控制和独立遥测。额外枚举已迁移为 C / MinHook，不再调用 Frida。PowerShell/WinRT 仍是准备/选择/恢复辅助，不把它误称为逐包音频处理。见[当前架构](../../docs/core/current-architecture.md)。
+当前技术边界：FSA 为 C / Win32，默认调度为 Zig；Python 同时用于端点准备控制和独立遥测。额外枚举已迁移为 C / MinHook，不再调用 Frida。PowerShell/WinRT 仍是准备/选择/恢复辅助，不把它误称为逐包音频处理。见[当前架构](../../docs/archive/core/current-architecture.md)。
 
 2026-10-18。基于本机 `Final_Spatial_Audio-published` 的 `decba9b`，来源为
 [BestGreed/Final_Spatial_Audio](https://github.com/BestGreed/Final_Spatial_Audio)。
@@ -105,7 +105,7 @@ build/nsp-product/nsp-scheduler.exe emergency-stop
 目标内已有旧 `nsp_native_hook.dll` 时，必须经原控制器核实停止、原指令恢复与资源释放，才允许复用；旧 Hook 活动或无法核验时拒绝混用。目标中不同构建也拒绝按错误导出偏移调用。
 遇到此情况保持未知/故障状态，不能通过删除状态文件假装完成停止。
 
-DEV16 的 `[NSP] PlaybackConfig` 文件可统一设置公共 DSP、ROAR/OLR 半径、物理路由与既有 ASIO 输出策略。修改后在下一次启动生效，端点互验继续归 FSA。详见 [播放 JSON 配置及示例](../../docs/core/playback-json-configuration-20261022.md)。旧 host 不识别新增字段，应使用对应的新构建；本轮未替换现有 FSA 实例。
+DEV16 的 `[NSP] PlaybackConfig` 文件可统一设置公共 DSP、ROAR/OLR 半径、物理路由与既有 ASIO 输出策略。修改后在下一次启动生效，端点互验继续归 FSA。详见 [播放 JSON 配置及示例](../../docs/archive/core/playback-json-configuration-20261022.md)。旧 host 不识别新增字段，应使用对应的新构建；本轮未替换现有 FSA 实例。
 ## Web 配置入口（2026-10-23）
 
-FSA 启动时创建独立的 Zig Web API Host，地址 `http://127.0.0.1:8767/`，不自动弹浏览器。托盘连续三击左键用默认浏览器打开原可视化首页；首页新增“配置”入口。单击/双击待多击窗口结束后显示原菜单，右键立即显示菜单。Web 仅查询状态、校验并保存现有 JSON，不提供启停、Hook、EDID 或其他控制。管理员 FSA 使用普通用户令牌启动 HTTP Host；服务失败不影响 FSA。详见 [实现边界与使用说明](../../docs/decisions/web-configuration-host-20261023.md)。
+FSA 启动时创建独立的 Zig Web API Host，地址 `http://127.0.0.1:8767/`，不自动弹浏览器。托盘连续三击左键用默认浏览器打开原可视化首页；首页新增“配置”入口。单击/双击待多击窗口结束后显示原菜单，右键立即显示菜单。Web 仅查询状态、校验并保存现有 JSON，不提供启停、Hook、EDID 或其他控制。管理员 FSA 使用普通用户令牌启动 HTTP Host；服务失败不影响 FSA。详见 [实现边界与使用说明](../../docs/archive/decisions/web-configuration-host-20261023.md)。

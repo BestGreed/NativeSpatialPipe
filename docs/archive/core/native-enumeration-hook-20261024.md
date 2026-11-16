@@ -1,4 +1,4 @@
-> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
 # 额外端点枚举迁移到原生 MinHook
 

@@ -1,4 +1,4 @@
-> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
 # 当前架构与技术栈边界
 

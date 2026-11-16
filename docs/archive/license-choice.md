@@ -1,8 +1,8 @@
-> **Retired documentation.** This page records an earlier implementation. See the [current documentation](README.md).
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
 
 # License choice
 
-> Scope update, 2026-10-24: the Apache rationale below applies to original NSP contributions. The current source also contains extracted GPL-3.0-only ASIO/device SDK scope and separate FSA/artwork terms. It is not an Apache-only combination. The authoritative file/module inventory is [LICENSING.md](../LICENSING.md); preserve all source notices. This update does not change those licenses.
+> Scope update, 2026-10-24: the Apache rationale below applies to original NSP contributions. The current source also contains extracted GPL-3.0-only ASIO/device SDK scope and separate FSA/artwork terms. It is not an Apache-only combination. The authoritative file/module inventory is [LICENSING.md](../../LICENSING.md); preserve all source notices. This update does not change those licenses.
 
 Original project contributions use Apache-2.0. This permissive license supports downstream renderer integrations, commercial use and modified distributions while requiring preservation of applicable notices. It includes an express contributor patent grant limited to the claims described by the license, and does not require downstream modifications to be published.
 

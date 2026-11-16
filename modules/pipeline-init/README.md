@@ -2,7 +2,7 @@
 
 入口为 `pipeline.py`，供 FSA、NSp 启动脚本和独立命令行调用。所有命令输出 JSON，失败返回非零。控制层使用现有 Windows Python；枚举注入由 `build/enum-hook/nsp_enum_control.exe` 和 `nsp_enum_hook.dll` 执行，与音频捕获共用固定版本 MinHook，不再加载 Frida 或 JS 注入代理。`inspect` 仍使用 `work/OemEndpointProbe.exe`。枚举 hook 和 EDID 写入需要管理员权限；模块不自行弹 UAC。
 
-运行 `powershell -File modules/pipeline-init/Build-EnumHook.ps1` 构建；公开构建可传 `-LlvmBin <LLVM-MinGW bin>`。完整 FSA 集成构建也会构建此模块。三处 AudioSrv 拦截仍独立于 audiodg 的 PCM 捕获拦截：统一的是原生注入和 MinHook 技术栈，不混合两者的生命周期或数据。见[原生枚举 Hook](../../docs/core/native-enumeration-hook-20261024.md)。
+运行 `powershell -File modules/pipeline-init/Build-EnumHook.ps1` 构建；公开构建可传 `-LlvmBin <LLVM-MinGW bin>`。完整 FSA 集成构建也会构建此模块。三处 AudioSrv 拦截仍独立于 audiodg 的 PCM 捕获拦截：统一的是原生注入和 MinHook 技术栈，不混合两者的生命周期或数据。见[原生枚举 Hook](../../docs/archive/core/native-enumeration-hook-20261024.md)。
 
 ## 独立诊断工具
 

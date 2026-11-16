@@ -1,4 +1,4 @@
-> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
 # ASIO 模块依赖部署与启动修复
 

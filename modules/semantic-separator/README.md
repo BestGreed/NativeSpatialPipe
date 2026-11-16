@@ -8,7 +8,7 @@ Build CPU Joint with `Build-JointLive.ps1 -Cpu`. Its OpenVINO SDK defaults to `w
 
 Build the Radeon path with `Build-JointLive.ps1 -DirectML`. It stages `onnxruntime.dll`, `DirectML.dll`, `onnxruntime_providers_shared.dll`, and `libunwind.dll` beside `NSP.Joint480.dll`. Running the script without `-Cpu` or `-DirectML` builds the Intel NPU variant. Select the installed backend with `wasapiUpmix.dllPath`.
 
-An explicitly configured `cpuFallbackDll` remains available for builds with a separate primary backend. Outstanding tickets retain their original backend, and blocks that miss the deadline use original PCM. See [playback configuration](../../docs/core/playback-json-configuration-20261022.md#可选模块开关) and [validation and buffer ownership](../../docs/core/lsac-module-integration.md).
+An explicitly configured `cpuFallbackDll` remains available for builds with a separate primary backend. Outstanding tickets retain their original backend, and blocks that miss the deadline use original PCM. See [playback configuration](../../docs/archive/core/playback-json-configuration-20261022.md#可选模块开关) and [validation and buffer ownership](../../docs/core/lsac-module-integration.md).
 
 ## Earlier diagnostic backends
 

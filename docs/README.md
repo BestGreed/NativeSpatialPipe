@@ -11,4 +11,4 @@
 - [LSAC stereo DSP adapter](lsac-adapter.md)
 - [Source provenance](alpha-dev.md)
 - [License scope](../LICENSING.md)
-- [Retired documentation](retired.md)
+- [Retired documentation](archive/README.md)

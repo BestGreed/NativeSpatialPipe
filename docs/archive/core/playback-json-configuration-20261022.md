@@ -1,4 +1,4 @@
-> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
 # DEV16 合并功能与播放 JSON 配置
 
@@ -31,7 +31,7 @@
 
 此命令检查字段、范围、数组长度和组合约束，并打印默认值及有效声道顺序；不保证 DLL 存在、导出完整或驱动支持某采样率/缓冲尺寸。运行时继续检查这些条件。文件使用 UTF-8，支持 UTF-8 BOM；不支持 UTF-16。未知字段报错。
 
-示例：[中性 ROAR/OLR 配置](../../tools/zig-scheduler/playback.example.json)。先替换 DLL 路径和驱动 CLSID。编辑器可关联 [JSON Schema](../../tools/zig-scheduler/playback.schema.json)；不要向播放文件插入 `$schema` 字段，运行时严格拒绝未知字段。最终以运行时校验为准。
+示例：[中性 ROAR/OLR 配置](../../../tools/zig-scheduler/playback.example.json)。先替换 DLL 路径和驱动 CLSID。编辑器可关联 [JSON Schema](../../../tools/zig-scheduler/playback.schema.json)；不要向播放文件插入 `$schema` 字段，运行时严格拒绝未知字段。最终以运行时校验为准。
 
 ## 功能与字段对应
 

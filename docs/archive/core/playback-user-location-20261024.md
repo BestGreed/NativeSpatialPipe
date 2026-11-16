@@ -1,4 +1,4 @@
-> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
 # 播放配置迁移到用户目录
 

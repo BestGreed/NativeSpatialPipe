@@ -1,8 +1,8 @@
 # NSp Zig 调度层
 
-当前技术栈与文档权威入口见[架构](../../docs/core/current-architecture.md)。Zig 负责默认调度和公共 DSP；Python 仍用于准备控制与独立遥测，PowerShell/WinRT 仍执行系统互操作。下方 DEV16 分轮日志只作历史证据，其中“未接线”、固定布局、旧 WPF 或有限播放策略不构成当前待办，不得重新引入产品链。
+当前技术栈与文档权威入口见[架构](../../docs/archive/core/current-architecture.md)。Zig 负责默认调度和公共 DSP；Python 仍用于准备控制与独立遥测，PowerShell/WinRT 仍执行系统互操作。下方 DEV16 分轮日志只作历史证据，其中“未接线”、固定布局、旧 WPF 或有限播放策略不构成当前待办，不得重新引入产品链。
 
-2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/core/playback-user-location-20261024.md).
+2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/archive/core/playback-user-location-20261024.md).
 
 ## 当前实现（2026-10-24）
 
@@ -12,15 +12,15 @@
 
 默认完整半径映射 `scaled/1`。ASIO 会话内常驻，无输入时静音；旧首包/重缓冲超时字段保留但不生效。模块运行库从 DLL 目录加载。已完成有限实机启停，14/16 路实际接线、6DoF 插槽启用及长期稳定性另验。
 
-参见[布局](../../docs/core/output-layout-presets-20261023.md)、[旁录与 ABI](../../docs/core/recording-isolation-20261024.md)、本轮验证（开发参考未随公开源码提供）。下方 N05–N12 的“未部署/未接线”只描述当时状态。
+参见[布局](../../docs/archive/core/output-layout-presets-20261023.md)、[旁录与 ABI](../../docs/archive/core/recording-isolation-20261024.md)、本轮验证（开发参考未随公开源码提供）。下方 N05–N12 的“未部署/未接线”只描述当时状态。
 
 2026-10-23 启动修复：默认渲染桥、preflight 和 Web 候选路径统一为 `build/roar-native/release/nsp_roar_bridge.dll`，支持当前默认完整半径映射。无 Hook 身份记录的启动失败须通过进程退出、端点恢复及实时 Hook 基线证据后才解除锁定，原失败报告保留。DTS:X HT 实机启动/停止闭环通过，见 修复与验证（开发参考未随公开源码提供）。
 
-2026-10-23：已修正 [ASIO 会话寿命](../../docs/decisions/asio-session-lifetime-20261023.md)：输入缺席时持续静音回调，不再触发首包等待、重缓冲超时或次数退出。显式停止仍有排空期限，设备和捕获/传输故障仍须安全退出。旧超时 JSON 字段保留解析兼容，新的有效策略通过 `effectiveOutputLifecycle` / `playbackPolicy` 报告。此更新替代下文历史轮次中的有限播放策略。
+2026-10-23：已修正 [ASIO 会话寿命](../../docs/archive/decisions/asio-session-lifetime-20261023.md)：输入缺席时持续静音回调，不再触发首包等待、重缓冲超时或次数退出。显式停止仍有排空期限，设备和捕获/传输故障仍须安全退出。旧超时 JSON 字段保留解析兼容，新的有效策略通过 `effectiveOutputLifecycle` / `playbackPolicy` 报告。此更新替代下文历史轮次中的有限播放策略。
 
 **当前状态（2026-10-23，alpha-dev）：** N03–N12 已完成限定开发集成，FSA 参数已接通，ROAR／OLR 与 LIRA 共用公共输出和 ASIO；DVS 12 路数字回送及两组 Wwise HT 实测已完成。池内 DSP／bypass 和池块租借已接通，临时 WPF 已弃用。ASIO 已改为会话内常驻送流；独立 Web API Host 和图形配置页已实现，仅读状态、读写配置，不提供运行控制。D15 与 OG27QH EDID 驱动重载实机回归等仍单独跟踪。以下按轮次排列的“尚未接线／未做真实播放”描述仅对应当时阶段，不能覆盖当前状态。
 
-公共 DSP 已前移到 Rust 输出池块，并支持 `outputProcessing.bypass` 及中性配置自动跳过。设备 owner 通过池块租借提交，移除 Zig PCM 队列和 scratch 复制；ASIO 内部算法不变。成套候选及验证见 [输出池记录](../../docs/core/output-pool-processing-20261022.md)。
+公共 DSP 已前移到 Rust 输出池块，并支持 `outputProcessing.bypass` 及中性配置自动跳过。设备 owner 通过池块租借提交，移除 Zig PCM 队列和 scratch 复制；ASIO 内部算法不变。成套候选及验证见 [输出池记录](../../docs/archive/core/output-pool-processing-20261022.md)。
 
 DEV16 N11 曾增加独立桌面客户端和可选会话 `playback` 配置；旧 FSA 请求保持兼容，其新参数在 N12 接线。**临时 WPF 桌面已于 2026-10-22 弃用**，会话与端点管理以 FSA 为准；公共播放配置和控制接口继续保留。原因与历史边界见 已弃用临时桌面（开发参考未随公开源码提供） 和 N11交付记录（开发参考未随公开源码提供）。
 
@@ -94,7 +94,7 @@ build/zig-scheduler/nsp-scheduler.exe request --home build/zig-trial-state --act
 
 ## 验证范围和限制
 
-DEV16 新播放路径的渲染选择分两层：`--renderer roar --renderer-mode olr`，或 `--renderer lira --lira-renderer-dll <绝对路径>`。默认 ROAR／OLR；旧 `--renderer olr` 仅为兼容简写。JSON 播放配置对应 `renderer: "roar", mode: "olr"` 或 `renderer: "lira", mode: null`，报告分别记录 `renderer` 和 `rendererMode`。本轮不接入 ROAR 其他模式；`--asio-channel-order olr` 仅指定既有声道排列。职责及历史范围见[边界更正](../../docs/core/renderer-backend-boundary-20261021.md)。
+DEV16 新播放路径的渲染选择分两层：`--renderer roar --renderer-mode olr`，或 `--renderer lira --lira-renderer-dll <绝对路径>`。默认 ROAR／OLR；旧 `--renderer olr` 仅为兼容简写。JSON 播放配置对应 `renderer: "roar", mode: "olr"` 或 `renderer: "lira", mode: null`，报告分别记录 `renderer` 和 `rendererMode`。本轮不接入 ROAR 其他模式；`--asio-channel-order olr` 仅指定既有声道排列。职责及历史范围见[边界更正](../../docs/archive/core/renderer-backend-boundary-20261021.md)。
 
 隔离测试覆盖本地 HTTP、鉴权、单实例、FSA 原生入口与关联磁盘状态、配置保存、故障恢复证据，以及普通/FullTiming 两种自有 fixture 音频流程。每轮 250 包、128 动态对象加 12 静态声道，输出 12 声道，确认 Hook 恢复、捕获与传输库释放、接收和渲染排空、快照记录。
 
@@ -114,7 +114,7 @@ Python 现在仅在默认托管路径中承载遥测服务，实验/测试脚本
 
 开发阶段继续完整录音及约 10 Hz 的新快照记录，支持审查和回溯。12 通道 Float32/48 kHz PCM 约 8.29 GB/h，加快照已观察约 10–12 GB/h；默认用户状态目录的 `sessions/` 也承载这些大体积数据。D15 落盘治理待音频接口实际出声后实施，当前不自动关闭记录或清理。正式部署前应理解这一存储行为；完整记录仍是当前遥测文件增长选流的依赖。
 
-DEV16 合并功能的统一 JSON 字段、默认值、声道顺序与只读校验入口见 [播放配置说明](../../docs/core/playback-json-configuration-20261022.md)。新增 DSP、半径、自定义路由和既有输出策略字段；使用同批构建的客户端及 host，现有运行实例未替换。
+DEV16 合并功能的统一 JSON 字段、默认值、声道顺序与只读校验入口见 [播放配置说明](../../docs/archive/core/playback-json-configuration-20261022.md)。新增 DSP、半径、自定义路由和既有输出策略字段；使用同批构建的客户端及 host，现有运行实例未替换。
 ## Web configuration host (2026-10-23)
 
-`nsp-scheduler.exe web-host --fsa-config <absolute FSA INI> --owner-pid <FSA PID>` runs the separate loopback-only configuration/status server on `http://127.0.0.1:8767/`. FSA starts it without opening a browser; triple-click the tray icon to open the existing frontend. The new configuration page edits the existing playback and backend JSON contracts, validates and atomically saves with a revision check. Saving never starts/restarts a session or opens an audio device. Playback changes apply on the next session; backend defaults require backend restart. Runtime control is intentionally not exposed. See [the implemented contract](../../docs/decisions/web-configuration-host-20261023.md).
+`nsp-scheduler.exe web-host --fsa-config <absolute FSA INI> --owner-pid <FSA PID>` runs the separate loopback-only configuration/status server on `http://127.0.0.1:8767/`. FSA starts it without opening a browser; triple-click the tray icon to open the existing frontend. The new configuration page edits the existing playback and backend JSON contracts, validates and atomically saves with a revision check. Saving never starts/restarts a session or opens an audio device. Playback changes apply on the next session; backend defaults require backend restart. Runtime control is intentionally not exposed. See [the implemented contract](../../docs/archive/decisions/web-configuration-host-20261023.md).

@@ -1,4 +1,4 @@
-> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
 > Historical snapshot archived 2026-10-24. Superseded by [current architecture](../core/current-architecture.md). Paths, mandatory recording, performance numbers and build status below describe their original dates only.
 

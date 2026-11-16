@@ -1,14 +1,14 @@
 # NSp 声航 / 声谱前端
 
-2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/core/playback-user-location-20261024.md).
+2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/archive/core/playback-user-location-20261024.md).
 
 ## 当前入口与配置
 
-2026-11-08 的播放配置区分别显示核心布局与 LSAC 的双声道设备配置。信号链面板展示渲染及设备布局、MFT 状态、PCM 捕获、浏览器身份、Joint 后端及回退和 WASAPI 写入。可选模块的字段与约束见[播放配置](../../docs/core/playback-json-configuration-20261022.md#可选模块开关)。
+2026-11-08 的播放配置区分别显示核心布局与 LSAC 的双声道设备配置。信号链面板展示渲染及设备布局、MFT 状态、PCM 捕获、浏览器身份、Joint 后端及回退和 WASAPI 写入。可选模块的字段与约束见[播放配置](../../docs/archive/core/playback-json-configuration-20261022.md#可选模块开关)。
 
 FSA 随启的独立 Zig Web API Host 默认使用 `http://127.0.0.1:8767/`，托盘连续三击由默认浏览器打开。首页「配置」支持播放/后端 JSON 表单、renderer、七布局、DSP/bypass、按声道名称展示的设备接线和两项诊断录制开关。PCM 旁录及遥测快照均默认关闭，关闭归档不影响实时遥测、内存历史及可视化。设备通道在界面从 1 开始，在 JSON 中从 0 开始。
 
-配置由 `/api/web/` 读取、校验和按修订保存，浏览器不存主副本；播放设置下次启动会话生效，后端默认值需后端重启。Web 不控制 FSA、Hook、EDID 或播放。布局切换按声道名迁移校准/接线，ROAR 6DoF 槽不可选用。见[Web 合同](../../docs/decisions/web-configuration-host-20261023.md)、[布局](../../docs/core/output-layout-presets-20261023.md)、[旁录](../../docs/core/recording-isolation-20261024.md)。
+配置由 `/api/web/` 读取、校验和按修订保存，浏览器不存主副本；播放设置下次启动会话生效，后端默认值需后端重启。Web 不控制 FSA、Hook、EDID 或播放。布局切换按声道名迁移校准/接线，ROAR 6DoF 槽不可选用。见[Web 合同](../../docs/archive/decisions/web-configuration-host-20261023.md)、[布局](../../docs/archive/core/output-layout-presets-20261023.md)、[旁录](../../docs/archive/core/recording-isolation-20261024.md)。
 
 下方 `serve.py` 的 `8765` 是独立预览入口，不启动配置 API、捕获或 ASIO；FSA Web Host 运行时不要让预览服务占用 `8767`。原模拟、回放与声航/声谱入口保持。
 
@@ -107,6 +107,6 @@ python modules/visualization-frontend/probe-voice.py
 本机 QuickJS 合成测试对 19 点连接曲线重复 19 万点计算，加入惯性后的单点处理约由 2.04 微秒增至 2.55 微秒；这是解释器压力测试，不是浏览器 CPU/GPU 帧时间。真实浏览器性能和视觉强弱仍需在回放页面观察。
 ## FSA 配置入口（2026-10-23）
 
-FSA 自动启动独立 Web API Host 后，访问 `http://127.0.0.1:8767/`，或连续三击 FSA 托盘图标。可视化首页新增“配置”链接，进入 `configuration.html`，提供既有播放、ASIO、DSP、路由、半径映射和后端 JSON 的图形编辑与完整 JSON 编辑。配置保存不控制运行，原绘图和遥测逻辑不变。单独使用旧的只读预览服务时，配置页会提示 API 不可用。详见 [Web Host 合同](../../docs/decisions/web-configuration-host-20261023.md)。
+FSA 自动启动独立 Web API Host 后，访问 `http://127.0.0.1:8767/`，或连续三击 FSA 托盘图标。可视化首页新增“配置”链接，进入 `configuration.html`，提供既有播放、ASIO、DSP、路由、半径映射和后端 JSON 的图形编辑与完整 JSON 编辑。配置保存不控制运行，原绘图和遥测逻辑不变。单独使用旧的只读预览服务时，配置页会提示 API 不可用。详见 [Web Host 合同](../../docs/archive/decisions/web-configuration-host-20261023.md)。
 
 纯模型/DOM 合同验证：`npm run test:configuration` 与 `npm run test:configuration-page`；不需要浏览器自动操作。

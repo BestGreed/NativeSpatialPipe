@@ -1,10 +1,10 @@
 # ASIO 输出模块接入检查
 
-2026-10-24：录音已从正式播放交付链拆出。输出池 → 原地 DSP/bypass → 租借 → ASIO owner 的路径保持；PCM 旁录/快照存档默认关闭。旁录开启时复制到专用有界池，磁盘异常只影响录音。此次未改 ASIO 内部 ring、SRC、时钟或驱动调度。JSON/Web 开关和验证见[旁录隔离](../../docs/core/recording-isolation-20261024.md)。
+2026-10-24：录音已从正式播放交付链拆出。输出池 → 原地 DSP/bypass → 租借 → ASIO owner 的路径保持；PCM 旁录/快照存档默认关闭。旁录开启时复制到专用有界池，磁盘异常只影响录音。此次未改 ASIO 内部 ring、SRC、时钟或驱动调度。JSON/Web 开关和验证见[旁录隔离](../../docs/archive/core/recording-isolation-20261024.md)。
 
-部署时必须将匹配工具链的 `libc++.dll`、`libunwind.dll` 与 `NSP.AsioOutput.dll` 放在同一目录。正式适配器使用模块目录依赖搜索，不依赖编译器 PATH。独立加载回归与实机启动结果见[运行库加载修复](../../docs/decisions/asio-module-runtime-loading-20261023.md)。
+部署时必须将匹配工具链的 `libc++.dll`、`libunwind.dll` 与 `NSP.AsioOutput.dll` 放在同一目录。正式适配器使用模块目录依赖搜索，不依赖编译器 PATH。独立加载回归与实机启动结果见[运行库加载修复](../../docs/archive/decisions/asio-module-runtime-loading-20261023.md)。
 
-2026-10-23：当前采用 [ASIO 随 NSp 会话常驻](../../docs/decisions/asio-session-lifetime-20261023.md)。无首包、正常停源和反复输入间歇都持续回调输出静音，不再因首包/重缓冲超时或累计次数退出。只在显式停止/真实故障时收尾；旧等待超时字段保留解析兼容但不生效。`Test-Playback.py --bridge <已构建ROAR桥接DLL> --output <测试目录>` 可复用渲染器，只构建虚拟驱动与测试宿主。
+2026-10-23：当前采用 [ASIO 随 NSp 会话常驻](../../docs/archive/decisions/asio-session-lifetime-20261023.md)。无首包、正常停源和反复输入间歇都持续回调输出静音，不再因首包/重缓冲超时或累计次数退出。只在显式停止/真实故障时收尾；旧等待超时字段保留解析兼容但不生效。`Test-Playback.py --bridge <已构建ROAR桥接DLL> --output <测试目录>` 可复用渲染器，只构建虚拟驱动与测试宿主。
 
 DEV16 N07已接通可选NSP软件输出路径并通过假驱动回调录音测试。接口现位于 `modules/audio-backends/src/asio_output_c.h`，Windows x64、ABI v1（新增hold导出）；独立 CMake 目标为 `NSP.AsioOutput`。完整 SpatialASIO 工程已移出主线；最新状态及验证见 目录抽离记录（开发参考未随公开源码提供），下文早期未实测描述仅为历史。
 

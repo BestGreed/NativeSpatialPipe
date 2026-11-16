@@ -1,4 +1,4 @@
-> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../README.md).
+> **Retired documentation.** This page records an earlier implementation. See the [current documentation](../../README.md).
 
 # 输出布局预设与 ROAR 6DoF 插槽
 
@@ -22,7 +22,7 @@ Web 前端的「配置 → 播放与公共 DSP → 扬声器布局」提供以�
 
 ## 声道顺序与接线
 
-唯一配置表为 [`contracts/output-layouts.json`](../../contracts/output-layouts.json)，通过 `tools/Generate-OutputLayouts.py` 生成各语言的表。两个后端使用相同输出顺序；算法和房间行为仍各自保留。
+唯一配置表为 [`contracts/output-layouts.json`](../../../contracts/output-layouts.json)，通过 `tools/Generate-OutputLayouts.py` 生成各语言的表。两个后端使用相同输出顺序；算法和房间行为仍各自保留。
 
 | 布局 | 渲染器标准输出顺序 |
 |---|---|
