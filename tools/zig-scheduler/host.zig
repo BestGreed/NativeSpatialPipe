@@ -4,6 +4,8 @@ const n = @import("native.zig");
 const routing = @import("routing.zig");
 const playback = @import("output_playback.zig");
 const asio = @import("asio_control.zig");
+const aes67 = @import("aes67_control.zig");
+const aes67_playback = @import("aes67_playback.zig");
 const a = u.a;
 const c = u.c;
 const Telemetry = struct {
@@ -301,7 +303,15 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     @memcpy(audio_labels[0..output_channels],preset.labels);
     var audio_config: ?asio.Backend.Config = null;
     var capture_may_have_started = false;
-    if (if(desktop) |settings| @as(?[]const u8,settings.value.driver) else u.option(args, "--asio-driver")) |driver| {
+    // The output device boundary is explicit: "asio" keeps the original path,
+    // "aes67" replaces it with the RTP/L24 network sink. Never both.
+    const output_backend = if(desktop) |settings| settings.value.outputBackend else "asio";
+    const aes67_selected = std.mem.eql(u8, output_backend, "aes67");
+    var net_audio: ?*aes67_playback.Session = null;
+    var net_source: usize = 0;
+    var net_config: ?aes67.Backend.Config = null;
+    const asio_driver: ?[]const u8 = if (aes67_selected) null else (if(desktop) |settings| @as(?[]const u8,settings.value.driver) else u.option(args, "--asio-driver"));
+    if (asio_driver) |driver| {
         const device_dll = if(desktop) |settings| settings.value.asioDll else u.option(args, "--asio-dll") orelse return error.AsioDllRequired;
         var config = try asio.Backend.Config.init(device_dll, driver);
         audio_order = if(desktop) |settings| settings.value.channelOrder else u.option(args, "--asio-channel-order") orelse "olr";
@@ -322,6 +332,24 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         audio = try playback.Session.create(a, config);
         pipelines[source].bindOutput(audio.?.stream) catch |err| {
             audio.?.finish(); audio.?.destroy(); audio = null; return err;
+        };
+    }
+    if (aes67_selected) {
+        const settings = desktop orelse return error.PlaybackConfigRequired;
+        const sdp_path = try u.join(&.{ out, "aes67.sdp" });
+        defer a.free(sdp_path);
+        var config = try aes67.Backend.Config.fromPlayback(settings.value, root, sdp_path, @intCast(output_channels));
+        config.processing = settings.value.processingConfig();
+        net_source = settings.value.sourceStream;
+        if (net_source >= pipelines.len) return error.InvalidAes67Stream;
+        audio_order = settings.value.channelOrder;
+        @memcpy(audio_sources[0..output_channels], try settings.value.sources());
+        @memcpy(audio_physical[0..output_channels], try settings.value.physical());
+        audio_labels = try settings.value.labels();
+        net_config = config;
+        net_audio = try aes67_playback.Session.create(a, config);
+        pipelines[net_source].bindOutput(net_audio.?.stream) catch |err| {
+            net_audio.?.finish(); net_audio.?.destroy(); net_audio = null; return err;
         };
     }
     defer if (audio) |session| {
@@ -354,6 +382,44 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
                 .calibrationMaxFrames = status.calibration_max_frames, .lookaheadFrames = status.lookahead_frames,
                 .prebufferFrames = status.prebuffer_frames,
                 .rebufferWaitNs = status.rebuffer_wait_ns,
+                .errorDetail = std.mem.sliceTo(&session.detail, 0),
+                .failure = if (status.failure) |err| @errorName(err) else @as(?[]const u8, null) }) catch {};
+        }
+        session.destroy();
+    };
+    defer if (net_audio) |session| {
+        if (!pipelines[net_source].finished) {
+            var unused = pipelines[net_source].finish() catch null;
+            if (unused) |*value| value.deinit();
+        }
+        while (!pipelines[net_source].finished) c.Sleep(1000);
+        session.finish();
+        const status = session.stream.snapshot();
+        const path = u.join(&.{ out, "aes67-output.json" }) catch null;
+        if (path) |p| {
+            defer a.free(p);
+            u.writeJson(p, .{ .scheduler = "zig", .outputBackend = "aes67", .outputLayout = output_layout, .outputChannels = output_channels,
+                .renderer = renderer, .rendererMode = selection.mode, .state = @tagName(status.state), .receivedFrames = status.received_frames,
+                .outputOrder = audio_order, .outputChannelLabels = audio_labels[0..output_channels],
+                .sourceChannelIndices = audio_sources[0..output_channels], .physicalChannelIndices = audio_physical[0..output_channels],
+                .network = if (net_config) |config| .{ .destIp = std.mem.sliceTo(&config.dest_ip, 0), .port = config.port, .payloadType = config.payload_type,
+                    .framesPerPacket = config.frames_per_packet, .ttl = config.ttl, .ssrc = status.net_ssrc, .ptpDomain = config.ptp_domain,
+                    .channels = config.channels, .sdp = std.mem.sliceTo(&config.sdp_path, 0) } else null,
+                .stats = .{ .packetsSent = status.net_packets_sent, .silentPackets = status.net_silent_packets, .framesSent = status.net_frames_sent,
+                    .framesSubmitted = status.net_frames_submitted, .bytesSent = status.net_bytes_sent, .lastSeq = status.net_last_seq,
+                    .lastTimestamp = status.net_last_timestamp, .ringDroppedFrames = status.net_ring_dropped_frames, .sendErrors = status.net_send_errors,
+                    .lateTicks = status.net_late_ticks, .startMs = status.net_start_ms, .stopMs = status.net_stop_ms },
+                .outputHandoff = .{ .mode = "rust-pool-lease", .pcmCopiesBeforeSubmit = @as(u32, 1), .poolBlocksReceived = status.pool_blocks_received,
+                    .poolBlocksReleased = status.pool_blocks_released, .dspTailFrames = status.dsp_tail_frames },
+                .submittedFrames = status.submitted_frames, .packets = status.callbacks,
+                .outputProcessing = if (net_config) |config| .{ .bypass = config.processing.bypass, .effectiveBypass = status.dsp_bypassed,
+                    .placement = "rust-output-pool", .master = config.processing.master, .trim = config.processing.trim[0..output_channels],
+                    .delayFrames = config.processing.delay_frames[0..output_channels],
+                    .limiter = .{ .enabled = config.processing.limiter, .ceiling = config.processing.ceiling, .releaseMs = config.processing.release_ms,
+                        .lookaheadFrames = config.processing.lookahead_frames } } else null,
+                .playbackPolicy = .{ .lifetime = "session", .noInput = "silence", .drainTimeoutMs = if (net_config) |config| config.drain_timeout_ms else @as(u32, 0),
+                    .prebufferFrames = if (net_config) |config| config.prebuffer_frames else @as(u32, 0) },
+                .drainTimeoutMs = if (net_config) |config| config.drain_timeout_ms else @as(u32, 0),
                 .errorDetail = std.mem.sliceTo(&session.detail, 0),
                 .failure = if (status.failure) |err| @errorName(err) else @as(?[]const u8, null) }) catch {};
         }
@@ -409,6 +475,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     var nextCheck: u64 = 0;
     while (c.GetTickCount64() < deadline and !u.exists(stopFile)) {
         if (audio) |session| { if (session.stream.snapshot().failure != null) break; }
+        if (net_audio) |session| { if (session.stream.snapshot().failure != null) break; }
         if (receiver.failed(receiver.handle) != 0) break;
         if (c.GetTickCount64() >= nextCheck) {
             nextCheck = c.GetTickCount64() + 1000;
@@ -425,6 +492,10 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     if (audio) |session| {
         session.finish();
         if (session.stream.snapshot().failure != null) return error.AsioOutputFailed;
+    }
+    if (net_audio) |session| {
+        session.finish();
+        if (session.stream.snapshot().failure != null) return error.Aes67OutputFailed;
     }
 }
 fn shutdown(hook: *n.Hook, receiver: *n.Receiver, pipelines: *[4]n.Pipeline, bridge: *Bridge, thread: *std.Thread, recorder: *Recorder, recordThread: *?std.Thread, out: []const u8) !void {

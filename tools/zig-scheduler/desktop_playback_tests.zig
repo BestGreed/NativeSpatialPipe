@@ -128,3 +128,64 @@ test "JSON bypass is explicit and retained separately from neutral auto bypass" 
     const config=parsed.value.processingConfig();
     try std.testing.expect(config.bypass and !config.neutral() and config.master==0.25);
 }
+fn validAes67() Config {
+    return .{ .bridgeDll = "C:\\fixture\\bridge.dll",
+        .outputBackend = "aes67",
+        .network = .{ .destIp = "239.69.1.1", .port = 5004, .framesPerPacket = 48, .ttl = 32, .payloadType = 96,
+            .ssrc = 0x4E535036, .ptpGmid = "00-11-22-FF-FE-33-44-55", .ptpDomain = 0, .ringPackets = 64, .prebufferFrames = 480 } };
+}
+
+test "AES67 backend selects the network sink and ignores the ASIO module" {
+    var value = validAes67();
+    try value.validate();
+    try std.testing.expectEqualStrings("aes67", value.outputBackend);
+    try std.testing.expect(value.network != null);
+    // asioDll/driver are not required (and may be empty) for the network sink.
+    try std.testing.expectEqualStrings("", value.asioDll);
+    try std.testing.expectEqualStrings("", value.driver);
+    value.driver = "asio:legacy-device"; // ignored, not opened
+    try value.validate();
+    value.asioDll = "relative.dll"; // ignored entirely by the AES67 backend
+    try value.validate();
+}
+
+test "AES67 network parameters reject before any socket side effect" {
+    const options = @import("desktop_playback.zig");
+    var value = validAes67();
+    value.network = null;
+    try std.testing.expectError(error.NetworkConfigRequired, value.validate());
+    value = validAes67();
+    value.outputBackend = "asio";
+    value.driver = "asio:test";
+    value.asioDll = "C:\\fixture\\asio.dll";
+    try std.testing.expectError(error.NetworkConfigWithAsioBackend, value.validate());
+    value = validAes67();
+    value.outputBackend = "wasapi";
+    try std.testing.expectError(error.InvalidOutputBackend, value.validate());
+    value = validAes67();
+    value.network.?.framesPerPacket = 64;
+    try std.testing.expectError(error.InvalidFramesPerPacket, value.validate());
+    value = validAes67();
+    value.network.?.ttl = 0;
+    try std.testing.expectError(error.InvalidNetworkTtl, value.validate());
+    value = validAes67();
+    value.network.?.destIp = "192.168.1.256";
+    try std.testing.expectError(error.InvalidDestinationIp, value.validate());
+    value = validAes67();
+    value.network.?.destIp = "0.0.0.0";
+    try std.testing.expectError(error.InvalidDestinationIp, value.validate());
+    value = validAes67();
+    value.network.?.payloadType = 200;
+    try std.testing.expectError(error.InvalidPayloadType, value.validate());
+    value = validAes67();
+    value.network.?.ptpGmid = "00-11-22";
+    try std.testing.expectError(error.InvalidPtpGmid, value.validate());
+    value = validAes67();
+    value.network.?.ringPackets = 0;
+    try std.testing.expectError(error.InvalidRingPackets, value.validate());
+    value = validAes67();
+    value.network.?.srcInterfaceIp = "192.168.1.999";
+    try std.testing.expectError(error.InvalidSourceInterfaceIp, value.validate());
+    try std.testing.expectError(error.UnknownField, options.parse(std.testing.allocator,
+        "{\"bridgeDll\":\"C:\\\\b.dll\",\"outputBackend\":\"aes67\",\"network\":{\"destIp\":\"239.69.1.1\",\"framesPerPacket\":480,\"unknownField\":1}}"));
+}

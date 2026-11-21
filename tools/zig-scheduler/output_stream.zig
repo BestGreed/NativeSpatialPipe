@@ -21,6 +21,23 @@ pub const Status = struct {
     dsp_tail_frames: u64 = 0,
     pool_blocks_received: u64 = 0,
     pool_blocks_released: u64 = 0,
+    // AES67 network sink telemetry. Zero for every other backend.
+    net_active: bool = false,
+    net_packets_sent: u64 = 0,
+    net_silent_packets: u64 = 0,
+    net_frames_sent: u64 = 0,
+    net_frames_submitted: u64 = 0,
+    net_bytes_sent: u64 = 0,
+    net_last_seq: u32 = 0,
+    net_last_timestamp: u32 = 0,
+    net_frames_per_packet: u32 = 0,
+    net_channels: u32 = 0,
+    net_ssrc: u32 = 0,
+    net_ring_dropped_frames: u64 = 0,
+    net_send_errors: u64 = 0,
+    net_late_ticks: u64 = 0,
+    net_start_ms: u64 = 0,
+    net_stop_ms: u64 = 0,
 };
 pub const Stream = struct {
     pub const frames = 480;
@@ -136,6 +153,27 @@ pub const Stream = struct {
         self.status.callbacks = callbacks;
         self.status.starvation_frames = starvation;
         self.status.rebuffers = rebuffers;
+    }
+    /// Network sink stats are written by the AES67 backend pump on the owner thread.
+    pub fn updateNet(self: *Stream, stats: anytype) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.status.net_active = true;
+        self.status.net_packets_sent = stats.packets_sent;
+        self.status.net_silent_packets = stats.silent_packets;
+        self.status.net_frames_sent = stats.frames_sent;
+        self.status.net_frames_submitted = stats.frames_submitted;
+        self.status.net_bytes_sent = stats.bytes_sent;
+        self.status.net_last_seq = stats.last_seq;
+        self.status.net_last_timestamp = stats.last_timestamp;
+        self.status.net_frames_per_packet = stats.frames_per_packet;
+        self.status.net_channels = stats.channels;
+        self.status.net_ssrc = stats.ssrc;
+        self.status.net_ring_dropped_frames = stats.ring_dropped_frames;
+        self.status.net_send_errors = stats.send_errors;
+        self.status.net_late_ticks = stats.late_ticks;
+        self.status.net_start_ms = stats.start_ms;
+        self.status.net_stop_ms = stats.stop_ms;
     }
     pub fn fail(self: *Stream, failure: anyerror) void {
         self.mutex.lock();

@@ -1,8 +1,8 @@
 # tools/aes67-output — standalone AES67 (RTP/L24) transmitter
 
-Status: **implemented and tested standalone; not yet wired into the NSP runtime**
-(this branch ships the transmitter plus an integration design, see
-[INTEGRATION.md](INTEGRATION.md)).
+Status: **implemented, tested standalone, and wired into the NSP runtime** as the
+`outputBackend: "aes67"` output backend (see [INTEGRATION.md](INTEGRATION.md)).
+The standalone CLI (below) remains the loopback/multicast acceptance tool.
 
 Deliverables:
 
@@ -13,7 +13,8 @@ Deliverables:
 | `aes67_send.c` | `aes67-send.exe` CLI tone generator for loopback/multicast testing |
 | `aes67_layouts.h` | generated from `contracts/output-layouts.json` by `gen-layouts.py` (single-source layout labels) |
 | `gen-layouts.py` | regenerates the header (run automatically by Build.ps1) |
-| `Build.ps1` | gcc build into `build/aes67-output/` |
+| `Build.ps1` | standalone gcc build into `build/aes67-output/` |
+| `Build-NspAes67Dll.ps1` | builds `nsp_aes67.dll` (the NSP scheduler loads it at runtime) |
 | `Test-Aes67.py` | stdlib acceptance test: RTP/seq/timestamp/L24/SDP/multicast; writes `out/results.json` |
 
 Build and test (from the repo root):

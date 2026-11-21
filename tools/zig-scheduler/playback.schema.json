@@ -10,6 +10,30 @@
       },
       "description": "Optional pre-DSP PCM side recording and telemetry JSONL archival. Both disabled by default."
     },
+    "outputBackend": {
+      "enum": ["asio", "aes67"],
+      "default": "asio",
+      "description": "Output device boundary. aes67 replaces the ASIO device module with the RTP/L24 network sink described by the network object."
+    },
+    "network": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "destIp": {"type": "string", "maxLength": 64, "default": "239.69.1.1", "description": "IPv4 unicast or multicast destination."},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 5004},
+        "framesPerPacket": {"enum": [48, 96, 192, 480], "default": 48, "description": "1/2/4/10 ms ptime at 48 kHz."},
+        "ttl": {"type": "integer", "minimum": 1, "maximum": 255, "default": 32},
+        "payloadType": {"type": "integer", "minimum": 0, "maximum": 127, "default": 96},
+        "ssrc": {"type": "integer", "minimum": 0, "maximum": 4294967295, "default": 0},
+        "srcInterfaceIp": {"type": "string", "maxLength": 64, "default": "", "description": "Optional IP_MULTICAST_IF source address."},
+        "ptpGmid": {"type": "string", "maxLength": 32, "default": "", "description": "Optional IEEE 1588 grandmaster id XX-XX-...-XX for SDP ts-refclk."},
+        "ptpDomain": {"type": "integer", "minimum": 0, "maximum": 127, "default": 0},
+        "ringPackets": {"type": "integer", "minimum": 1, "maximum": 4096, "default": 64},
+        "prebufferFrames": {"type": "integer", "minimum": 0, "maximum": 48000, "default": 480},
+        "dll": {"type": "string", "maxLength": 1024, "default": "", "description": "Optional absolute nsp_aes67.dll path; empty = <root>/build/aes67-output/nsp_aes67.dll."}
+      },
+      "description": "AES67/RTP sink parameters. Only valid with outputBackend=aes67."
+    },
     "renderer": {
       "enum": [
         "roar",
@@ -309,9 +333,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "NSP per-session playback configuration",
   "required": [
-    "bridgeDll",
-    "asioDll",
-    "driver"
+    "bridgeDll"
   ],
   "allOf": [
     {
@@ -342,6 +364,26 @@
           "positionMapping": {
             "type": "null"
           }
+        }
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          {"not": {"required": ["outputBackend"]}},
+          {"properties": {"outputBackend": {"const": "asio"}}, "required": ["outputBackend"]}
+        ]
+      },
+      "then": {
+        "required": ["asioDll", "driver"],
+        "properties": {
+          "network": {"type": "null"}
+        }
+      },
+      "else": {
+        "required": ["network"],
+        "properties": {
+          "network": {"type": "object"}
         }
       }
     },

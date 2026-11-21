@@ -1,9 +1,15 @@
-# AES67 sink — minimal NSP integration design (not compiled)
+# AES67 sink — NSP integration design and implementation record
 
-> **Status: design draft only.** It was **not compiled or run inside NSP**: this
-> machine has no Zig 0.13 / Rust / pinned LLVM-MinGW toolchain, and the branch
-> deliberately does not attempt a full NSP build. The standalone transmitter
-> itself is built and tested (`Test-Aes67.py`, 28/28 PASS).
+> **Status: integrated and compiled (feat/aes67-integration).** The design below
+> was implemented in `tools/zig-scheduler`: `desktop_playback.zig` gained
+> `outputBackend`/`network`, `host.zig` selects the network sink instead of the
+> ASIO device module, and `nsp_aes67.dll` is built by
+> `tools/aes67-output/Build-NspAes67Dll.ps1` (wired into `Build-Core.ps1`).
+> `Build-Alpha.ps1` compiles the scheduler; `playback.aes67.example.json` is the
+> reference document. See §8 for the implementation record and evidence.
+>
+> The original design draft is preserved below so the integration can be
+> audited against its intent.
 
 ## 1. Where it plugs in
 
@@ -147,3 +153,33 @@ the lease granularity.
 * PTP: a real deployment needs a PTP slave (e.g. Linux `ptp4l` on the same host
   or a NIC with hardware timestamping); this branch only advertises
   `ts-refclk` in SDP and does not discipline the transmit clock.
+
+## 8. Implementation record (feat/aes67-integration)
+
+Files changed on the integration branch:
+
+| File | Change |
+|---|---|
+| `tools/zig-scheduler/desktop_playback.zig` | `outputBackend` ("asio" default / "aes67"), `network` object with strict validation (IPv4, ptime, ttl, PT, PTP gmid/domain, ring/prebuffer, optional absolute dll path); ASIO-only fields omitted for AES67, `network` rejected for ASIO. |
+| `tools/zig-scheduler/aes67_control.zig` | New backend: loads `nsp_aes67.dll` (ABI `nsp_aes67/1`), creates the sender, writes the SDP via `nsp_aes67_build_sdp`, pops ≤4 pool leases per pump, submits, publishes stats; drain/Timeout/state machine mirror ASIO semantics. |
+| `tools/zig-scheduler/aes67_playback.zig` | Session lifecycle glue mirroring `output_playback.zig` (open→start→pump→finish→stop→destroy on the generic worker). |
+| `tools/zig-scheduler/output_stream.zig` | Additive net telemetry fields + `updateNet()`; no change to lease/Rust-pool ABI. |
+| `tools/zig-scheduler/host.zig` | Selects the AES67 session when `outputBackend="aes67"`; writes `<out>/aes67.sdp` at open and `<out>/aes67-output.json` at shutdown (packets/silent/frames/bytes/seq/ts/ssrc/dropped/sendErrors/late). ASIO branch untouched. |
+| `tools/zig-scheduler/playback.schema.json` | `outputBackend` + `network` (conditional requirements keep ASIO documents unchanged). |
+| `tools/zig-scheduler/playback.aes67.example.json` | Reference document. |
+| `tools/zig-scheduler/desktop_playback_tests.zig` | 2 new tests (selection, parameter rejection before side effects). |
+| `tools/aes67-output/Build-NspAes67Dll.ps1` | Builds the loadable DLL with `-shared -Wl,--export-all-symbols`. |
+| `tools/Build-Core.ps1` | Builds `build/aes67-output/nsp_aes67.dll` next to the other C artifacts. |
+
+Runtime contract:
+
+* `outputBackend:"aes67"` requires `network`; `asioDll`/`driver` may be empty and
+  are never opened. With `"asio"` the original requirements are unchanged.
+* The sender is 48 kHz L24 only; `framesPerPacket` (48/96/192/480) controls the
+  RTP ptime while pool leases stay 480 frames. `nsp_aes67_submit` copies into the
+  bounded ring, so the lease is returned immediately (same hand-off rule as
+  `nsp_asio_submit`).
+* Silent packets during prebuffer/drain are expected and counted; mid-stream
+  silence is not manufactured (ring is fed by the pool at real-time rate).
+* PTP is advertised in SDP (`ts-refclk`) only; the sender is paced by QPC and is
+  not a PTP slave. Deployment must provide the media clock.
