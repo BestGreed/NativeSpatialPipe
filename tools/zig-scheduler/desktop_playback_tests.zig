@@ -11,7 +11,7 @@ test "diagnostic archives default off and are independent of playback DSP" {
     try std.testing.expect(!value.recording.pcm and value.processingConfig().neutral());
 }
 
-test "seven layouts share channel counts, routing and DSP dimensions across backends" {
+test "every layout shares channel counts, routing and DSP dimensions across backends" {
     for(@import("layout_presets.zig").presets) |preset| {
         var value=valid();value.outputLayout=preset.id;
         for([_][]const u8{"roar","lira"}) |backend| {
@@ -147,6 +147,27 @@ test "AES67 backend selects the network sink and ignores the ASIO module" {
     try value.validate();
     value.asioDll = "relative.dll"; // ignored entirely by the AES67 backend
     try value.validate();
+}
+
+test "4.1.2 is a derived seven-channel layout that the AES67 sink accepts" {
+    var value = validAes67();
+    value.outputLayout = "4.1.2";
+    try value.validate();
+    try std.testing.expectEqual(@as(usize, 7), value.channelCount());
+    const labels = try value.labels();
+    const expected = [_][]const u8{ "L", "R", "Ls", "Rs", "Ltf", "Rtf", "LFE" };
+    for (expected, 0..) |label, i| try std.testing.expectEqualStrings(label, labels[i]);
+    // Calibration arrays are published-channel sized, not renderer sized.
+    var wide = [_]f64{1} ** 8;
+    value.outputProcessing = .{ .trim = &wide };
+    try std.testing.expectError(error.InvalidCalibrationChannelCount, value.validate());
+    var exact = [_]f64{1} ** 7;
+    value.outputProcessing = .{ .trim = &exact };
+    try value.validate();
+    // The SDP channel-order token is the same non-standard extension spelling.
+    const aes67 = @import("aes67_control.zig");
+    try std.testing.expectEqualStrings("SMPTE2110.(41,2)", aes67.Backend.Config.smpteToken("4.1.2").?);
+    try std.testing.expect(aes67.Backend.Config.smpteToken("unknown") == null);
 }
 
 test "AES67 network parameters reject before any socket side effect" {

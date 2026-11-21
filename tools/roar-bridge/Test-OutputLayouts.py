@@ -25,7 +25,9 @@ Publish=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_uint64,C.POINTER(C.c_float),C.c_uint3
 bridge.nsp_pipeline_set_pool_output.argtypes=[C.c_void_p,Process,Publish,C.c_void_p]
 checks=[]
 for row in catalog:
- for renderer in ('roar','lira'):
+ # Derived layouts (contract "map") are a ROAR-path subset: the LIRA spatial
+ # renderer only knows whole layouts, so it cannot publish a reduced channel set.
+ for renderer in (('roar',) if row.get('map') else ('roar','lira')):
   for bed in (False,True):
    channels=len(row['channels']);types=[2**(i+1) for i in range(12)] if bed else [1]
    name=f'{row["code"]}-{renderer}-{"bed" if bed else "object"}'

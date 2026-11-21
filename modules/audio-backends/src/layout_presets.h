@@ -3,6 +3,7 @@
 #include <vector>
 #include <stdexcept>
 inline std::vector<unsigned> NspLayoutIndices(unsigned code){switch(code){
+case 412:return {0,1,6,7,10,11,3};
 case 512:return {0,1,2,3,6,7,10,11};
 case 514:return {0,1,2,3,6,7,10,11,14,15};
 case 712:return {0,1,2,3,6,7,4,5,10,11};

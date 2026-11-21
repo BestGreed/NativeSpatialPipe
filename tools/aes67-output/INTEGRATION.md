@@ -62,7 +62,8 @@ rejected, validate before side effects" model used today, see
   dotted IPv4 (multicast 224.0.0.0/4 allowed); `ttl` 1..255.
 * With `"aes67"`: `asioDll`/`driver` are ignored (mutually exclusive output
   backends). `channels` is derived from `outputLayout` — it must be <= 16, i.e.
-  all seven presets fit (9.1.6 = 16, `contracts/output-layouts.json:12`).
+  all eight presets fit (9.1.6 = 16, 9.1.4/7.1.6 = 14, derived 4.1.2 = 7,
+  `contracts/output-layouts.json`).
 * SDP file: derive next to the session output directory
   (`<out>/aes67.sdp`) using `nsp_aes67_build_sdp` and the layout labels from
   `contracts/output-layouts.json` (see `tools/aes67-output/aes67_layouts.h`).

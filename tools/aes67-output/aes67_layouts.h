@@ -18,6 +18,7 @@ typedef struct nsp_aes67_layout {
 } nsp_aes67_layout;
 
 static const nsp_aes67_layout nsp_aes67_layouts[] = {
+    {"4.1.2", 7, 412u, "SMPTE2110.(41,2)", {"L", "R", "Ls", "Rs", "Ltf", "Rtf", "LFE", 0, 0, 0, 0, 0, 0, 0, 0, 0}},
     {"5.1.2", 8, 512u, "SMPTE2110.(51,2)", {"L", "R", "C", "LFE", "Ls", "Rs", "Ltf", "Rtf", 0, 0, 0, 0, 0, 0, 0, 0}},
     {"5.1.4", 10, 514u, "SMPTE2110.(51,4)", {"L", "R", "C", "LFE", "Ls", "Rs", "Ltf", "Rtf", "Ltr", "Rtr", 0, 0, 0, 0, 0, 0}},
     {"7.1.2", 10, 712u, "SMPTE2110.(71,2)", {"L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs", "Ltf", "Rtf", 0, 0, 0, 0, 0, 0}},
