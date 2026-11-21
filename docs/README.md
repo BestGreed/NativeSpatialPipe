@@ -2,6 +2,7 @@
 
 - [Project goals, progress and performance](../README.md)
 - [Windows product build](build.md)
+- [audiodg build profiles](audiodg-build-profiles.md)
 - [Architecture and validation scope](architecture.md)
 - [FSA, scheduler and playback configuration](scheduler.md)
 - [Telemetry and web visualization](telemetry-visualization.md)

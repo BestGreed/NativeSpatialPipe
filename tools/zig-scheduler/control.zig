@@ -52,7 +52,7 @@ fn inspect(root: []const u8, home: []const u8, output: []const u8, operation: []
     const created = try u.number(u.field(marker.value, "created"));
     if ((try u.inspectProcessIdentity(pid)) != created) return u.parse("{\"state\":2,\"targetExited\":true}");
     try u.debugPrivilege();
-    var hook = try n.Hook.init(root, home, pid, 0, created, false);
+    var hook = try n.Hook.init(root, home, pid, 0, created, false, null);
     defer {
         u.remove(hook.path);
         a.free(hook.path);
@@ -185,9 +185,10 @@ fn retireOrphanWithAudio(root: []const u8, home: []const u8, audio_pid: *const f
     };
     var created: u64 = 0;
     if (pid != 0) {
-        created = try u.checkTarget(pid);
+        const target = try u.checkTarget(pid);
+        created = target.created;
         _ = try u.checkModules(pid);
-        var hook = try n.Hook.init(root, home, pid, 0, created, false);
+        var hook = try n.Hook.init(root, home, pid, 0, created, false, target.build);
         defer {
             u.remove(hook.path);
             a.free(hook.path);
@@ -226,14 +227,15 @@ fn action(args: []const []const u8, root: []const u8, home: []const u8) !u8 {
     const command = args[1];
     if (std.mem.eql(u8, command, "preflight")) {
         const pid = try u.audioPid();
-        const created = try u.checkTarget(pid);
+        const target = try u.checkTarget(pid);
+        const created = target.created;
         _ = try u.checkModules(pid);
         for ([_][]const u8{ "build/native-hook-managed-v2/nsp_hook_control.exe", "build/native-hook-managed-v2/nsp_managed_hook_v2.dll", "build/native-send/nsp_native_send.dll", "build/capture-scheduler-mmcss/nsp_native_capture.dll", "build/native-receiver-routing/release/nsp_native_receiver.dll", n.default_render_bridge }) |relative| {
             const path = try u.join(&.{ root, relative });
             defer a.free(path);
             if (!u.exists(path)) return error.MissingRuntimeDependency;
         }
-        var hook = try n.Hook.init(root, home, pid, 0, created, false);
+        var hook = try n.Hook.init(root, home, pid, 0, created, false, target.build);
         defer {
             u.remove(hook.path);
             a.free(hook.path);

@@ -129,10 +129,13 @@ def main():
     recorder=None
     try:
         image = pathlib.Path('C:/Windows/System32/audiodg.exe')
-        if hashlib.sha256(image.read_bytes()).hexdigest() != '3dd24fe6faf0b56f99d5b00f24687b5f3b3e76e15b219e23f0963114a0dce9a5':
-            raise RuntimeError('audiodg version mismatch')
-        pid = int(sys.argv[2])
+        digest = hashlib.sha256(image.read_bytes()).hexdigest()
         sys.path.insert(0,str(ROOT/'tools/backend'))
+        import audiodg_builds
+        profile = audiodg_builds.match_build(digest)
+        if profile is None:
+            raise RuntimeError(audiodg_builds.unsupported_build_message(digest))
+        pid = int(sys.argv[2])
         from windows_privileges import enable_debug
         enable_debug()
         k = ctypes.WinDLL('kernel32', use_last_error=True)
@@ -154,6 +157,7 @@ def main():
         finally:
             k.CloseHandle(handle)
         report['pid'] = pid
+        report['configuration']['audiodgBuild']=profile['id'];report['configuration']['audiodgBuildLabel']=profile['label']
         spec=importlib.util.spec_from_file_location('host_priority',ROOT/'tools/endpoint-probe/Host-Priority.py')
         priority_module=importlib.util.module_from_spec(spec);spec.loader.exec_module(priority_module)
         priority=priority_module.HostPriority(priority_name)
@@ -355,7 +359,7 @@ def main():
         if waitable and not native_hook:source='const STREAM_WAITABLE=true;\n'+(ROOT/'tools/endpoint-probe/Waitable-Drain.js').read_text()+'\n'+source
         if native_hook:
             spec=importlib.util.spec_from_file_location('native_hook',ROOT/'tools/endpoint-probe/Native-Hook.py');hook_module=importlib.util.module_from_spec(spec);spec.loader.exec_module(hook_module)
-            script=hook_module.Controller(pid,native_receiver.config,duration=0 if managed else duration,capture_dll=capture_override,owner_pid=owner_pid if managed else 0)
+            script=hook_module.Controller(pid,native_receiver.config,duration=0 if managed else duration,capture_dll=capture_override,owner_pid=owner_pid if managed else 0,build=profile)
             report['agent']='Native-Hook.c';report['configuration']['fridaImported']='frida' in sys.modules
         else:script = session.create_script(source)
         script.on('message', message)
