@@ -78,6 +78,8 @@ pub struct Engine {
     output: Vec<f32>,
     /// Planar published buffer (labels * n); empty when the layout is a presence one.
     mapped: Vec<f32>,
+    /// Samples clamped by the derived-layout fold since the engine was created.
+    downmix_clipped: u64,
     positions: ObjectPosition,
     one_position: ObjectPosition,
     mapping: Mapping,
@@ -117,6 +119,19 @@ impl Engine {
         } else if layout.map.len() != layout.labels.len() || layout.map.iter().any(|&i| i >= render_channels) {
             return err("Invalid layout channel map");
         }
+        // A fold needs a derived layout: `from` indexes rendered channels, `to`
+        // indexes published ones, and the gain must be a finite scalar. Folded
+        // channels are peak-limited by `compose_published`.
+        if !layout.downmix.is_empty()
+            && (layout.map.is_empty()
+                || layout.downmix.iter().any(|mix| {
+                    mix.from >= render_channels
+                        || mix.to >= layout.labels.len()
+                        || !mix.gain.is_finite()
+                }))
+        {
+            return err("Invalid layout downmix");
+        }
         let frames = oar(Samples::new(n))?;
         let mut rdr = oar(RoarRenderer::create(&oar(Config::new(
             layout.roar,
@@ -151,6 +166,7 @@ impl Engine {
             render_channels,
             output: vec![0.; render_channels * n as usize],
             mapped: if layout.map.is_empty() { Vec::new() } else { vec![0.; layout.labels.len() * n as usize] },
+            downmix_clipped: 0,
             positions: ObjectPosition::Cartesian(Vec::with_capacity(SLOTS)),
             one_position: ObjectPosition::Cartesian(Vec::with_capacity(1)),
             mapping: Mapping::default(),
@@ -382,10 +398,13 @@ impl Engine {
             ))?;
         }
         if !self.mapped.is_empty() {
-            for (dst, &src) in self.layout.map.iter().enumerate() {
-                self.mapped[dst * self.n..(dst + 1) * self.n]
-                    .copy_from_slice(&self.output[src * self.n..(src + 1) * self.n]);
-            }
+            self.downmix_clipped += compose_published(
+                &self.output,
+                self.n,
+                self.layout.map,
+                self.layout.downmix,
+                &mut self.mapped,
+            );
         }
         self.dsp_ns = dsp_begin.elapsed().as_nanos() as u64;
         if !self.output.iter().all(|v| v.is_finite()) {
@@ -434,6 +453,47 @@ impl Engine {
             .max(seen_bed.iter().filter(|v| **v).count());
         Ok(if self.mapped.is_empty() { &self.output } else { &self.mapped })
     }
+}
+
+/// Compose the published channel buffer from ROAR's rendered channels.
+///
+/// `map[dst]` selects one rendered channel for each published channel. `downmix`
+/// entries then add a scaled rendered channel into a published channel: the
+/// derived 4.1.2 layout folds ROAR 5.1.2 center into L and R at -3 dB per
+/// channel (equal-energy, ITU-R BS.775 style). Only fold targets are clamped to
+/// [-1, 1] because a fully correlated L/R+C at full scale can exceed 0 dBFS;
+/// clamping is memoryless, introduces no latency, and leaves presence layouts
+/// untouched. Returns the number of clamped samples.
+fn compose_published(
+    rendered: &[f32],
+    n: usize,
+    map: &[usize],
+    downmix: &[crate::layouts::Downmix],
+    published: &mut [f32],
+) -> u64 {
+    for (dst, &src) in map.iter().enumerate() {
+        published[dst * n..(dst + 1) * n].copy_from_slice(&rendered[src * n..(src + 1) * n]);
+    }
+    for mix in downmix {
+        let source = &rendered[mix.from * n..(mix.from + 1) * n];
+        let target = &mut published[mix.to * n..(mix.to + 1) * n];
+        for (out, input) in target.iter_mut().zip(source) {
+            *out += mix.gain * *input;
+        }
+    }
+    let mut clipped = 0u64;
+    for mix in downmix {
+        for sample in &mut published[mix.to * n..(mix.to + 1) * n] {
+            if *sample > 1. {
+                *sample = 1.;
+                clipped += 1;
+            } else if *sample < -1. {
+                *sample = -1.;
+                clipped += 1;
+            }
+        }
+    }
+    clipped
 }
 
 fn status(f: impl FnOnce() -> Result<(), String>) -> i32 {
@@ -568,6 +628,7 @@ struct Stats {
     mmcss_priority: bool,
     mmcss_reverted: bool,
     thread_id: u32,
+    downmix_clipped: u64,
 }
 struct WriterStats { written: u64, frames: u64, queue: Timing, write: Timing, capture_write: Timing, flush_ns: u64, tails: Vec<String>, overflow: u64, thread_id: u32, mmcss_requested: bool, mmcss_registered: bool, mmcss_priority: bool, mmcss_reverted: bool }
 impl WriterStats {
@@ -590,7 +651,7 @@ impl Stats {
             telemetry_publish: Timing::new(),
             capture_publish: Timing::new(),
             writer: WriterStats::new(),
-            mmcss_requested: false, mmcss_registered: false, mmcss_priority: false, mmcss_reverted: false, thread_id: 0,
+            mmcss_requested: false, mmcss_registered: false, mmcss_priority: false, mmcss_reverted: false, thread_id: 0, downmix_clipped: 0,
         }
     }
 }
@@ -616,6 +677,7 @@ impl Backend {
         }
     }
     fn timing(&self)->(u64,u64,u64){match self{Self::Roar(RoarMode::Olr(e))=>(e.decode_ns,e.metadata_ns,e.dsp_ns),_ =>(0,0,0)}}
+    fn downmix_clipped(&self)->u64{match self{Self::Roar(RoarMode::Olr(e))=>e.downmix_clipped,_ =>0}}
     fn finish(&mut self)->Result<Vec<f32>,String>{match self{Self::Roar(RoarMode::Olr(_))=>Ok(Vec::new()),Self::Lira(e,_)=>e.finish()}}
     fn mapping(self)->Mapping{match self{Self::Roar(RoarMode::Olr(mut e))=>{e.mapping.retires+=e.states.iter().filter(|s|s.present).count() as u64;e.mapping},Self::Lira(_,m)=>m}}
 }
@@ -852,6 +914,7 @@ impl Pipeline {
                 Err(_) => stats.error = Some("Writer panic".to_string()),
             }
             drop(out_free_rx);
+            stats.downmix_clipped = engine.downmix_clipped();
             stats.mapping = engine.mapping();
             stats
         });
@@ -923,7 +986,7 @@ impl Pipeline {
         );
         self.report.pop();
         self.report.push_str(&format!(",\"pcmRecording\":{}",self.recording.lock().unwrap()));
-        self.report.push_str(&format!(",\"outputLayout\":\"{}\",\"outputChannels\":{}",self.layout.id,self.layout.labels.len()));
+        self.report.push_str(&format!(",\"outputLayout\":\"{}\",\"outputChannels\":{},\"downmixClipped\":{}",self.layout.id,self.layout.labels.len(),stats.downmix_clipped));
         self.report.push_str(&format!(",\"renderer\":\"{}\",\"rendererMode\":{},\"rendererDelayFrames\":{},\"rendererTailFrames\":{},\"outputFrames\":{}",if self.lira {"lira"} else {"roar"},if self.lira {"null"} else {"\"olr\""},if self.lira {512} else {0},stats.tail_frames,stats.writer.frames));
         if self.lira {
             self.report.push_str(",\"positionMapping\":{\"mode\":\"backend-room-projection\",\"negativeHeight\":\"floor\",\"outsideRoom\":\"uniform-extent-projection\"}");
@@ -1174,4 +1237,105 @@ pub unsafe extern "C" fn nsp_pipeline_create_live(n:u32,capacity:u32,code:u32,sc
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn nsp_pipeline_progress(p:*mut c_void)->u64{
     if p.is_null(){return 0;}unsafe{&*(p as *const Pipeline)}.progress.load(Ordering::Acquire)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// -3 dB per folded channel: an equal-energy split of the center channel.
+    const FOLD: f32 = 0.70710678;
+
+    fn preset() -> crate::layouts::Preset {
+        crate::layouts::get(412).expect("4.1.2 preset")
+    }
+
+    /// ROAR Layout512 channel order: L, R, C, LFE, Ls, Rs, Ltf, Rtf.
+    fn compose(render: &[f32], n: usize) -> (Vec<f32>, u64) {
+        let preset = preset();
+        assert_eq!(render.len(), preset.roar.channels() * n);
+        let mut published = vec![0.; preset.labels.len() * n];
+        let clipped = compose_published(render, n, preset.map, preset.downmix, &mut published);
+        (published, clipped)
+    }
+
+    #[test]
+    fn contract_declares_equal_power_center_fold() {
+        let preset = preset();
+        assert_eq!(preset.labels, ["L", "R", "Ls", "Rs", "Ltf", "Rtf", "LFE"].as_slice());
+        assert_eq!(preset.map, [0, 1, 4, 5, 6, 7, 3].as_slice());
+        assert_eq!(preset.downmix.len(), 2);
+        for mix in preset.downmix {
+            assert_eq!(mix.from, 2); // ROAR 5.1.2 center
+            assert!(mix.to == 0 || mix.to == 1); // folded into L/R
+            assert!((mix.gain - FOLD).abs() < 1e-8);
+        }
+    }
+
+    #[test]
+    fn center_only_folds_into_l_and_r_at_minus_three_db() {
+        let n = 2;
+        let mut render = vec![0f32; 8 * n];
+        render[2 * n] = 0.5;
+        render[2 * n + 1] = -0.25;
+        let (out, clipped) = compose(&render, n);
+        assert_eq!(clipped, 0);
+        for i in 0..n {
+            assert!((out[i] - FOLD * render[2 * n + i]).abs() < 1e-6);
+            assert!((out[n + i] - FOLD * render[2 * n + i]).abs() < 1e-6);
+            assert_eq!(out[i], out[n + i]); // identical fold into L and R
+        }
+        // Unfolded published channels stay silent; LFE passes through untouched.
+        for channel in [2, 3, 4, 5] {
+            assert!(out[channel * n..(channel + 1) * n].iter().all(|v| *v == 0.));
+        }
+        assert_eq!(out[6 * n..7 * n], render[3 * n..4 * n]);
+        // Equal energy: L^2 + R^2 equals the center energy that was folded.
+        let energy_center: f32 = render[2 * n..3 * n].iter().map(|v| v * v).sum();
+        let energy_lr: f32 = out[..n].iter().chain(out[n..2 * n].iter()).map(|v| v * v).sum();
+        assert!((energy_lr - energy_center).abs() < 1e-6);
+    }
+
+    #[test]
+    fn folded_channels_are_peak_limited_without_dropping_lfe() {
+        let n = 1;
+        // A moderate correlated mix stays below full scale and is not clamped.
+        let mut moderate = vec![0f32; 8];
+        moderate[0] = 0.5;
+        moderate[1] = 0.5;
+        moderate[2] = 0.5;
+        let (out, clipped) = compose(&moderate, n);
+        assert_eq!(clipped, 0);
+        assert!((out[0] - (0.5 + FOLD * 0.5)).abs() < 1e-6);
+        assert!((out[1] - (0.5 + FOLD * 0.5)).abs() < 1e-6);
+        // Correlated full-scale L/R + center reaches ~+4.6 dBFS before limiting;
+        // only the folded channels are clamped and LFE stays bit-exact.
+        let mut hot = vec![0f32; 8];
+        hot[0] = 1.;
+        hot[1] = 1.;
+        hot[2] = 1.;
+        hot[3] = 1.;
+        let (out, clipped) = compose(&hot, n);
+        assert_eq!(clipped, 2);
+        assert_eq!((out[0], out[1]), (1f32, 1f32));
+        assert_eq!(out[6], 1f32);
+        let mut hot_negative = vec![0f32; 8];
+        hot_negative[0] = -1.;
+        hot_negative[1] = -1.;
+        hot_negative[2] = -1.;
+        let (out, clipped) = compose(&hot_negative, n);
+        assert_eq!(clipped, 2);
+        assert_eq!((out[0], out[1]), (-1f32, -1f32));
+        assert!(out.iter().all(|v| v.is_finite() && v.abs() <= 1.));
+    }
+
+    #[test]
+    fn published_channel_order_is_the_contract_map() {
+        let n = 1;
+        // Center silent: the raw map order must survive the fold.
+        let render = [0.1f32, 0.2, 0.0, 0.4, 0.5, 0.6, 0.7, 0.8];
+        let (out, clipped) = compose(&render, n);
+        assert_eq!(clipped, 0);
+        assert_eq!(out, vec![0.1f32, 0.2, 0.5, 0.6, 0.7, 0.8, 0.4]);
+    }
 }

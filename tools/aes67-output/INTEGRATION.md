@@ -64,6 +64,12 @@ rejected, validate before side effects" model used today, see
   backends). `channels` is derived from `outputLayout` — it must be <= 16, i.e.
   all eight presets fit (9.1.6 = 16, 9.1.4/7.1.6 = 14, derived 4.1.2 = 7,
   `contracts/output-layouts.json`).
+* Derived presets keep the ROAR path: `4.1.2` renders ROAR 5.1.2 and publishes
+  the contract `map` subset. Its `downmix` entry folds the ROAR center into
+  L/R at -3 dB (0.7071 per channel, equal energy) and the bridge clamps only the
+  folded channels to [-1,1]; the native pipeline report exposes
+  `downmixClipped`. LIRA is skipped for derived layouts because it only knows
+  whole layouts.
 * SDP file: derive next to the session output directory
   (`<out>/aes67.sdp`) using `nsp_aes67_build_sdp` and the layout labels from
   `contracts/output-layouts.json` (see `tools/aes67-output/aes67_layouts.h`).
