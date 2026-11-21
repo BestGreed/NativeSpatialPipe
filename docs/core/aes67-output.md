@@ -1,9 +1,11 @@
-# AES67 network audio output (branch prototype)
+# AES67 network audio output
 
-> Status (branch `feat/aes67-network-output`): a **standalone, tested** RTP/L24
-> transmitter plus the integration design for NSP. It is **not** wired into the
-> runtime yet; NSP's audio output is still ASIO-only. See
-> `tools/aes67-output/INTEGRATION.md` and `BRANCH.md`.
+> Status: a **standalone, tested** RTP/L24 transmitter (`tools/aes67-output`,
+> 28/28 loopback checks plus a multicast smoke test) and a scheduler output
+> backend that drives it from the same output-pool leases as ASIO
+> (`outputBackend: "aes67"` in `playback.json`). The standalone sender stays
+> independently testable; see `tools/aes67-output/INTEGRATION.md` for the
+> integration contract.
 >
 > This page follows the project's direction bullet
 > `README.md:48-50` ("Add native network-audio output alongside the current
