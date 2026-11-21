@@ -803,7 +803,7 @@
             ],
             "additionalProperties": false
           },
-          "minItems": 8,
+          "minItems": 2,
           "maxItems": 16
         }
       },
@@ -904,6 +904,7 @@
               },
               "maxChannels": {
                 "enum": [
+                  2,
                   8,
                   10,
                   12,
@@ -1225,7 +1226,7 @@
             ],
             "additionalProperties": false
           },
-          "minItems": 8,
+          "minItems": 2,
           "maxItems": 16
         }
       },
