@@ -21,11 +21,31 @@ pub const Status = struct {
     dsp_tail_frames: u64 = 0,
     pool_blocks_received: u64 = 0,
     pool_blocks_released: u64 = 0,
+    dropped_leases: u64 = 0,
+    // AES67 network sink telemetry. Zero for every other backend.
+    net_active: bool = false,
+    net_packets_sent: u64 = 0,
+    net_silent_packets: u64 = 0,
+    net_frames_sent: u64 = 0,
+    net_frames_submitted: u64 = 0,
+    net_bytes_sent: u64 = 0,
+    net_last_seq: u32 = 0,
+    net_last_timestamp: u32 = 0,
+    net_frames_per_packet: u32 = 0,
+    net_channels: u32 = 0,
+    net_ssrc: u32 = 0,
+    net_ring_dropped_frames: u64 = 0,
+    net_send_errors: u64 = 0,
+    net_late_ticks: u64 = 0,
+    net_start_ms: u64 = 0,
+    net_stop_ms: u64 = 0,
 };
 pub const Stream = struct {
     pub const frames = 480;
     pub const channels = 12;
-    pub const slots = 32;
+    // Descriptor ring only (no PCM): 256 leases x 480 frames ~= 2.56 s at
+    // 48 kHz absorbs a transient writer/pump stall without killing real-time output.
+    pub const slots = 256;
     pub const samples = frames * channels;
     pub const Release = *const fn (?*anyopaque) callconv(.C) void;
     pub const Lease = struct {
@@ -86,6 +106,12 @@ pub const Stream = struct {
         if (tail) self.status.dsp_tail_frames += lease.frames else self.status.received_frames += lease.frames;
         self.status.pool_blocks_received += 1;
     }
+    /// True while queued leases are waiting for the owner pump.
+    pub fn pending(self: *Stream) bool {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        return self.count != 0;
+    }
     pub fn popLease(self: *Stream) ?Lease {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -100,6 +126,23 @@ pub const Stream = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
         self.status.pool_blocks_released += 1;
+    }
+    /// Live real-time overflow: drop this block and advance the source timeline
+    /// instead of faulting the session. The block is returned to its owner.
+    pub fn dropLease(self: *Stream, first: u64, lease: Lease) void {
+        self.mutex.lock();
+        const valid = !self.eof and self.status.state != .faulted and self.status.state != .done and
+            lease.frames != 0 and lease.frames <= frames and
+            first == self.status.received_frames + self.status.dsp_tail_frames;
+        if (valid) {
+            self.status.received_frames += lease.frames;
+            self.status.dropped_leases += 1;
+        }
+        self.mutex.unlock();
+        lease.release_fn(lease.token);
+        self.mutex.lock();
+        self.status.pool_blocks_released += 1;
+        self.mutex.unlock();
     }
     fn clearLeases(self: *Stream) void {
         while (self.popLease()) |lease| self.releaseLease(lease);
@@ -136,6 +179,27 @@ pub const Stream = struct {
         self.status.callbacks = callbacks;
         self.status.starvation_frames = starvation;
         self.status.rebuffers = rebuffers;
+    }
+    /// Network sink stats are written by the AES67 backend pump on the owner thread.
+    pub fn updateNet(self: *Stream, stats: anytype) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.status.net_active = true;
+        self.status.net_packets_sent = stats.packets_sent;
+        self.status.net_silent_packets = stats.silent_packets;
+        self.status.net_frames_sent = stats.frames_sent;
+        self.status.net_frames_submitted = stats.frames_submitted;
+        self.status.net_bytes_sent = stats.bytes_sent;
+        self.status.net_last_seq = stats.last_seq;
+        self.status.net_last_timestamp = stats.last_timestamp;
+        self.status.net_frames_per_packet = stats.frames_per_packet;
+        self.status.net_channels = stats.channels;
+        self.status.net_ssrc = stats.ssrc;
+        self.status.net_ring_dropped_frames = stats.ring_dropped_frames;
+        self.status.net_send_errors = stats.send_errors;
+        self.status.net_late_ticks = stats.late_ticks;
+        self.status.net_start_ms = stats.start_ms;
+        self.status.net_stop_ms = stats.stop_ms;
     }
     pub fn fail(self: *Stream, failure: anyerror) void {
         self.mutex.lock();
@@ -188,8 +252,14 @@ pub fn publishPool(context: ?*anyopaque, first: u64, pcm: [*]const f32, frames: 
     if (channels != stream.channel_count or tail > 1 or token == null) {stream.fail(error.OutputFormat);return -22;}
     while (true) {
         stream.pushLease(first, .{.pcm=pcm,.frames=frames,.token=token,.release_fn=release_fn}, tail == 1) catch |err| {
+            // Real-time live overflow absorbs the burst: drop this block, advance the
+            // source timeline and keep the session alive (a stall must not be fatal).
+            if (err == error.OutputQueueFull and tail == 0) {
+                stream.dropLease(first, .{.pcm=pcm,.frames=frames,.token=token,.release_fn=release_fn});
+                return 0;
+            }
             // Only EOF drain may wait: a long calibration/lookahead tail can
-            // exceed the descriptor ring. Live queue overflow remains fatal.
+            // exceed the descriptor ring.
             if (err == error.OutputQueueFull and tail == 1) {
                 const now=std.time.Instant.now() catch {stream.fail(error.OutputTailClock);return -1;};
                 const start=stream.tail_started orelse now;

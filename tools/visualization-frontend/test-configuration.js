@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {prepare,numeric,finish,setPath,orders} from './configuration-model.js';
+import {prepare,numeric,finish,setPath,orders,validateAes67,diffConfig,outputBackends} from './configuration-model.js';
 const original={renderer:'roar',bridgeDll:'C:/bridge.dll',asioDll:'C:/asio.dll',driver:'asio:{test}',startupTimeoutMs:120000};
 const prepared=prepare(original,'playback');
 assert.equal(original.outputProcessing,undefined);
@@ -43,3 +43,41 @@ assert.equal(back.outputProcessing.trim[0],.7);
 assert.equal(back.routing.physicalChannels[2],21);
 assert.equal(layoutFor('9.1.6').channels.length,16);
 console.log('PASS seven layouts, speaker-identity calibration migration and collision-free device routing');
+
+// ---- Output backend / AES67 network settings ----
+const network={destIp:'192.168.1.10',port:5004,framesPerPacket:48,ttl:32,payloadType:96,ssrc:1314082870,srcInterfaceIp:'',ptpGmid:'',ptpDomain:0,ringPackets:512,prebufferFrames:480,dll:''};
+const aes=prepare({...original,outputBackend:'aes67'},'playback');
+assert.equal(aes.outputBackend,'aes67');
+assert.equal(aes.network.destIp,'239.69.1.1');
+assert.equal(aes.network.framesPerPacket,48);
+assert.equal(aes.network.prebufferFrames,480);
+assert.equal(aes.network.ringPackets,64);
+// Switching back to ASIO keeps the AES67 block for the next switch (ignored at runtime).
+const kept=finish(prepare({...original,outputBackend:'asio',network},'playback'));
+assert.equal(kept.outputBackend,'asio');
+assert.equal(kept.network.destIp,'192.168.1.10');
+assert.equal(kept.network.ringPackets,512);
+assert.deepEqual(validateAes67({outputBackend:'asio',network}),[]);
+assert.deepEqual(validateAes67({outputBackend:'aes67',network}),[]);
+const bad=(change)=>validateAes67({outputBackend:'aes67',network:{...network,...change}}).map(item=>item.path);
+assert.deepEqual(bad({destIp:'192.168.1.256'}),['network.destIp']);
+assert.deepEqual(bad({destIp:'0.0.0.0'}),['network.destIp']);
+assert.deepEqual(bad({port:0}),['network.port']);
+assert.deepEqual(bad({port:70000}),['network.port']);
+assert.deepEqual(bad({framesPerPacket:50}),['network.framesPerPacket']);
+assert.deepEqual(bad({ttl:0}),['network.ttl']);
+assert.deepEqual(bad({payloadType:128}),['network.payloadType']);
+assert.deepEqual(bad({ssrc:-1}),['network.ssrc']);
+assert.deepEqual(bad({srcInterfaceIp:'192.168.1.999'}),['network.srcInterfaceIp']);
+assert.deepEqual(bad({ptpGmid:'00-11-22'}),['network.ptpGmid']);
+assert.deepEqual(bad({ptpDomain:128}),['network.ptpDomain']);
+assert.deepEqual(bad({ringPackets:0}),['network.ringPackets']);
+assert.deepEqual(bad({prebufferFrames:48001}),['network.prebufferFrames']);
+assert.deepEqual(bad({dll:'relative.dll'}),['network.dll']);
+assert.deepEqual(validateAes67({outputBackend:'dante',network}).map(item=>item.path),['outputBackend']);
+assert.equal(outputBackends.find(item=>item.value==='dante').disabled,true);
+// Save preview only lists real edits; identical preserved network is not noise.
+const changes=diffConfig({master:1,outputBackend:'asio',network},{master:.5,outputBackend:'asio',network});
+assert.equal(changes.length,1);assert.equal(changes[0].path,'master');
+assert.equal(diffConfig({a:1},{a:1}).length,0);
+console.log('PASS backend switch keeps alternate AES67 network block, validates all AES67 fields and diffs only real edits');

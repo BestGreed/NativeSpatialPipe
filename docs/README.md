@@ -9,6 +9,7 @@
 - [WASAPI output and diagnostics](wasapi-diagnostics.md)
 - [FreeSurround](freesurround.md)
 - [LSAC stereo DSP adapter](lsac-adapter.md)
+- [AES67 output](aes67-output.md)
 - [Source provenance](alpha-dev.md)
 - [License scope](../LICENSING.md)
 - [Retired documentation](archive/README.md)
