@@ -244,6 +244,33 @@ const Bridge = struct {
         }
     }
 };
+/// Monotonic sample used to derive packets/bytes-per-second for the web UI
+/// without touching the audio path. Publishing is best-effort: a failed write
+/// must never fail or stall the session.
+const LiveMark = struct { packets: u64 = 0, bytes: u64 = 0, ms: u64 = 0 };
+fn writeAes67Live(out: []const u8, session: *aes67_playback.Session, config: *const aes67.Backend.Config, layout: []const u8, mark: *LiveMark) void {
+    const status = session.stream.snapshot();
+    const now = c.GetTickCount64();
+    const elapsed = if (mark.ms == 0 or now <= mark.ms) @as(u64, 0) else now - mark.ms;
+    const packets = status.net_packets_sent;
+    const bytes = status.net_bytes_sent;
+    const pps = if (elapsed == 0) @as(f64, 0) else @as(f64, @floatFromInt(packets -| mark.packets)) * 1000.0 / @as(f64, @floatFromInt(elapsed));
+    const bps = if (elapsed == 0) @as(f64, 0) else @as(f64, @floatFromInt(bytes -| mark.bytes)) * 1000.0 / @as(f64, @floatFromInt(elapsed));
+    mark.* = .{ .packets = packets, .bytes = bytes, .ms = now };
+    const path = u.join(&.{ out, "aes67-live.json" }) catch return;
+    defer a.free(path);
+    u.writeJson(path, .{ .schema = "nsp-aes67-live/1", .scheduler = "zig", .outputBackend = "aes67", .outputLayout = layout,
+        .observedMs = now, .state = @tagName(status.state),
+        .network = .{ .destIp = std.mem.sliceTo(&config.dest_ip, 0), .port = config.port, .framesPerPacket = config.frames_per_packet,
+            .ttl = config.ttl, .payloadType = config.payload_type, .ssrc = status.net_ssrc, .srcInterfaceIp = std.mem.sliceTo(&config.src_interface_ip, 0),
+            .ptpDomain = config.ptp_domain, .ringPackets = config.ring_packets, .prebufferFrames = config.prebuffer_frames,
+            .channels = config.channels, .sdp = std.mem.sliceTo(&config.sdp_path, 0) },
+        .stats = .{ .packetsSent = status.net_packets_sent, .silentPackets = status.net_silent_packets, .framesSent = status.net_frames_sent,
+            .framesSubmitted = status.net_frames_submitted, .bytesSent = status.net_bytes_sent, .lastSeq = status.net_last_seq,
+            .lastTimestamp = status.net_last_timestamp, .ringDroppedFrames = status.net_ring_dropped_frames, .sendErrors = status.net_send_errors,
+            .lateTicks = status.net_late_ticks, .startMs = status.net_start_ms, .stopMs = status.net_stop_ms },
+        .rates = .{ .packetsPerSecond = pps, .bytesPerSecond = bps, .bitsPerSecond = bps * 8.0 } }) catch {};
+}
 pub fn run(args: []const []const u8, root: []const u8) !void {
     const out = u.option(args, "--out") orelse return error.OutputRequired;
     const pid = try std.fmt.parseInt(u32, u.option(args, "--pid") orelse return error.PidRequired, 10);
@@ -468,6 +495,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     var thread = try std.Thread.spawn(.{}, Bridge.run, .{&bridge});
     var recorder = Recorder{ .telemetry = &telemetry, .out = out };
     var recordThread:?std.Thread = if(recording.telemetrySnapshots) try std.Thread.spawn(.{}, Recorder.run, .{&recorder}) else null;
+    var aes67_live_mark: LiveMark = .{};
     // Establish cleanup before the first Hook activation attempt, including timeouts.
     capture_may_have_started = true;
     var activation = hook.call("start") catch |err| {
@@ -494,6 +522,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         if (receiver.failed(receiver.handle) != 0) break;
         if (c.GetTickCount64() >= nextCheck) {
             nextCheck = c.GetTickCount64() + 1000;
+            if (net_audio) |session| if (net_config) |*live_config| writeAes67Live(out, session, live_config, output_layout, &aes67_live_mark);
             var status = hook.call("status") catch {
                 break;
             };
