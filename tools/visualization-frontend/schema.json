@@ -714,6 +714,7 @@
         "layoutId": {
           "enum": [
             "roar-layout714",
+            "nsp-layout412",
             "nsp-layout512",
             "nsp-layout514",
             "nsp-layout712",
@@ -803,7 +804,7 @@
             ],
             "additionalProperties": false
           },
-          "minItems": 8,
+          "minItems": 7,
           "maxItems": 16
         }
       },
@@ -904,6 +905,7 @@
               },
               "maxChannels": {
                 "enum": [
+                  7,
                   8,
                   10,
                   12,
@@ -1225,7 +1227,7 @@
             ],
             "additionalProperties": false
           },
-          "minItems": 8,
+          "minItems": 7,
           "maxItems": 16
         }
       },
