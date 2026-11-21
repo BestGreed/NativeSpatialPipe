@@ -88,6 +88,320 @@ fn defaultPlayback(ctx: Context) ![]u8 {
     defer a.free(lira);
     return u.json(playback.Config{ .bridgeDll = bridge, .asioDll = asio, .rendererDll = lira, .driver = "" });
 }
+/// Field-level mapping so the configuration page can point at the exact
+/// input that failed the shared playback validation. Unknown errors stay
+/// unnamed instead of being guessed.
+fn validationFieldFor(name: []const u8) ?[]const u8 {
+    const table = [_]struct { name: []const u8, field: []const u8 }{
+        .{ .name = "NetworkConfigRequired", .field = "network" },
+        .{ .name = "InvalidDestinationIp", .field = "network.destIp" },
+        .{ .name = "InvalidNetworkPort", .field = "network.port" },
+        .{ .name = "InvalidFramesPerPacket", .field = "network.framesPerPacket" },
+        .{ .name = "InvalidNetworkTtl", .field = "network.ttl" },
+        .{ .name = "InvalidPayloadType", .field = "network.payloadType" },
+        .{ .name = "InvalidPtpDomain", .field = "network.ptpDomain" },
+        .{ .name = "InvalidRingPackets", .field = "network.ringPackets" },
+        .{ .name = "InvalidNetworkPrebuffer", .field = "network.prebufferFrames" },
+        .{ .name = "InvalidSourceInterfaceIp", .field = "network.srcInterfaceIp" },
+        .{ .name = "InvalidPtpGmid", .field = "network.ptpGmid" },
+        .{ .name = "Aes67ChannelCount", .field = "outputLayout" },
+        .{ .name = "InvalidOutputBackend", .field = "outputBackend" },
+        .{ .name = "UnsupportedOutputLayout", .field = "outputLayout" },
+        .{ .name = "InvalidCustomLayoutSlot", .field = "roarCustomLayout" },
+        .{ .name = "InvalidCalibrationChannelCount", .field = "outputProcessing" },
+        .{ .name = "InvalidPositionMapping", .field = "positionMapping" },
+        .{ .name = "InvalidRendererMode", .field = "renderer" },
+        .{ .name = "CustomRoutingRequired", .field = "routing" },
+        .{ .name = "DvsOrderRequires714", .field = "channelOrder" },
+        .{ .name = "UnknownOutputOrder", .field = "channelOrder" },
+        .{ .name = "InvalidPhysicalChannel", .field = "routing.physicalChannels" },
+        .{ .name = "DuplicatePhysicalChannel", .field = "routing.physicalChannels" },
+        .{ .name = "InvalidDesktopPlaybackPath", .field = "network.dll" },
+    };
+    for (table) |row| if (std.mem.eql(u8, row.name, name)) return row.field;
+    return null;
+}
+
+// Read-only network/AES67 status projection for the web UI. Never starts the
+// backend, sends audio, or fabricates numbers: when no observable session data
+// exists the reply carries status "NOT_RUN" plus a reason.
+const NetworkView = struct {
+    destIp: ?[]const u8 = null,
+    port: ?u16 = null,
+    framesPerPacket: ?u16 = null,
+    ttl: ?u8 = null,
+    payloadType: ?u8 = null,
+    ssrc: ?u32 = null,
+    srcInterfaceIp: ?[]const u8 = null,
+    ptpGmid: ?[]const u8 = null,
+    ptpDomain: ?u16 = null,
+    ringPackets: ?u16 = null,
+    prebufferFrames: ?u32 = null,
+    dll: ?[]const u8 = null,
+    channels: ?u16 = null,
+};
+const StatsView = struct {
+    packetsSent: ?u64 = null,
+    silentPackets: ?u64 = null,
+    framesSent: ?u64 = null,
+    framesSubmitted: ?u64 = null,
+    bytesSent: ?u64 = null,
+    ringDroppedFrames: ?u64 = null,
+    sendErrors: ?u64 = null,
+    lateTicks: ?u64 = null,
+    lastSeq: ?u32 = null,
+    lastTimestamp: ?u32 = null,
+};
+const RatesView = struct { packetsPerSecond: ?f64 = null, bytesPerSecond: ?f64 = null, bitsPerSecond: ?f64 = null };
+const ConfiguredView = struct {
+    known: bool = false,
+    path: ?[]const u8 = null,
+    revision: ?[]const u8 = null,
+    outputBackend: ?[]const u8 = null,
+    outputLayout: ?[]const u8 = null,
+    network: ?NetworkView = null,
+    networkIgnored: bool = false,
+    validationError: ?[]const u8 = null,
+};
+const SessionView = struct {
+    known: bool = false,
+    state: ?[]const u8 = null,
+    backend: ?[]const u8 = null,
+    outputDirectory: ?[]const u8 = null,
+    layout: ?[]const u8 = null,
+    network: ?NetworkView = null,
+    networkIgnored: bool = false,
+};
+const CurrentView = struct { backend: []const u8 = "unknown", source: []const u8 = "none", layout: ?[]const u8 = null, sessionState: ?[]const u8 = null, networkIgnored: bool = false, pendingBackendChange: bool = false };
+const Aes67View = struct {
+    status: []const u8 = "NOT_RUN",
+    source: ?[]const u8 = null,
+    reason: ?[]const u8 = null,
+    ageMs: ?u64 = null,
+    state: ?[]const u8 = null,
+    layout: ?[]const u8 = null,
+    network: ?NetworkView = null,
+    stats: ?StatsView = null,
+    rates: ?RatesView = null,
+};
+const DanteView = struct { status: []const u8 = "NOT_AVAILABLE", detail: []const u8 = "第三方 Inferno 后端未接入；当前环境无 Dante 时钟主设备，无法验证" };
+const NetworkStatusReply = struct {
+    schema: []const u8 = "nsp-web-network-status/1",
+    control: bool = false,
+    current: CurrentView,
+    configured: ConfiguredView,
+    session: SessionView,
+    aes67: Aes67View,
+    dante: DanteView,
+};
+fn vName(value: u.Value, key: []const u8) ?[]const u8 {
+    const item = u.field(value, key);
+    return if (item == .string) item.string else null;
+}
+fn vInteger(value: u.Value, key: []const u8) ?u64 {
+    const item = u.field(value, key);
+    return if (item == .integer and item.integer >= 0) @intCast(item.integer) else null;
+}
+fn vReal(value: u.Value, key: []const u8) ?f64 {
+    const item = u.field(value, key);
+    return switch (item) {
+        .float => |number| number,
+        .integer => |number| @floatFromInt(number),
+        else => null,
+    };
+}
+fn narrow(comptime T: type, value: ?u64) ?T {
+    return std.math.cast(T, value orelse return null);
+}
+fn networkFromTyped(net: playback.Network) NetworkView {
+    return .{ .destIp = net.destIp, .port = net.port, .framesPerPacket = net.framesPerPacket, .ttl = net.ttl, .payloadType = net.payloadType,
+        .ssrc = net.ssrc, .srcInterfaceIp = net.srcInterfaceIp, .ptpGmid = net.ptpGmid, .ptpDomain = net.ptpDomain, .ringPackets = net.ringPackets,
+        .prebufferFrames = net.prebufferFrames, .dll = net.dll };
+}
+fn networkFromValue(value: u.Value) ?NetworkView {
+    if (value != .object) return null;
+    return .{ .destIp = vName(value, "destIp"), .port = narrow(u16, vInteger(value, "port")), .framesPerPacket = narrow(u16, vInteger(value, "framesPerPacket")),
+        .ttl = narrow(u8, vInteger(value, "ttl")), .payloadType = narrow(u8, vInteger(value, "payloadType")), .ssrc = narrow(u32, vInteger(value, "ssrc")),
+        .srcInterfaceIp = vName(value, "srcInterfaceIp"), .ptpGmid = vName(value, "ptpGmid"), .ptpDomain = narrow(u16, vInteger(value, "ptpDomain")),
+        .ringPackets = narrow(u16, vInteger(value, "ringPackets")), .prebufferFrames = narrow(u32, vInteger(value, "prebufferFrames")), .dll = vName(value, "dll"),
+        .channels = narrow(u16, vInteger(value, "channels")) };
+}
+fn statsFromValue(value: u.Value) StatsView {
+    const stats = u.field(value, "stats");
+    return .{ .packetsSent = vInteger(stats, "packetsSent"), .silentPackets = vInteger(stats, "silentPackets"), .framesSent = vInteger(stats, "framesSent"),
+        .framesSubmitted = vInteger(stats, "framesSubmitted"), .bytesSent = vInteger(stats, "bytesSent"), .ringDroppedFrames = vInteger(stats, "ringDroppedFrames"),
+        .sendErrors = vInteger(stats, "sendErrors"), .lateTicks = vInteger(stats, "lateTicks"), .lastSeq = narrow(u32, vInteger(stats, "lastSeq")),
+        .lastTimestamp = narrow(u32, vInteger(stats, "lastTimestamp")) };
+}
+fn ratesFromValue(value: u.Value) ?RatesView {
+    const rates = u.field(value, "rates");
+    if (rates != .object) return null;
+    return .{ .packetsPerSecond = vReal(rates, "packetsPerSecond"), .bytesPerSecond = vReal(rates, "bytesPerSecond"), .bitsPerSecond = vReal(rates, "bitsPerSecond") };
+}
+/// The host replaces the live document with an atomic rename every second, so
+/// a reader can briefly lose the sharing race on Windows. Retry a few times
+/// instead of flashing NOT_RUN; a missing/malformed file still yields null.
+fn loadWindow(path: []const u8) ?std.json.Parsed(u.Value) {
+    var attempt: usize = 0;
+    while (attempt < 4) : (attempt += 1) {
+        const file = std.fs.cwd().openFile(path, .{}) catch {
+            std.time.sleep(5 * std.time.ns_per_ms);
+            continue;
+        };
+        defer file.close();
+        const bytes = file.readToEndAlloc(a, 64 * 1024) catch {
+            std.time.sleep(5 * std.time.ns_per_ms);
+            continue;
+        };
+        defer a.free(bytes);
+        return u.parse(bytes) catch return null;
+    }
+    return null;
+}
+fn windowAgeMs(path: []const u8) ?u64 {
+    const file = std.fs.cwd().openFile(path, .{}) catch return null;
+    defer file.close();
+    const stat = file.stat() catch return null;
+    const now = std.time.nanoTimestamp();
+    if (stat.mtime <= 0 or now <= stat.mtime) return 0;
+    return @intCast(@divTrunc(now - stat.mtime, std.time.ns_per_ms));
+}
+fn networkStatus(ctx: Context, stream: std.net.Stream) !void {
+    var configured = ConfiguredView{};
+    var typed: ?std.json.Parsed(playback.Config) = null;
+    defer if (typed) |*value| value.deinit();
+    var revision_storage: [64]u8 = [_]u8{'0'} ** 64;
+    const path = iniPlayback(ctx) catch null;
+    defer if (path) |value| a.free(value);
+    if (path) |config_path| {
+        configured.path = config_path;
+        if (u.read(config_path)) |bytes| {
+            defer a.free(bytes);
+            revision_storage = revision(bytes);
+            configured.revision = &revision_storage;
+            configured.known = true;
+            typed = playback.parse(a, bytes) catch null;
+            if (typed) |value| {
+                configured.outputBackend = value.value.outputBackend;
+                configured.outputLayout = value.value.outputLayout;
+                if (value.value.network) |net| configured.network = networkFromTyped(net);
+            } else {
+                configured.validationError = "InvalidPlaybackConfig";
+                var raw = u.parse(bytes) catch null;
+                if (raw) |*parsed| {
+                    defer parsed.deinit();
+                    configured.outputBackend = vName(parsed.value, "outputBackend");
+                    configured.outputLayout = vName(parsed.value, "outputLayout");
+                    configured.network = networkFromValue(u.field(parsed.value, "network"));
+                }
+            }
+        } else |_| {}
+    }
+    configured.networkIgnored = configured.network != null and !std.mem.eql(u8, configured.outputBackend orelse "", "aes67");
+
+    var session = SessionView{};
+    const reply = backend.request(ctx.home, "status", .{}) catch null;
+    defer if (reply) |bytes| a.free(bytes);
+    var observed: ?std.json.Parsed(u.Value) = if (reply) |bytes| (u.parse(bytes) catch null) else null;
+    defer if (observed) |*value| value.deinit();
+    if (observed) |value| {
+        const node = u.field(value.value, "session");
+        if (node == .object) {
+            session.known = true;
+            session.state = vName(node, "state") orelse vName(value.value, "sessionState");
+            session.outputDirectory = vName(node, "outputDirectory");
+            const settings = u.field(node, "playback");
+            if (settings == .object) {
+                session.backend = vName(settings, "outputBackend");
+                session.layout = vName(settings, "outputLayout");
+                session.network = networkFromValue(u.field(settings, "network"));
+            }
+        }
+    }
+    session.networkIgnored = session.network != null and !std.mem.eql(u8, session.backend orelse "", "aes67");
+
+    var current = CurrentView{};
+    if (session.known) {
+        current.source = "session";
+        current.sessionState = session.state;
+        if (session.backend) |name| current.backend = name;
+        current.layout = session.layout;
+        current.networkIgnored = session.networkIgnored;
+    } else if (configured.outputBackend) |name| {
+        current.source = "configured";
+        current.backend = name;
+        current.layout = configured.outputLayout;
+        current.networkIgnored = configured.networkIgnored;
+    } else {
+        current.backend = "none";
+    }
+    if (configured.outputBackend) |configured_backend| if (session.backend) |session_backend| {
+        current.pendingBackendChange = !std.mem.eql(u8, configured_backend, session_backend);
+    };
+
+    var aes67 = Aes67View{};
+    // Parsed observability documents must outlive the reply; their borrowed
+    // strings are serialized by send() below, so keep them at function scope.
+    var live_report: ?std.json.Parsed(u.Value) = null;
+    defer if (live_report) |*value| value.deinit();
+    var final_report: ?std.json.Parsed(u.Value) = null;
+    defer if (final_report) |*value| value.deinit();
+    if (!std.mem.eql(u8, current.backend, "aes67")) {
+        aes67.reason = "active output backend is not aes67";
+    } else if (!session.known) {
+        aes67.reason = "no active session; saved settings apply on the next session start";
+    } else if (session.outputDirectory) |directory| {
+        // The Zig host receives <session>/observed as --out and writes both the
+        // live document and the shutdown report there; older layouts kept the
+        // report at the session root, so probe observed/ first and fall back.
+        const observed_dir = u.join(&.{ directory, "observed" }) catch null;
+        defer if (observed_dir) |value| a.free(value);
+        const live_observed_path = if (observed_dir) |base| u.join(&.{ base, "aes67-live.json" }) catch null else null;
+        defer if (live_observed_path) |value| a.free(value);
+        const live_root_path = u.join(&.{ directory, "aes67-live.json" }) catch null;
+        defer if (live_root_path) |value| a.free(value);
+        const final_observed_path = if (observed_dir) |base| u.join(&.{ base, "aes67-output.json" }) catch null else null;
+        defer if (final_observed_path) |value| a.free(value);
+        const final_root_path = u.join(&.{ directory, "aes67-output.json" }) catch null;
+        defer if (final_root_path) |value| a.free(value);
+        const live_path = if (live_observed_path) |value| (if (u.exists(value)) value else live_root_path) else live_root_path;
+        const final_path = if (final_observed_path) |value| (if (u.exists(value)) value else final_root_path) else final_root_path;
+        const live_age = if (live_path) |value| windowAgeMs(value) else null;
+        live_report = if (live_path) |value| loadWindow(value) else null;
+        final_report = if (final_path) |value| loadWindow(value) else null;
+        var observed_live = false;
+        if (live_age) |age| if (live_report != null) {
+            if (age <= 5000) {
+                const value = live_report.?.value;
+                aes67.status = "LIVE";
+                aes67.source = "aes67-live.json";
+                aes67.ageMs = age;
+                aes67.state = vName(value, "state");
+                aes67.layout = vName(value, "outputLayout");
+                aes67.network = networkFromValue(u.field(value, "network"));
+                aes67.stats = statsFromValue(value);
+                aes67.rates = ratesFromValue(value);
+                observed_live = true;
+            }
+        };
+        if (!observed_live) {
+            if (final_report) |value| {
+                aes67.status = "FINAL";
+                aes67.source = "aes67-output.json";
+                aes67.ageMs = if (final_path) |item| windowAgeMs(item) else null;
+                aes67.state = vName(value.value, "state");
+                aes67.layout = vName(value.value, "outputLayout");
+                aes67.network = networkFromValue(u.field(value.value, "network"));
+                aes67.stats = statsFromValue(value.value);
+            } else {
+                aes67.reason = "session is running but no AES67 sender statistics have been published yet";
+            }
+        }
+    } else {
+        aes67.reason = "session output directory is unknown";
+    }
+    try send(stream, 200, NetworkStatusReply{ .current = current, .configured = configured, .session = session, .aes67 = aes67, .dante = .{} });
+}
 fn getConfig(ctx: Context, id: []const u8, stream: std.net.Stream) !void {
     const path = try configPath(ctx, id);
     defer a.free(path);
@@ -102,8 +416,9 @@ fn getConfig(ctx: Context, id: []const u8, stream: std.net.Stream) !void {
     };
     defer parsed.deinit();
     var validation_error: ?[]const u8 = null;
-    validate(id, bytes) catch |err| { validation_error = @errorName(err); };
-    try send(stream, 200, .{ .id = id, .path = path, .exists = saved != null, .revision = &revision(saved), .config = parsed.value, .validationError = validation_error,
+    var validation_field: ?[]const u8 = null;
+    validate(id, bytes) catch |err| { validation_error = @errorName(err); validation_field = validationFieldFor(@errorName(err)); };
+    try send(stream, 200, .{ .id = id, .path = path, .exists = saved != null, .revision = &revision(saved), .config = parsed.value, .validationError = validation_error, .validationField = validation_field,
         .apply = if (std.mem.eql(u8, id, "playback")) "next-session" else "backend-restart" });
 }
 fn putConfig(ctx: Context, id: []const u8, bytes: []const u8, stream: std.net.Stream) !void {
@@ -112,7 +427,7 @@ fn putConfig(ctx: Context, id: []const u8, bytes: []const u8, stream: std.net.St
     defer parsed.deinit();
     const encoded = try u.json(parsed.value.config);
     defer a.free(encoded);
-    try validate(id, encoded);
+    validate(id, encoded) catch |err| return send(stream, 400, .{ .@"error" = @errorName(err), .field = validationFieldFor(@errorName(err)) });
     const path = try configPath(ctx, id);
     defer a.free(path);
     // Serialize Web saves and require external editors to respect revisions.
@@ -242,6 +557,7 @@ fn handle(ctx: Context, stream: std.net.Stream) !void {
     if (std.mem.eql(u8, method, "GET")) {
         if (std.mem.eql(u8, path, "/api/web/bootstrap")) return send(stream, 200, .{ .token = ctx.token, .control = false, .pid = c.GetCurrentProcessId(), .ownerPid = ctx.owner, .elevated = false, .configs = .{ "playback", "backend" } });
         if (std.mem.eql(u8, path, "/api/web/status")) return status(ctx, stream);
+        if (std.mem.eql(u8, path, "/api/web/network-status")) return networkStatus(ctx, stream);
         if (std.mem.eql(u8, path, "/api/web/drivers")) return drivers(stream);
         if (std.mem.startsWith(u8, path, "/api/web/config/")) return getConfig(ctx, path[16..], stream);
         if (std.mem.startsWith(u8, path, "/api/")) return send(stream, 404, .{ .@"error" = "NotFound" });

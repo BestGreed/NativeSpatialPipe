@@ -47,15 +47,39 @@ test "short renderer and DSP tails preserve independent counts and order" {
     try std.testing.expect(value.snapshot().received_frames==512 and value.snapshot().dsp_tail_frames==20 and value.ended());
     for(tokens) |token| try std.testing.expect(token.returns==1);
 }
-test "overflow abort returns queued leases while rejected lease stays with Rust" {
+test "live lease queue absorbs a burst larger than the old 32-slot window" {
     const value=try S.create(std.testing.allocator);defer value.destroy();
-    const pcm=[_]f32{0.25} ** S.samples;var tokens=[_]Token{.{}} ** (S.slots+1);
-    for(0..S.slots) |i| try value.pushLease(i*S.frames,tokens[i].lease(&pcm),false);
-    try std.testing.expect(pool.publishPool(value,S.slots*S.frames,&pcm,S.frames,S.channels,0,&tokens[S.slots],Token.release)!=0);
-    try std.testing.expectEqual(@as(?anyerror,error.OutputQueueFull),value.snapshot().failure);
-    try std.testing.expect(value.popLease()==null);
-    for(tokens[0..S.slots]) |token| try std.testing.expect(token.returns==1);
-    try std.testing.expect(tokens[S.slots].returns==0);
+    const pcm=[_]f32{0.25} ** S.samples;var tokens=[_]Token{.{}} ** 192;
+    // A transient writer/pump stall of ~1.9 s: every publish must be accepted.
+    for(0..192) |i| try std.testing.expectEqual(@as(c_int,0),pool.publishPool(value,i*S.frames,&pcm,S.frames,S.channels,0,&tokens[i],Token.release));
+    const snap=value.snapshot();
+    try std.testing.expect(snap.failure==null and snap.dropped_leases==0 and snap.received_frames==192*S.frames and snap.pool_blocks_received==192);
+    for(0..192) |_| {const block=value.popLease().?;value.releaseLease(block);}
+    for(tokens) |token| try std.testing.expect(token.returns==1);
+}
+test "live overflow drops the block, advances the timeline and never faults" {
+    const value=try S.create(std.testing.allocator);defer value.destroy();
+    const pcm=[_]f32{0.25} ** S.samples;var tokens=[_]Token{.{}} ** (S.slots+2);
+    for(0..S.slots) |i| try std.testing.expectEqual(@as(c_int,0),pool.publishPool(value,i*S.frames,&pcm,S.frames,S.channels,0,&tokens[i],Token.release));
+    // Before the fix this publish returned -22 and faulted the session.
+    try std.testing.expectEqual(@as(c_int,0),pool.publishPool(value,S.slots*S.frames,&pcm,S.frames,S.channels,0,&tokens[S.slots],Token.release));
+    var snap=value.snapshot();
+    try std.testing.expect(snap.failure==null);
+    try std.testing.expect(snap.dropped_leases==1 and snap.received_frames==(S.slots+1)*S.frames);
+    try std.testing.expect(tokens[S.slots].returns==1);
+    const block=value.popLease().?;value.releaseLease(block);
+    try std.testing.expectEqual(@as(c_int,0),pool.publishPool(value,(S.slots+1)*S.frames,&pcm,S.frames,S.channels,0,&tokens[S.slots+1],Token.release));
+    snap=value.snapshot();
+    try std.testing.expect(snap.failure==null and snap.dropped_leases==1 and snap.received_frames==(S.slots+2)*S.frames);
+}
+test "pending reports queued leases to the owner pump" {
+    const value=try S.create(std.testing.allocator);defer value.destroy();
+    try std.testing.expect(!value.pending());
+    const pcm=[_]f32{0.25} ** S.samples;var token=Token{};
+    try value.pushLease(0,token.lease(&pcm),false);
+    try std.testing.expect(value.pending());
+    const block=value.popLease().?;value.releaseLease(block);
+    try std.testing.expect(!value.pending());
 }
 test "abort does not release an in-flight submit; teardown releases remaining leases" {
     const value=try S.create(std.testing.allocator);
