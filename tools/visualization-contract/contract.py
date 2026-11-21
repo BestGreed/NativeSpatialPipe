@@ -14,6 +14,12 @@ BED_TYPES = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
 _CATALOG=json.loads((ROOT/'contracts/output-layouts.json').read_text(encoding='utf-8'))
 _ALIASES=dict(L='FL',R='FR',C='C',LFE='LFE',Ls='SL',Rs='SR',Lrs='BL',Rrs='BR',Lw='FWL',Rw='FWR',Ltf='TFL',Rtf='TFR',Ltm='TML',Rtm='TMR',Ltr='TBL',Rtr='TBR')
 OUTPUT_CHANNELS={('ideal'+p['id'].replace('.','')+'-v1'):[_ALIASES[c] for c in p['channels']] for p in _CATALOG['layouts']}
+# Channel-count bounds follow both the device layouts (stereo telemetry is a
+# supported 2-channel case) and the output layout catalog; keeping them in sync
+# here stops the exported schema from narrowing messages the service publishes.
+_LAYOUT_CHANNEL_COUNTS=sorted({len(p['channels']) for p in _CATALOG['layouts']} | {len(p['channels']) for p in _CATALOG.get('deviceLayouts',[])})
+_MIN_LAYOUT_CHANNELS=_LAYOUT_CHANNEL_COUNTS[0]
+_MAX_LAYOUT_CHANNELS=_LAYOUT_CHANNEL_COUNTS[-1]
 ALL_CHANNELS=list(dict.fromkeys(CHANNELS+['FWL','FWR','TML','TMR']))
 def output_channels(message):
     return OUTPUT_CHANNELS.get(message['layoutRevision'],CHANNELS)
@@ -89,7 +95,7 @@ LAYOUT = obj(schemaVersion=VERSIONS, messageType=enum('layout'), dataOrigin=enum
              coordinateSystem=enum('listener-relative-x-right-y-up-z-back'),
              positionSource=enum('idealized'),
              channels=array(obj(channelId=enum(*ALL_CHANNELS), staticType=nullable(enum(*BED_TYPES)),
-                                direction=nullable(VECTOR)), 16, 8))
+                                direction=nullable(VECTOR)), _MAX_LAYOUT_CHANNELS, _MIN_LAYOUT_CHANNELS))
 CAPABILITIES = obj(schemaVersion=VERSIONS, messageType=enum('capabilities'),
                    dataOrigin=enum('simulated', 'measured'),
                    routes=array(obj(routeId=ID, authority=enum('fsa', 'fixture', 'native'),
@@ -97,7 +103,7 @@ CAPABILITIES = obj(schemaVersion=VERSIONS, messageType=enum('capabilities'),
                                     decodedInput=BOOL, renderReady=BOOL, frequencyBands=enum(False),
                                     history=BOOL, lufs=enum(False), truePeak=enum(False),
                                     devicePlayback=enum(False), control=enum(False),
-                                    maxObjects=enum(160), maxChannels=enum(8,10,12,14,16)), 16),
+                                    maxObjects=enum(160), maxChannels=enum(*_LAYOUT_CHANNEL_COUNTS)), 16),
                    publishRatesHz=array(enum(1, 10, 20), 3, 1),
                    historyWindowsSeconds=array(enum(600, 3600), 2, 1))
 SUBSCRIPTION = obj(schemaVersion=VERSIONS, messageType=enum('subscribe', 'negotiated'),
@@ -113,7 +119,7 @@ HISTORY = obj(schemaVersion=VERSIONS, messageType=enum('history'),
               channels=array(obj(channelId=enum(*ALL_CHANNELS), sumSquares=POSITIVE,
                                  validSamples=UINT, samplePeak=nullable(POSITIVE),
                                  meanSquare=nullable(POSITIVE), energyIntegral=POSITIVE,
-                                 contribution=dict(type='number', minimum=0, maximum=1)), 16, 8))
+                                 contribution=dict(type='number', minimum=0, maximum=1)), _MAX_LAYOUT_CHANNELS, _MIN_LAYOUT_CHANNELS))
 SCHEMA = {'$schema': 'https://json-schema.org/draft/2020-12/schema',
           'title': 'NSp visualization V0.1 (offline contract)',
           '$defs': dict(coverage=COVERAGE, meter=METER, identity=IDENTITY, position=POSITION,

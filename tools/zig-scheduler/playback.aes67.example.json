@@ -1,0 +1,39 @@
+{
+  "recording": {"pcm": false, "telemetrySnapshots": false},
+  "outputBackend": "aes67",
+  "network": {
+    "destIp": "239.69.1.1",
+    "port": 5004,
+    "framesPerPacket": 48,
+    "ttl": 32,
+    "payloadType": 96,
+    "ssrc": 1314082870,
+    "srcInterfaceIp": "",
+    "ptpGmid": "00-11-22-FF-FE-33-44-55",
+    "ptpDomain": 0,
+    "ringPackets": 64,
+    "prebufferFrames": 480
+  },
+  "renderer": "roar",
+  "mode": "olr",
+  "bridgeDll": "D:/replace/nsp_roar_bridge.dll",
+  "rendererDll": "",
+  "sourceStream": 0,
+  "sampleRate": 48000,
+  "bufferFrames": 0,
+  "master": 1,
+  "outputProcessing": {
+    "bypass": true,
+    "trim": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+    "delayFrames": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    "limiter": {"enabled": false, "ceiling": 1, "releaseMs": 50, "lookaheadFrames": 0}
+  },
+  "positionMapping": {"mode": "scaled", "reference": 1},
+  "channelOrder": "olr",
+  "routing": {"physicalChannels": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]},
+  "clockSync": true,
+  "prebufferFrames": 0,
+  "drainTimeoutMs": 5000,
+  "outputLayout": "7.1.4",
+  "roarCustomLayout": {"version": 1, "measurementFile": null}
+}
