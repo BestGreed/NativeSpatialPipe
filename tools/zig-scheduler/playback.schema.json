@@ -32,7 +32,7 @@
         "prebufferFrames": {"type": "integer", "minimum": 0, "maximum": 48000, "default": 480},
         "dll": {"type": "string", "maxLength": 1024, "default": "", "description": "Optional absolute nsp_aes67.dll path; empty = <root>/build/aes67-output/nsp_aes67.dll."}
       },
-      "description": "AES67/RTP sink parameters. Only valid with outputBackend=aes67."
+      "description": "AES67/RTP sink parameters. Required with outputBackend=aes67; a preserved block is accepted but ignored when outputBackend=asio so the configuration UI can keep the alternate sink settings."
     },
     "renderer": {
       "enum": [
@@ -377,7 +377,7 @@
       "then": {
         "required": ["asioDll", "driver"],
         "properties": {
-          "network": {"type": "null"}
+          "network": {"type": ["object", "null"], "description": "Preserved AES67 settings; accepted but ignored by the ASIO backend."}
         }
       },
       "else": {

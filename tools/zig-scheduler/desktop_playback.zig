@@ -167,9 +167,13 @@ pub const Config = struct {
     pub fn validate(self: Config) !void {
         const aes67_backend = std.mem.eql(u8,self.outputBackend,"aes67");
         if (!aes67_backend and !std.mem.eql(u8,self.outputBackend,"asio")) return error.InvalidOutputBackend;
-        if (aes67_backend) {
-            try (self.network orelse return error.NetworkConfigRequired).validate((try self.preset()).labels.len);
-        } else if (self.network != null) return error.NetworkConfigWithAsioBackend;
+        // A preserved network block is accepted for non-AES67 backends so the
+        // configuration UI can switch output backends without losing the
+        // alternate sink settings. The block is parsed and validated, but the
+        // runtime ignores it unless outputBackend is "aes67"; status surfaces
+        // that as networkIgnored in the web_host network-status reply.
+        if (self.network) |network| try network.validate((try self.preset()).labels.len);
+        if (aes67_backend and self.network == null) return error.NetworkConfigRequired;
         _ = try select(self.renderer,self.mode);
         const count=(try self.preset()).labels.len;
         if(self.roarCustomLayout) |custom| {

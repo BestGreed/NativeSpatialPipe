@@ -154,11 +154,22 @@ test "AES67 network parameters reject before any socket side effect" {
     var value = validAes67();
     value.network = null;
     try std.testing.expectError(error.NetworkConfigRequired, value.validate());
+    // Network settings survive a switch to the local ASIO backend so the UI
+    // never loses the alternate sink. They stay validated but are ignored by
+    // the runtime while outputBackend is "asio".
     value = validAes67();
     value.outputBackend = "asio";
     value.driver = "asio:test";
     value.asioDll = "C:\\fixture\\asio.dll";
-    try std.testing.expectError(error.NetworkConfigWithAsioBackend, value.validate());
+    try value.validate();
+    try std.testing.expect(value.network != null);
+    value.network.?.ttl = 0;
+    try std.testing.expectError(error.InvalidNetworkTtl, value.validate());
+    // Dante is a third-party placeholder; until that backend is integrated the
+    // parser keeps rejecting it even when a network block is present.
+    value = validAes67();
+    value.outputBackend = "dante";
+    try std.testing.expectError(error.InvalidOutputBackend, value.validate());
     value = validAes67();
     value.outputBackend = "wasapi";
     try std.testing.expectError(error.InvalidOutputBackend, value.validate());
