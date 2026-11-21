@@ -25,6 +25,114 @@
 
 #define SEND_PREBUFFER_PACKETS 12u /* 12 ms of headroom so catch-up bursts never starve at start */
 
+/* --wav test source: a 48 kHz PCM WAV is looped as the packet source. Mono is
+ * duplicated to every channel except the layout's LFE; a WAV whose channel
+ * count equals the output channel count is passed through unchanged. This
+ * keeps the listening test on the real AES67/L24 path while making the content
+ * a musical phrase instead of the per-channel ramp. */
+static float *g_src = NULL;
+static size_t g_src_frames = 0;
+static unsigned g_src_channels = 0;
+static size_t g_src_pos = 0;
+
+static unsigned rd_u16(const unsigned char *p) { return (unsigned)p[0] | ((unsigned)p[1] << 8); }
+static unsigned rd_u32(const unsigned char *p) {
+    return (unsigned)p[0] | ((unsigned)p[1] << 8) | ((unsigned)p[2] << 16) | ((unsigned)p[3] << 24);
+}
+
+static int load_wav(const char *path, char *err, size_t err_cap) {
+    FILE *f;
+    unsigned char *buf = NULL;
+    long size;
+    unsigned channels = 0, rate = 0, bits = 0, fmt = 0, off = 12, bps = 0;
+    const unsigned char *data = NULL;
+    unsigned data_bytes = 0, i;
+    size_t frames;
+    f = fopen(path, "rb");
+    if (!f) { snprintf(err, err_cap, "cannot open %s", path); return 0; }
+    fseek(f, 0, SEEK_END);
+    size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (size < 44 || size > (long)(256 * 1024 * 1024)) { snprintf(err, err_cap, "bad WAV size"); fclose(f); return 0; }
+    buf = (unsigned char *)malloc((size_t)size);
+    if (!buf || fread(buf, 1, (size_t)size, f) != (size_t)size) { snprintf(err, err_cap, "cannot read WAV"); free(buf); fclose(f); return 0; }
+    fclose(f);
+    if (memcmp(buf, "RIFF", 4) || memcmp(buf + 8, "WAVE", 4)) { snprintf(err, err_cap, "not a RIFF/WAVE file"); free(buf); return 0; }
+    while (off + 8 <= (unsigned)size) {
+        unsigned id = off, len = rd_u32(buf + off + 4);
+        off += 8;
+        if (len > (unsigned)size - off) break;
+        if (!memcmp(buf + id, "fmt ", 4) && len >= 16) {
+            fmt = rd_u16(buf + off);
+            channels = rd_u16(buf + off + 2);
+            rate = rd_u32(buf + off + 4);
+            bits = rd_u16(buf + off + 14);
+            if (fmt == 0xFFFEu && len >= 26) fmt = rd_u16(buf + off + 24);
+        } else if (!memcmp(buf + id, "data", 4)) {
+            data = buf + off;
+            data_bytes = len;
+        }
+        off += len + (len & 1u);
+    }
+    if (!data || !channels || !rate) { snprintf(err, err_cap, "missing fmt/data chunk"); free(buf); return 0; }
+    if (rate != 48000u) { snprintf(err, err_cap, "WAV must be 48000 Hz (got %u)", rate); free(buf); return 0; }
+    if (channels < 1 || channels > 16) { snprintf(err, err_cap, "WAV channels must be 1..16"); free(buf); return 0; }
+    if (fmt == 1 && bits == 16) bps = 2;
+    else if (fmt == 1 && bits == 24) bps = 3;
+    else if (fmt == 1 && bits == 32) bps = 4;
+    else if (fmt == 3 && bits == 32) bps = 4;
+    else { snprintf(err, err_cap, "unsupported WAV format (fmt=%u bits=%u)", fmt, bits); free(buf); return 0; }
+    frames = data_bytes / ((size_t)channels * bps);
+    if (frames < 48) { snprintf(err, err_cap, "WAV too short"); free(buf); return 0; }
+    g_src = (float *)malloc(frames * channels * sizeof(float));
+    if (!g_src) { snprintf(err, err_cap, "out of memory for WAV"); free(buf); return 0; }
+    for (i = 0; i < (unsigned)(frames * channels); ++i) {
+        const unsigned char *s = data + (size_t)i * bps;
+        float v;
+        if (fmt == 3) { float t; memcpy(&t, s, 4); v = t; }
+        else if (bits == 16) v = (float)(short)((unsigned)s[0] | ((unsigned)s[1] << 8)) / 32768.0f;
+        else if (bits == 24) { int t = (int)((unsigned)s[0] | ((unsigned)s[1] << 8) | ((unsigned)s[2] << 16)); if (t & 0x800000) t -= 1 << 24; v = (float)t / 8388608.0f; }
+        else { int t = (int)rd_u32(s); v = (float)t / 2147483648.0f; }
+        g_src[i] = v;
+    }
+    g_src_frames = frames;
+    g_src_channels = channels;
+    g_src_pos = 0;
+    free(buf);
+    return 1;
+}
+
+static void render_block(float *dst, unsigned frames, unsigned channels, int lfe, double *phase,
+                         double tone_hz, int uniform, double level) {
+    unsigned f, ch;
+    if (!g_src) {
+        double inc = 2.0 * 3.14159265358979323846 * tone_hz / 48000.0;
+        for (f = 0; f < frames; ++f) {
+            double s = sin(*phase);
+            for (ch = 0; ch < channels; ++ch) {
+                double amp = uniform ? 1.0 : (double)(ch + 1) / (double)channels;
+                dst[(size_t)f * channels + ch] = (float)(level * amp * s);
+            }
+            *phase += inc;
+            if (*phase >= 2.0 * 3.14159265358979323846) *phase -= 2.0 * 3.14159265358979323846;
+        }
+        return;
+    }
+    for (f = 0; f < frames; ++f) {
+        const float *src = &g_src[g_src_pos * g_src_channels];
+        for (ch = 0; ch < channels; ++ch) {
+            float v = 0.0f;
+            if ((int)ch != lfe) {
+                if (g_src_channels == 1) v = src[0];
+                else if (g_src_channels == channels) v = src[ch];
+                else v = src[ch < g_src_channels ? ch : 0];
+            }
+            dst[(size_t)f * channels + ch] = v;
+        }
+        if (++g_src_pos >= g_src_frames) g_src_pos = 0;
+    }
+}
+
 static volatile LONG g_ctrl_stop = 0;
 
 static BOOL WINAPI ctrl_handler(DWORD type) {
@@ -42,6 +150,8 @@ static void usage(void) {
         "  --packet-ms <1|2|4|10> packet time in ms (default 1 => 48 frames)\n"
         "  --frames <48|96|192|480>  packet frames (overrides --packet-ms)\n"
         "  --seconds <s>          duration in seconds (default 2)\n"
+        "  --wav <path>           48 kHz PCM WAV looped as the source (mono is copied to every\n"
+        "                         channel except LFE; overrides --tone; default --seconds = WAV length)\n"
         "  --tone <hz>            sine frequency (default 1000)\n"
         "  --level <0..1>         peak level of the loudest channel (default 0.5)\n"
         "  --uniform              same amplitude on all channels (default: ramp by channel)\n"
@@ -72,9 +182,11 @@ typedef struct {
     char src_ip[64];
     char sdp_path[512];
     char stats_json[512];
+    char wav_path[512];
     char gmid[64];
     unsigned ptp_domain;
     const char *layout_id;
+    int seconds_given;
     int quiet;
 } options;
 
@@ -108,23 +220,6 @@ static const nsp_aes67_layout *find_layout(const char *id) {
     return NULL;
 }
 
-static void render_tone(float *dst, unsigned frames, unsigned channels, double *phase,
-                        double tone_hz, int uniform, double level) {
-    double inc = 2.0 * 3.14159265358979323846 * tone_hz / 48000.0;
-    unsigned f, ch;
-    for (f = 0; f < frames; ++f) {
-        double s = sin(*phase);
-        for (ch = 0; ch < channels; ++ch) {
-            double amp = uniform ? 1.0 : (double)(ch + 1) / (double)channels;
-            dst[(size_t)f * channels + ch] = (float)(level * amp * s);
-        }
-        *phase += inc;
-        if (*phase >= 2.0 * 3.14159265358979323846) *phase -= 2.0 * 3.14159265358979323846;
-    }
-}
-
-
-
 static int write_text(const char *path, const char *text) {
     FILE *f = fopen(path, "wb");
     size_t len = strlen(text);
@@ -150,6 +245,8 @@ int main(int argc, char **argv) {
     unsigned prebuffer;
     unsigned long long elapsed_ms, payload_bytes;
     int sdp_len = 0;
+    int lfe_index = -1;
+    unsigned ch;
     char sdp[8192];
     char dest_label[96];
     size_t label_len;
@@ -183,7 +280,8 @@ int main(int argc, char **argv) {
             o.frames = ms * 48u;
             a++;
         } else if (strcmp(arg, "--frames") == 0 && next) { o.frames = parse_uint(next, 48); a++;
-        } else if (strcmp(arg, "--seconds") == 0 && next) { o.seconds = atof(next); a++;
+        } else if (strcmp(arg, "--seconds") == 0 && next) { o.seconds = atof(next); o.seconds_given = 1; a++;
+        } else if (strcmp(arg, "--wav") == 0 && next) { snprintf(o.wav_path, sizeof(o.wav_path), "%s", next); a++;
         } else if (strcmp(arg, "--tone") == 0 && next) { o.tone = atof(next); a++;
         } else if (strcmp(arg, "--level") == 0 && next) { o.level = atof(next); a++;
         } else if (strcmp(arg, "--uniform") == 0) { o.uniform = 1;
@@ -220,6 +318,20 @@ int main(int argc, char **argv) {
     if (o.channels < 1 || o.channels > NSP_AES67_MAX_CHANNELS) {
         fprintf(stderr, "error: --channels must be 1..16\n");
         return 2;
+    }
+    if (o.wav_path[0]) {
+        if (!load_wav(o.wav_path, err, sizeof(err))) {
+            fprintf(stderr, "error: %s\n", err);
+            return 2;
+        }
+        if (g_src_channels != 1 && g_src_channels != o.channels) {
+            fprintf(stderr, "error: --wav has %u channels; need mono or exactly --channels %u\n",
+                    g_src_channels, o.channels);
+            return 2;
+        }
+        if (!o.seconds_given) o.seconds = (double)g_src_frames / 48000.0;
+        for (ch = 0; ch < layout->channels; ++ch)
+            if (strcmp(layout->labels[ch], "LFE") == 0) { lfe_index = (int)ch; break; }
     }
     if (o.seconds <= 0.0 || o.seconds > 600.0) {
         fprintf(stderr, "error: --seconds must be in (0, 600]\n");
@@ -268,13 +380,17 @@ int main(int argc, char **argv) {
     }
     SetConsoleCtrlHandler(ctrl_handler, TRUE);
 
+    if (g_src && !o.quiet)
+        printf("wav: frames=%llu channels=%u lfe=%d first=%.5f,%.5f,%.5f,%.5f\n",
+               (unsigned long long)g_src_frames, g_src_channels, lfe_index,
+               g_src[0], g_src[1], g_src[2], g_src[3]);
     packets = (uint32_t)(o.seconds * 48000.0 / (double)o.frames + 0.5);
     if (packets == 0) packets = 1;
 
     /* Prebuffer, then start the sender. */
     prebuffer = packets < SEND_PREBUFFER_PACKETS ? packets : SEND_PREBUFFER_PACKETS;
     for (i = 0; i < prebuffer; ++i) {
-        render_tone(block, o.frames, o.channels, &phase, o.tone, o.uniform, o.level);
+        render_block(block, o.frames, o.channels, lfe_index, &phase, o.tone, o.uniform, o.level);
         if (nsp_aes67_submit(tx, block, o.frames) != NSP_AES67_OK) {
             fprintf(stderr, "error: nsp_aes67_submit rejected prebuffer\n");
             return 3;
@@ -302,7 +418,7 @@ int main(int argc, char **argv) {
         {
             int burst = 0;
             while (next_tick.QuadPart <= now_qpc.QuadPart && i < packets && burst < 32) {
-                render_tone(block, o.frames, o.channels, &phase, o.tone, o.uniform, o.level);
+                render_block(block, o.frames, o.channels, lfe_index, &phase, o.tone, o.uniform, o.level);
                 if (nsp_aes67_submit(tx, block, o.frames) != NSP_AES67_OK) break;
                 next_tick.QuadPart += period_ticks;
                 i++;
@@ -389,9 +505,10 @@ int main(int argc, char **argv) {
     }
     if (!o.quiet) {
         label_len = strlen(dest_label);
-        printf("aes67-send: dest=%s layout=%s channels=%u pt=%u ssrc=0x%08X packet=%uframes/%.0fms tone=%.0fHz(%s)%s\n",
+        printf("aes67-send: dest=%s layout=%s channels=%u pt=%u ssrc=0x%08X packet=%uframes/%.0fms source=%s%s\n",
                dest_label, layout->id, o.channels, o.pt, o.ssrc, o.frames,
-               (double)o.frames / 48.0, o.tone, o.uniform ? "uniform" : "channel-ramp",
+               (double)o.frames / 48.0,
+               o.wav_path[0] ? o.wav_path : "sine",
                o.sdp_path[0] ? " sdp=written" : "");
         printf("packets=%llu frames=%llu bytes=%llu submitted=%llu silent=%llu dropped=%llu errors=%llu late=%llu elapsed_ms=%llu bitrate_kbps=%.1f payload_kbps=%.1f\n",
                stats.packets_sent, stats.frames_sent, stats.bytes_sent, stats.frames_submitted,
@@ -402,6 +519,7 @@ int main(int argc, char **argv) {
     }
     nsp_aes67_destroy(tx);
     free(block);
+    free(g_src);
+    g_src = NULL;
     return 0;
 }
-
