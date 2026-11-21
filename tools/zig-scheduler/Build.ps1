@@ -24,6 +24,8 @@ if(-not $SkipTests){
  if($LASTEXITCODE){throw 'Common output processing tests failed'}
  & $Zig test "$PSScriptRoot/output_stream_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/output-stream-tests.exe"
  if($LASTEXITCODE){throw 'Reliable output stream tests failed'}
+ & $Zig test "$PSScriptRoot/desktop_playback_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/playback-config-tests.exe"
+ if($LASTEXITCODE){throw 'Playback configuration tests failed'}
  & $Zig test "$PSScriptRoot/output_layout_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/output-layout-tests.exe"
  if($LASTEXITCODE){throw 'Output speaker mapping tests failed'}
 }

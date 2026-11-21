@@ -23,9 +23,11 @@ Process=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_uint32,C.POINTER(C.c_float),C.c_uint3
 Release=C.CFUNCTYPE(None,C.c_void_p)
 Publish=C.CFUNCTYPE(C.c_int,C.c_void_p,C.c_uint64,C.POINTER(C.c_float),C.c_uint32,C.c_uint32,C.c_uint32,C.c_void_p,Release)
 bridge.nsp_pipeline_set_pool_output.argtypes=[C.c_void_p,Process,Publish,C.c_void_p]
-checks=[]
+checks=[];rendered={}
 for row in catalog:
- for renderer in ('roar','lira'):
+ # Derived layouts (contract "map") are a ROAR-path subset: the LIRA spatial
+ # renderer only knows whole layouts, so it cannot publish a reduced channel set.
+ for renderer in (('roar',) if row.get('map') else ('roar','lira')):
   for bed in (False,True):
    channels=len(row['channels']);types=[2**(i+1) for i in range(12)] if bed else [1]
    name=f'{row["code"]}-{renderer}-{"bed" if bed else "object"}'
@@ -53,7 +55,7 @@ for row in catalog:
     report=C.create_string_buffer(size);assert bridge.nsp_pipeline_finish(handle,report,size)==size
     result=json.loads(report.value);assert result['passed'],(name,result)
     assert result['outputLayout']==row['id'] and result['outputChannels']==channels
-    pcm=path.read_bytes();expected=8*480+(512 if renderer=='lira' else 0)
+    pcm=path.read_bytes();rendered[(row['code'],renderer,bed)]=pcm;expected=8*480+(512 if renderer=='lira' else 0)
     assert len(pcm)==expected*channels*4,(name,len(pcm),expected)
     values=struct.unpack('<'+'f'*(len(pcm)//4),pcm);assert all(map(math.isfinite,values)) and any(v!=0 for v in values)
     assert dimensions and all(d[1]==channels for d in dimensions) and len(released)==len(dimensions)
@@ -63,6 +65,33 @@ for row in catalog:
     assert struct.unpack_from('<H',tap.raw,6)[0]==channels
     checks.append(dict(layout=row['id'],renderer=renderer,bed=bed,channels=channels,outputFrames=expected,leaseBlocks=len(dimensions)))
    finally:bridge.nsp_pipeline_destroy(handle)
+# Derived layouts publish a contract-declared subset of a wider ROAR layout and may
+# fold extra rendered channels into published ones (4.1.2: center -> L/R at -3 dB,
+# peak limited). Compare sample by sample with the reference ROAR layout rendered
+# from the same stimulus; this is the regression test for map order and fold gains.
+folds=[];codes_by_roar={row['roar']:row['code'] for row in catalog if not row.get('map')}
+for row in catalog:
+ if not row.get('map'):continue
+ reference_code=codes_by_roar.get(row['roar']);assert reference_code is not None,row['roar']
+ reference_row=next(r for r in catalog if r['code']==reference_code)
+ for bed in (False,True):
+  reference=struct.unpack('<'+'f'*(len(rendered[(reference_code,'roar',bed)])//4),rendered[(reference_code,'roar',bed)])
+  derived=struct.unpack('<'+'f'*(len(rendered[(row['code'],'roar',bed)])//4),rendered[(row['code'],'roar',bed)])
+  reference_channels=len(reference_row['channels']);channels=len(row['channels']);frames=len(reference)//reference_channels
+  assert len(derived)==frames*channels,(row['id'],bed,len(derived),frames,channels)
+  # The recorder writes frame-interleaved f32 PCM, so channel c of frame i is
+  # reference[i*reference_channels+c]; derived uses the published channel count.
+  expected=[[reference[i*reference_channels+src] for i in range(frames)] for src in row['map']]
+  folded=set()
+  for mix in row.get('downmix',[]):
+   folded.update(mix['to'])
+   for dst in mix['to']:
+    for i in range(frames):expected[dst][i]+=mix['gain']*reference[i*reference_channels+mix['from']]
+  for dst in folded:expected[dst]=[min(1.,max(-1.,v)) for v in expected[dst]]
+  for dst in range(channels):
+   for i in range(frames):
+    assert abs(expected[dst][i]-derived[i*channels+dst])<1e-5,(row['id'],bed,'channel',dst,'frame',i)
+  folds.append(dict(layout=row['id'],reference=reference_row['id'],bed=bed,map=row['map'],downmix=row.get('downmix',[]),channels=channels,frames=frames))
 def legacy714(dll,renderer,bed,tag,lira):
  dll.nsp_pipeline_create_with_position_mapping.argtypes=[C.c_uint32]*5+[C.c_double,C.c_char_p]
  dll.nsp_pipeline_create_with_position_mapping.restype=C.c_void_p
@@ -101,6 +130,6 @@ for renderer in ('roar','lira'):
   current=legacy714(bridge,renderer,bed,name+'-legacy',OUT/'NSP.SpatialRenderer.dll')
   assert reference==current==(RUN/(name+'.f32')).read_bytes(),name+' compatibility changed'
   compat.append(name)
-result=dict(passed=True,count=len(checks),checks=checks,bitExact714=compat,audioDevicesOpened=False)
+result=dict(passed=True,count=len(checks),checks=checks,folds=folds,bitExact714=compat,audioDevicesOpened=False)
 (OUT/'renderer-tests.json').write_text(json.dumps(result,indent=2),encoding='utf-8')
 print(json.dumps(dict(passed=True,count=len(checks))))

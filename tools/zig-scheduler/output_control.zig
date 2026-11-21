@@ -201,6 +201,12 @@ pub fn Worker(comptime Backend: type) type {
                                 self.detail = self.errorDetail(err);
                                 self.phase = .faulted;
                             }
+                            // Keep draining while the backend still has queued work; this
+                            // prevents a 1 ms wait from accumulating a burst that would
+                            // overflow the lease queue under load.
+                            if (@hasDecl(Backend, "pending") and self.backend.pending()) {
+                                if (!self.closing and self.count == 0) continue;
+                            }
                             // Bounded scheduling wait, not a per-block accumulation target.
                             if (!self.closing and self.count == 0) self.wake.timedWait(&self.mutex, std.time.ns_per_ms) catch {};
                             continue;

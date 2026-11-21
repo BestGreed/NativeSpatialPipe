@@ -654,14 +654,6 @@
           },
           "minItems": 0,
           "maxItems": 256
-        },
-        "pcmUpmixedBed": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/channel"
-          },
-          "minItems": 8,
-          "maxItems": 8
         }
       },
       "required": [
@@ -722,13 +714,13 @@
         "layoutId": {
           "enum": [
             "roar-layout714",
+            "nsp-layout412",
             "nsp-layout512",
             "nsp-layout514",
             "nsp-layout712",
             "nsp-layout716",
             "nsp-layout914",
-            "nsp-layout916",
-            "nsp-layout20"
+            "nsp-layout916"
           ]
         },
         "coordinateSystem": {
@@ -914,6 +906,7 @@
               "maxChannels": {
                 "enum": [
                   2,
+                  7,
                   8,
                   10,
                   12,

@@ -11,7 +11,7 @@ test "diagnostic archives default off and are independent of playback DSP" {
     try std.testing.expect(!value.recording.pcm and value.processingConfig().neutral());
 }
 
-test "seven layouts share channel counts, routing and DSP dimensions across backends" {
+test "every layout shares channel counts, routing and DSP dimensions across backends" {
     for(@import("layout_presets.zig").presets) |preset| {
         var value=valid();value.outputLayout=preset.id;
         for([_][]const u8{"roar","lira"}) |backend| {
@@ -127,4 +127,97 @@ test "JSON bypass is explicit and retained separately from neutral auto bypass" 
     defer parsed.deinit();
     const config=parsed.value.processingConfig();
     try std.testing.expect(config.bypass and !config.neutral() and config.master==0.25);
+}
+fn validAes67() Config {
+    return .{ .bridgeDll = "C:\\fixture\\bridge.dll",
+        .outputBackend = "aes67",
+        .network = .{ .destIp = "239.69.1.1", .port = 5004, .framesPerPacket = 48, .ttl = 32, .payloadType = 96,
+            .ssrc = 0x4E535036, .ptpGmid = "00-11-22-FF-FE-33-44-55", .ptpDomain = 0, .ringPackets = 64, .prebufferFrames = 480 } };
+}
+
+test "AES67 backend selects the network sink and ignores the ASIO module" {
+    var value = validAes67();
+    try value.validate();
+    try std.testing.expectEqualStrings("aes67", value.outputBackend);
+    try std.testing.expect(value.network != null);
+    // asioDll/driver are not required (and may be empty) for the network sink.
+    try std.testing.expectEqualStrings("", value.asioDll);
+    try std.testing.expectEqualStrings("", value.driver);
+    value.driver = "asio:legacy-device"; // ignored, not opened
+    try value.validate();
+    value.asioDll = "relative.dll"; // ignored entirely by the AES67 backend
+    try value.validate();
+}
+
+test "4.1.2 is a derived seven-channel layout that the AES67 sink accepts" {
+    var value = validAes67();
+    value.outputLayout = "4.1.2";
+    try value.validate();
+    try std.testing.expectEqual(@as(usize, 7), value.channelCount());
+    const labels = try value.labels();
+    const expected = [_][]const u8{ "L", "R", "Ls", "Rs", "Ltf", "Rtf", "LFE" };
+    for (expected, 0..) |label, i| try std.testing.expectEqualStrings(label, labels[i]);
+    // Calibration arrays are published-channel sized, not renderer sized.
+    var wide = [_]f64{1} ** 8;
+    value.outputProcessing = .{ .trim = &wide };
+    try std.testing.expectError(error.InvalidCalibrationChannelCount, value.validate());
+    var exact = [_]f64{1} ** 7;
+    value.outputProcessing = .{ .trim = &exact };
+    try value.validate();
+    // The SDP channel-order token is the same non-standard extension spelling.
+    const aes67 = @import("aes67_control.zig");
+    try std.testing.expectEqualStrings("SMPTE2110.(41,2)", aes67.Backend.Config.smpteToken("4.1.2").?);
+    try std.testing.expect(aes67.Backend.Config.smpteToken("unknown") == null);
+}
+
+test "AES67 network parameters reject before any socket side effect" {
+    const options = @import("desktop_playback.zig");
+    var value = validAes67();
+    value.network = null;
+    try std.testing.expectError(error.NetworkConfigRequired, value.validate());
+    // Network settings survive a switch to the local ASIO backend so the UI
+    // never loses the alternate sink. They stay validated but are ignored by
+    // the runtime while outputBackend is "asio".
+    value = validAes67();
+    value.outputBackend = "asio";
+    value.driver = "asio:test";
+    value.asioDll = "C:\\fixture\\asio.dll";
+    try value.validate();
+    try std.testing.expect(value.network != null);
+    value.network.?.ttl = 0;
+    try std.testing.expectError(error.InvalidNetworkTtl, value.validate());
+    // Dante is a third-party placeholder; until that backend is integrated the
+    // parser keeps rejecting it even when a network block is present.
+    value = validAes67();
+    value.outputBackend = "dante";
+    try std.testing.expectError(error.InvalidOutputBackend, value.validate());
+    value = validAes67();
+    value.outputBackend = "wasapi";
+    try std.testing.expectError(error.InvalidOutputBackend, value.validate());
+    value = validAes67();
+    value.network.?.framesPerPacket = 64;
+    try std.testing.expectError(error.InvalidFramesPerPacket, value.validate());
+    value = validAes67();
+    value.network.?.ttl = 0;
+    try std.testing.expectError(error.InvalidNetworkTtl, value.validate());
+    value = validAes67();
+    value.network.?.destIp = "192.168.1.256";
+    try std.testing.expectError(error.InvalidDestinationIp, value.validate());
+    value = validAes67();
+    value.network.?.destIp = "0.0.0.0";
+    try std.testing.expectError(error.InvalidDestinationIp, value.validate());
+    value = validAes67();
+    value.network.?.payloadType = 200;
+    try std.testing.expectError(error.InvalidPayloadType, value.validate());
+    value = validAes67();
+    value.network.?.ptpGmid = "00-11-22";
+    try std.testing.expectError(error.InvalidPtpGmid, value.validate());
+    value = validAes67();
+    value.network.?.ringPackets = 0;
+    try std.testing.expectError(error.InvalidRingPackets, value.validate());
+    value = validAes67();
+    value.network.?.srcInterfaceIp = "192.168.1.999";
+    try std.testing.expectError(error.InvalidSourceInterfaceIp, value.validate());
+    try std.testing.expectError(error.UnknownField, options.parse(std.testing.allocator,
+        "{\"bridgeDll\":\"C:\\\\b.dll\",\"outputBackend\":\"aes67\",\"network\":{\"destIp\":\"239.69.1.1\",\"framesPerPacket\":480,\"unknownField\":1}}"));
 }

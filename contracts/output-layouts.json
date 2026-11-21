@@ -4,6 +4,7 @@
   "reserved": {"id": "roar-custom-6dof", "renderer": "roar", "available": false},
   "deviceLayouts": [{"id":"2.0","channels":["L","R"]}],
   "layouts": [
+    {"id":"4.1.2","code":412,"roar":"Layout512","map":[0,1,4,5,6,7,3],"downmix":[{"from":2,"to":[0,1],"gain":0.70710678}],"channels":["L","R","Ls","Rs","Ltf","Rtf","LFE"]},
     {"id":"5.1.2","code":512,"roar":"Layout512","channels":["L","R","C","LFE","Ls","Rs","Ltf","Rtf"]},
     {"id":"5.1.4","code":514,"roar":"Layout514","channels":["L","R","C","LFE","Ls","Rs","Ltf","Rtf","Ltr","Rtr"]},
     {"id":"7.1.2","code":712,"roar":"Layout712","channels":["L","R","C","LFE","Ls","Rs","Lrs","Rrs","Ltf","Rtf"]},
