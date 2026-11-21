@@ -17,7 +17,7 @@ import sys
 
 # Informative SMPTE ST 2110-30 channel-order tokens. AES67 itself does not
 # normatively define a channel-order token; these are a pragmatic approximation
-# for receivers that understand the ST 2110 convention (see docs/core/aes67-output.md).
+# for receivers that understand the ST 2110 convention (see docs/aes67-output.md).
 SMPTE_ORDER = {
     "5.1.2": "SMPTE2110.(51,2)",
     "5.1.4": "SMPTE2110.(51,4)",

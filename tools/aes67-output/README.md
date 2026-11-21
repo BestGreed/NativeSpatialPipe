@@ -52,5 +52,5 @@ Documented behaviours (also covered by tests):
 * **Multicast**: `IP_MULTICAST_TTL`/`IP_MULTICAST_LOOP` are set; optional
   `IP_MULTICAST_IF` via `src_interface_ip`. Unicast uses plain `sendto`.
 
-Not implemented here (see `docs/core/aes67-output.md` `8): PTP slave, RTCP,
+Not implemented here (see `docs/aes67-output.md` `8): PTP slave, RTCP,
 ST 2022-7 redundancy, SDP/offer-answer negotiation, 44.1/96 kHz, DSCP, SAP.
