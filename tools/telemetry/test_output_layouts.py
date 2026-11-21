@@ -7,7 +7,7 @@ from layout_presets import LAYOUTS
 
 
 class OutputLayouts(unittest.TestCase):
-    def test_seven_output_layouts_through_snapshot_history_and_contract(self):
+    def test_every_output_layout_through_snapshot_history_and_contract(self):
         for layout, channels in LAYOUTS.items():
             with self.subTest(layout=layout):
                 engine=SoundscapeEngine(output_layout=layout)
