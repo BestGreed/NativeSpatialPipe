@@ -57,6 +57,8 @@ struct Mapping {
 /// ROAR's OLR mode and its dedicated adapter; not a generic ROAR engine.
 pub struct Engine {
     layout: crate::layouts::Preset,
+    /// ROAR renders this many channels; `map` reduces them to `labels`.
+    render_channels: usize,
     rdr: RoarRenderer,
     group: GroupId,
     frames: Samples,
@@ -72,7 +74,10 @@ pub struct Engine {
     signature: Option<Vec<(usize, u64)>>,
     pcm: Vec<f32>,
     bed: Vec<f32>,
+    /// Planar scratch for the ROAR layout (render_channels * n).
     output: Vec<f32>,
+    /// Planar published buffer (labels * n); empty when the layout is a presence one.
+    mapped: Vec<f32>,
     positions: ObjectPosition,
     one_position: ObjectPosition,
     mapping: Mapping,
@@ -101,6 +106,16 @@ impl Engine {
         let layout=crate::layouts::get(code)?;
         if !(1..=4096).contains(&n) || rate != 48000 || !reference.is_finite() || reference <= 0. {
             return err("Invalid native packet configuration");
+        }
+        // A derived layout renders the full ROAR layout, then publishes a subset
+        // in contract order; presence layouts map onto ROAR one-to-one.
+        let render_channels=layout.roar.channels();
+        if layout.map.is_empty() {
+            if render_channels != layout.labels.len() {
+                return err("Layout channel map required");
+            }
+        } else if layout.map.len() != layout.labels.len() || layout.map.iter().any(|&i| i >= render_channels) {
+            return err("Invalid layout channel map");
         }
         let frames = oar(Samples::new(n))?;
         let mut rdr = oar(RoarRenderer::create(&oar(Config::new(
@@ -133,7 +148,9 @@ impl Engine {
             signature: None,
             pcm: vec![0.; SLOTS * n as usize],
             bed: vec![0.; 12 * n as usize],
-            output: vec![0.; layout.labels.len() * n as usize],
+            render_channels,
+            output: vec![0.; render_channels * n as usize],
+            mapped: if layout.map.is_empty() { Vec::new() } else { vec![0.; layout.labels.len() * n as usize] },
             positions: ObjectPosition::Cartesian(Vec::with_capacity(SLOTS)),
             one_position: ObjectPosition::Cartesian(Vec::with_capacity(1)),
             mapping: Mapping::default(),
@@ -356,7 +373,7 @@ impl Engine {
                 len += 1;
             }
             let mut chunks = self.output.chunks_exact_mut(self.n);
-            let channels=self.layout.labels.len();
+            let channels=self.render_channels;
             let mut out: [&mut [f32]; 16] = std::array::from_fn(|_| &mut [][..]);
             for slot in out.iter_mut().take(channels) { *slot=chunks.next().unwrap(); }
             oar(self.rdr.render(
@@ -364,8 +381,17 @@ impl Engine {
                 &mut oar(PlanarBufferMut::new(&mut out[..channels], channels, self.frames))?,
             ))?;
         }
+        if !self.mapped.is_empty() {
+            for (dst, &src) in self.layout.map.iter().enumerate() {
+                self.mapped[dst * self.n..(dst + 1) * self.n]
+                    .copy_from_slice(&self.output[src * self.n..(src + 1) * self.n]);
+            }
+        }
         self.dsp_ns = dsp_begin.elapsed().as_nanos() as u64;
         if !self.output.iter().all(|v| v.is_finite()) {
+            return err("Nonfinite rendered output");
+        }
+        if !self.mapped.iter().all(|v| v.is_finite()) {
             return err("Nonfinite rendered output");
         }
         if let Some(tap) = object_tap.filter(|tap| tap.active()) {
@@ -406,7 +432,7 @@ impl Engine {
             .mapping
             .max_static
             .max(seen_bed.iter().filter(|v| **v).count());
-        Ok(&self.output)
+        Ok(if self.mapped.is_empty() { &self.output } else { &self.mapped })
     }
 }
 

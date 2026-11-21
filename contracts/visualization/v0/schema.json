@@ -714,6 +714,7 @@
         "layoutId": {
           "enum": [
             "roar-layout714",
+            "nsp-layout412",
             "nsp-layout512",
             "nsp-layout514",
             "nsp-layout712",

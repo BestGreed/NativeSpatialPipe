@@ -138,8 +138,12 @@ pub const Backend = struct {
             @memset(dst, 0);
             @memcpy(dst[0..value.len], value);
         }
-        fn smpteToken(layout: []const u8) ?[]const u8 {
+        /// Informative ST 2110-30 channel-order spelling. 4.1.2 is an NSP
+        /// extension with no normative SMPTE token; the SDP also carries
+        /// a=comment:channel-labels so receivers never have to guess.
+        pub fn smpteToken(layout: []const u8) ?[]const u8 {
             const table = [_]struct { id: []const u8, token: []const u8 }{
+                .{ .id = "4.1.2", .token = "SMPTE2110.(41,2)" },
                 .{ .id = "5.1.2", .token = "SMPTE2110.(51,2)" },
                 .{ .id = "5.1.4", .token = "SMPTE2110.(51,4)" },
                 .{ .id = "7.1.2", .token = "SMPTE2110.(71,2)" },

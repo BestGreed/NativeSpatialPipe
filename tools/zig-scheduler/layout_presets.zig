@@ -2,6 +2,7 @@
 const std=@import("std");
 pub const Preset=struct{id:[]const u8,code:u32,labels:[]const []const u8};
 pub const presets=[_]Preset{
+.{.id="4.1.2",.code=412,.labels=&.{"L","R","Ls","Rs","Ltf","Rtf","LFE"}},
 .{.id="5.1.2",.code=512,.labels=&.{"L","R","C","LFE","Ls","Rs","Ltf","Rtf"}},
 .{.id="5.1.4",.code=514,.labels=&.{"L","R","C","LFE","Ls","Rs","Ltf","Rtf","Ltr","Rtr"}},
 .{.id="7.1.2",.code=712,.labels=&.{"L","R","C","LFE","Ls","Rs","Lrs","Rrs","Ltf","Rtf"}},

@@ -19,6 +19,10 @@ import sys
 # normatively define a channel-order token; these are a pragmatic approximation
 # for receivers that understand the ST 2110 convention (see docs/aes67-output.md).
 SMPTE_ORDER = {
+    # 4.1.2 is an NSP extension: SMPTE ST 2110-30 defines no such token, so this
+    # follows its (bed,height) spelling and is informative only. Receivers that
+    # need the exact order must use a=comment:channel-labels in the same SDP.
+    "4.1.2": "SMPTE2110.(41,2)",
     "5.1.2": "SMPTE2110.(51,2)",
     "5.1.4": "SMPTE2110.(51,4)",
     "7.1.2": "SMPTE2110.(71,2)",
