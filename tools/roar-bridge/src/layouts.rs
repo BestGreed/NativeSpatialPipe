@@ -2,17 +2,21 @@
 //
 // Presence presets render through ROAR's named layout. Derived presets (those with a
 // non-empty map) still render through roar, then publish only the channels listed
-// in map, in that order; map indexes the roar layout channel list.
+// in map, in that order; map indexes the roar layout channel list. Optional downmix
+// entries then add a scaled roar channel into a published channel (4.1.2 folds the
+// 5.1.2 center into L/R at -3 dB); the bridge clamps folded channels to [-1, 1].
 use aom_roar::Layout;
 #[derive(Clone,Copy)]
-pub struct Preset{pub code:u32,pub id:&'static str,pub labels:&'static [&'static str],pub roar:Layout,pub map:&'static [usize]}
+pub struct Downmix{pub from:usize,pub to:usize,pub gain:f32}
+#[derive(Clone,Copy)]
+pub struct Preset{pub code:u32,pub id:&'static str,pub labels:&'static [&'static str],pub roar:Layout,pub map:&'static [usize],pub downmix:&'static [Downmix]}
 pub fn get(code:u32)->Result<Preset,String>{match code{
-412=>Ok(Preset{code,id:"4.1.2",labels:&["L","R","Ls","Rs","Ltf","Rtf","LFE"],roar:Layout::Layout512,map:&[0,1,4,5,6,7,3]}),
-512=>Ok(Preset{code,id:"5.1.2",labels:&["L","R","C","LFE","Ls","Rs","Ltf","Rtf"],roar:Layout::Layout512,map:&[]}),
-514=>Ok(Preset{code,id:"5.1.4",labels:&["L","R","C","LFE","Ls","Rs","Ltf","Rtf","Ltr","Rtr"],roar:Layout::Layout514,map:&[]}),
-712=>Ok(Preset{code,id:"7.1.2",labels:&["L","R","C","LFE","Ls","Rs","Lrs","Rrs","Ltf","Rtf"],roar:Layout::Layout712,map:&[]}),
-714=>Ok(Preset{code,id:"7.1.4",labels:&["L","R","C","LFE","Ls","Rs","Lrs","Rrs","Ltf","Rtf","Ltr","Rtr"],roar:Layout::Layout714,map:&[]}),
-716=>Ok(Preset{code,id:"7.1.6",labels:&["L","R","C","LFE","Ls","Rs","Lrs","Rrs","Ltf","Rtf","Ltr","Rtr","Ltm","Rtm"],roar:Layout::Layout716,map:&[]}),
-914=>Ok(Preset{code,id:"9.1.4",labels:&["Lw","Rw","C","LFE","Lrs","Rrs","L","R","Ls","Rs","Ltf","Rtf","Ltr","Rtr"],roar:Layout::Layout914,map:&[]}),
-916=>Ok(Preset{code,id:"9.1.6",labels:&["Lw","Rw","C","LFE","Lrs","Rrs","L","R","Ls","Rs","Ltf","Rtf","Ltr","Rtr","Ltm","Rtm"],roar:Layout::Layout916,map:&[]}),
+412=>Ok(Preset{code,id:"4.1.2",labels:&["L","R","Ls","Rs","Ltf","Rtf","LFE"],roar:Layout::Layout512,map:&[0,1,4,5,6,7,3],downmix:&[Downmix{from:2,to:0,gain:0.70710678},Downmix{from:2,to:1,gain:0.70710678}]}),
+512=>Ok(Preset{code,id:"5.1.2",labels:&["L","R","C","LFE","Ls","Rs","Ltf","Rtf"],roar:Layout::Layout512,map:&[],downmix:&[]}),
+514=>Ok(Preset{code,id:"5.1.4",labels:&["L","R","C","LFE","Ls","Rs","Ltf","Rtf","Ltr","Rtr"],roar:Layout::Layout514,map:&[],downmix:&[]}),
+712=>Ok(Preset{code,id:"7.1.2",labels:&["L","R","C","LFE","Ls","Rs","Lrs","Rrs","Ltf","Rtf"],roar:Layout::Layout712,map:&[],downmix:&[]}),
+714=>Ok(Preset{code,id:"7.1.4",labels:&["L","R","C","LFE","Ls","Rs","Lrs","Rrs","Ltf","Rtf","Ltr","Rtr"],roar:Layout::Layout714,map:&[],downmix:&[]}),
+716=>Ok(Preset{code,id:"7.1.6",labels:&["L","R","C","LFE","Ls","Rs","Lrs","Rrs","Ltf","Rtf","Ltr","Rtr","Ltm","Rtm"],roar:Layout::Layout716,map:&[],downmix:&[]}),
+914=>Ok(Preset{code,id:"9.1.4",labels:&["Lw","Rw","C","LFE","Lrs","Rrs","L","R","Ls","Rs","Ltf","Rtf","Ltr","Rtr"],roar:Layout::Layout914,map:&[],downmix:&[]}),
+916=>Ok(Preset{code,id:"9.1.6",labels:&["Lw","Rw","C","LFE","Lrs","Rrs","L","R","Ls","Rs","Ltf","Rtf","Ltr","Rtr","Ltm","Rtm"],roar:Layout::Layout916,map:&[],downmix:&[]}),
 _=>Err("Unsupported output layout".into())}}
