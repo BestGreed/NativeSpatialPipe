@@ -16,7 +16,9 @@ const Telemetry = struct {
     udp: std.net.Address,
     healthy: bool = true,
     info: []u8,
-    pub fn start(root: []const u8, python: []const u8, port: []const u8, origin: []const u8, output_layout:[]const u8) !Telemetry {
+    pid: u32,
+    out: []u8,
+    pub fn start(root: []const u8, python: []const u8, port: []const u8, origin: []const u8, output_layout:[]const u8, out: []const u8) !Telemetry {
         var listener = try (try std.net.Address.parseIp4("127.0.0.1", 0)).listen(.{ .force_nonblocking = true });
         defer listener.deinit();
         var secret: [32]u8 = undefined;
@@ -27,7 +29,11 @@ const Telemetry = struct {
         defer a.free(controlPort);
         const script = try u.join(&.{ root, "tools/telemetry/standalone.py" });
         defer a.free(script);
-        var process = try u.spawn(&.{ python, script, "--control-port", controlPort, "--secret", secretHex, "--http-port", port, "--origin", origin, "--output-layout",output_layout });
+        // Capture the service's stdout/stderr in the session output directory
+        // instead of NUL so an unexpected exit leaves a traceback behind.
+        const log = try u.join(&.{ out, "telemetry-stderr.txt" });
+        defer a.free(log);
+        var process = try u.spawnLog(&.{ python, script, "--control-port", controlPort, "--secret", secretHex, "--http-port", port, "--origin", origin, "--output-layout",output_layout }, log);
         errdefer process.close();
         const deadline = c.GetTickCount64() + 10000;
         var stream: ?std.net.Stream = null;
@@ -58,7 +64,7 @@ const Telemetry = struct {
         if (address != .array or address.array.items.len != 2) return error.TelemetryAddress;
         const udp = try std.net.Address.parseIp4(try u.string(address.array.items[0]), @intCast(try u.number(address.array.items[1])));
         timeout(control, 2000);
-        return .{ .process = process, .control = control, .reader = std.io.bufferedReader(control.reader()), .secret = secret, .udp = udp, .info = try a.dupe(u8, info) };
+        return .{ .process = process, .control = control, .reader = std.io.bufferedReader(control.reader()), .secret = secret, .udp = udp, .info = try a.dupe(u8, info), .pid = process.pid, .out = try a.dupe(u8, out) };
     }
     fn timeout(stream: std.net.Stream, ms: u32) void {
         _ = c.setsockopt(@intFromPtr(stream.handle), c.SOL_SOCKET, c.SO_RCVTIMEO, @ptrCast(&ms), 4);
@@ -78,7 +84,16 @@ const Telemetry = struct {
         if (result) |bytes| a.free(bytes);
         self.control.close();
         _ = c.WaitForSingleObject(self.process.handle, 3000);
+        var code: u32 = 0;
+        _ = c.GetExitCodeProcess(self.process.handle, &code);
         self.process.close();
+        // Leave a small marker so a service that died mid-session is visible
+        // even when the scheduler itself never failed.
+        if (u.join(&.{ self.out, "telemetry-exit.json" })) |path| {
+            defer a.free(path);
+            u.writeJson(path, .{ .pid = self.pid, .exitCode = code }) catch {};
+        } else |_| {}
+        a.free(self.out);
         a.free(self.info);
     }
 };
@@ -280,7 +295,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     const firstPath = try u.join(&.{ first, "roar-714.f32" });
     defer a.free(firstPath);
     pipelines[0] = try n.Pipeline.initLive(dll, firstPath, 64, radius_scaled, radius_reference, lira_dll,preset.code,recording.pcm);
-    var telemetry = try Telemetry.start(root, u.option(args, "--python") orelse "python.exe", u.option(args, "--telemetry-port") orelse "8766", u.option(args, "--origin") orelse "http://127.0.0.1:8765",output_layout);
+    var telemetry = try Telemetry.start(root, u.option(args, "--python") orelse "python.exe", u.option(args, "--telemetry-port") orelse "8766", u.option(args, "--origin") orelse "http://127.0.0.1:8765",output_layout,out);
     defer telemetry.close();
     const infoPath = try u.join(&.{ out, "telemetry-service.json" });
     defer a.free(infoPath);
