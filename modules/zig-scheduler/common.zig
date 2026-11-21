@@ -7,6 +7,7 @@ pub const c = @cImport({
     @cInclude("tlhelp32.h");
     @cInclude("Native-Hook.h");
 });
+pub const builds = @import("audiodg_builds.zig");
 pub const a = std.heap.page_allocator;
 pub const Value = std.json.Value;
 pub fn fmt(comptime f: []const u8, args: anytype) ![]u8 {
@@ -282,7 +283,13 @@ pub fn checkModules(pid: u32) !bool {
     }
     return inventory.has("nsp_native_hook.dll");
 }
-pub fn checkTarget(pid: u32) !u64 {
+pub const Target = struct {
+    created: u64,
+    /// Selected audiodg build profile; null for fixture targets and for the
+    /// separately compiled LNL lab profile.
+    build: ?*const builds.Profile,
+};
+pub fn checkTarget(pid: u32) !Target {
     try debugPrivilege();
     const h = c.OpenProcess(0x43a, 0, pid);
     if (h == null) return error.ProcessAccessDenied;
@@ -305,21 +312,18 @@ pub fn checkTarget(pid: u32) !u64 {
     defer a.free(image);
     var hash: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(image, &hash, .{});
-    var digest: [32]u8 = undefined;
-    // Exact image profiles only; the native controller also verifies its
-    // compiled profile, and the hook checks the live prologue before patching.
-    // LNL profile: public PDB RVA 0x31930 / primary vtable 0x9f4f8,
-    // validated by notebook-joc-live-008 (no capture faults or drops).
-    var accepted = false;
-    for ([_][]const u8{
-        "3dd24fe6faf0b56f99d5b00f24687b5f3b3e76e15b219e23f0963114a0dce9a5",
-        "4b5981cf6bdfac2f7be0c3314fb1eb12f6075083f11316c6cc15c63b697aeae7",
-    }) |profile| {
-        const approved = try std.fmt.hexToBytes(&digest, profile);
-        accepted = accepted or std.mem.eql(u8, &hash, approved);
-    }
-    if (!accepted) return error.TargetBuildMismatch;
-    return (try processIdentity(pid)) orelse error.TargetExited;
+    const created = (try processIdentity(pid)) orelse return error.TargetExited;
+    if (builds.match(&hash)) |profile| return .{ .created = created, .build = profile };
+    // LNL is a separately compiled hook profile with public-PDB verified RVAs
+    // (0x31930 / 0x9f4f8); it stays outside the runtime table and its DLL
+    // ignores the table fields, so accept it without passing target values.
+    const hex = std.fmt.bytesToHex(hash, .lower);
+    if (std.mem.eql(u8, &hex, "4b5981cf6bdfac2f7be0c3314fb1eb12f6075083f11316c6cc15c63b697aeae7")) return .{ .created = created, .build = null };
+    // No fallback: unknown images are reported with the actual SHA-256 and the
+    // supported-build list, so preflight logs are self-diagnosing.
+    var message: [1200]u8 = undefined;
+    std.debug.print("{s}\n", .{builds.unsupportedMessage(&message, &hash)});
+    return error.TargetBuildMismatch;
 }
 pub fn symbol(comptime T: type, lib: *std.DynLib, name: [:0]const u8) !T {
     return lib.lookup(T, name) orelse {

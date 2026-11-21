@@ -7,9 +7,10 @@ const Baseline = struct { pid: u32, created: u64 };
 fn baseline(root: []const u8, home: []const u8) !?Baseline {
     // Inventory failure/multiple hosts/absence stay fail-closed in this path.
     const pid = try u.audioPid();
-    const created = try u.checkTarget(pid);
+    const target = try u.checkTarget(pid);
+    const created = target.created;
     _ = try u.checkModules(pid);
-    var hook = try n.Hook.init(root, home, pid, 0, created, false);
+    var hook = try n.Hook.init(root, home, pid, 0, created, false, target.build);
     defer { u.remove(hook.path); u.a.free(hook.path); }
     var actual = try hook.call("baseline");
     defer actual.deinit();

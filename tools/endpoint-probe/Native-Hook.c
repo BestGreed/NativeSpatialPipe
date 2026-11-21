@@ -67,9 +67,12 @@ __declspec(dllexport) DWORD WINAPI nsp_hook_start(HookConfig *c){
  HMODULE image=GetModuleHandleW(c->fixture?L"nsp_fixture.dll":NULL);
  wchar_t image_path[1024];if(!image||!GetModuleFileNameW(image,image_path,1024)){result=fail(c,4);goto done;}
  if(!c->fixture){const wchar_t *name=wcsrchr(image_path,L'\\');if(!name||_wcsicmp(name+1,L"audiodg.exe")){result=fail(c,5);goto done;}}
- void *address=c->fixture?(void*)GetProcAddress(image,"boundary"):(char*)image+0x31930;
- const unsigned char prologue[]={0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x6c,0x24,0x10,0x48,0x89,0x74,0x24,0x18,0x57};
- if(!address||(!c->fixture&&memcmp(address,prologue,sizeof(prologue)))){result=fail(c,6);goto done;}
+ /* Legacy profile: the target RVA, capture vtables and expected prologue are
+    selected at runtime from the audiodg.exe SHA-256 and arrive through
+    HookConfig; this DLL intentionally pins no audiodg build. */
+ if(!c->fixture&&(!c->target_rva||!c->target_size||!c->vt1_rva||!c->vt2_rva)){result=fail(c,15);goto done;}
+ void *address=c->fixture?(void*)GetProcAddress(image,"boundary"):(char*)image+c->target_rva;
+ if(!address||(!c->fixture&&memcmp(address,c->prologue,16))){result=fail(c,6);goto done;}
  if(target&&target!=address){result=fail(c,7);goto done;}
  capture_dll=LoadLibraryW(c->capture);send_dll=LoadLibraryW(c->send);
  if(!capture_dll||!send_dll){result=fail(c,8);goto cleanup;}
@@ -77,7 +80,9 @@ __declspec(dllexport) DWORD WINAPI nsp_hook_start(HookConfig *c){
  Open open=(Open)GetProcAddress(send_dll,"nsp_link_open");close_link=(Close)GetProcAddress(send_dll,"nsp_link_close");void *publish=(void*)GetProcAddress(send_dll,"nsp_link_send");
  if(!create||!packet||!stop_capture||!report_capture||!destroy_capture||!open||!close_link||!publish){result=fail(c,9);goto cleanup;}
  link=open(c->mapping,c->event,0);if(!link){result=fail(c,10);goto cleanup;}
- ctx=create((char*)image+0x9f4f8,(char*)image+0xa2d58,publish,link,c->budget);if(!ctx){result=fail(c,11);goto cleanup;}
+ if(c->fixture)ctx=create((char*)image+0x9f4f8,(char*)image+0x9f4f8,publish,link,c->budget);
+ else ctx=create((char*)image+c->vt1_rva,(char*)image+c->vt2_rva,publish,link,c->budget);
+ if(!ctx){result=fail(c,11);goto cleanup;}
  if(!target){
   MH_STATUS status=MH_Initialize();if(status!=MH_OK){result=fail(c,100+(DWORD)status);goto cleanup;}
   memcpy(before,address,32);status=MH_CreateHook(address,detour,(void**)&original);

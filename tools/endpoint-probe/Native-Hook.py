@@ -1,10 +1,12 @@
 """Control adapter only; native executable loads/controls MinHook. No Frida import."""
-import ctypes as C,json,pathlib,subprocess,tempfile
+import ctypes as C,json,pathlib,subprocess,sys,tempfile
 ROOT=pathlib.Path(__file__).resolve().parents[2]
+sys.path.insert(0,str(ROOT/'tools/backend'))
+import audiodg_builds
 HOOK_DIR=ROOT/'build/native-hook-managed-v2'
 HOOK_DLL=HOOK_DIR/'nsp_managed_hook_v2.dll'
 class Config(C.Structure):
- _fields_=[('magic',C.c_uint32),('size',C.c_uint32),('fixture',C.c_uint32),('duration_ms',C.c_uint32),('budget',C.c_uint64),('capture',C.c_wchar*1024),('send',C.c_wchar*1024),('mapping',C.c_wchar*256),('event',C.c_wchar*256),('error',C.c_uint32),('win32',C.c_uint32),('output',C.c_char*10000),('owner_pid',C.c_uint32),('host_pid',C.c_uint32),('target_created',C.c_uint64),('legacy_stopped',C.c_uint32),('owner_handle',C.c_uint64),('host_handle',C.c_uint64)]
+ _fields_=[('magic',C.c_uint32),('size',C.c_uint32),('fixture',C.c_uint32),('duration_ms',C.c_uint32),('budget',C.c_uint64),('capture',C.c_wchar*1024),('send',C.c_wchar*1024),('mapping',C.c_wchar*256),('event',C.c_wchar*256),('error',C.c_uint32),('win32',C.c_uint32),('output',C.c_char*10000),('owner_pid',C.c_uint32),('host_pid',C.c_uint32),('target_created',C.c_uint64),('legacy_stopped',C.c_uint32),('owner_handle',C.c_uint64),('host_handle',C.c_uint64),('target_rva',C.c_uint32),('target_size',C.c_uint32),('vt1_rva',C.c_uint32),('vt2_rva',C.c_uint32),('prologue',C.c_ubyte*16),('profile_sha256',C.c_ubyte*32)]
 class Module(C.Structure):
  _fields_=[('dwSize',C.c_uint32),('th32ModuleID',C.c_uint32),('th32ProcessID',C.c_uint32),('GlblcntUsage',C.c_uint32),('ProccntUsage',C.c_uint32),('modBaseAddr',C.c_void_p),('modBaseSize',C.c_uint32),('hModule',C.c_void_p),('szModule',C.c_wchar*256),('szExePath',C.c_wchar*260)]
 def modules(pid):
@@ -20,9 +22,12 @@ def modules(pid):
  finally:k.CloseHandle(h)
  return sorted(result,key=str.lower)
 class Controller:
- def __init__(self,pid,transport,duration=120,fixture=False,capture_dll=None,owner_pid=0):
-  self.pid=pid;self.result=None;self.started=False;self.callback=None;self.exports_sync=self
+ def __init__(self,pid,transport,duration=120,fixture=False,capture_dll=None,owner_pid=0,build=None):
+  self.pid=pid;self.result=None;self.started=False;self.callback=None;self.exports_sync=self;self.build=build
   self.config=Config();c=self.config;c.magic=0x4e534831;c.size=C.sizeof(c);c.fixture=fixture;c.duration_ms=int(duration*1000);c.budget=max(512*1024*1024,c.duration_ms*32000)
+  if not fixture:
+   if build is None:raise ValueError('Legacy audiodg hook requires a verified build profile')
+   audiodg_builds.apply_profile(c,build)
   c.owner_pid=owner_pid;c.host_pid=__import__('os').getpid() if owner_pid else 0
   if not duration:
    if not owner_pid:raise ValueError('Managed hook requires a live owner PID')

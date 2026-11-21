@@ -119,7 +119,7 @@ pub const Controller = struct {
         if ((u.inspectProcessIdentity(pid) catch return false) != created) return true;
         u.debugPrivilege() catch return false;
         if ((u.number(u.field(marker.value, "hookGeneration")) catch 0) != 2) return false;
-        var hook = n.Hook.init(self.root, self.home, pid, 0, created, false) catch return false;
+        var hook = n.Hook.init(self.root, self.home, pid, 0, created, false, null) catch return false;
         defer {
             u.remove(hook.path);
             a.free(hook.path);

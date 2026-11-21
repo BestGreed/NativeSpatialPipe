@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "description": "Verified audiodg.exe capture-hook profiles. The hook DLL is told the target function RVA, the two capture vtables and the expected prologue through HookConfig at runtime, so one Legacy build supports every profile listed here. Edit this file, run tools/Generate-AudiodgBuilds.py, then rebuild the hook controller, hook DLL and scheduler. Unknown images fail closed.",
+  "profiles": [
+    {
+      "id": "win-26100-9444",
+      "label": "audiodg 10.0.26100.9444 (Windows 11 24H2 reference build)",
+      "sha256": "3dd24fe6faf0b56f99d5b00f24687b5f3b3e76e15b219e23f0963114a0dce9a5",
+      "targetRva": "0x31930",
+      "targetSize": 474,
+      "prologue": "48 89 5c 24 08 48 89 6c 24 10 48 89 74 24 18 57",
+      "vt1Rva": "0x9f4f8",
+      "vt2Rva": "0xa2d58",
+      "functionSha256": "dcca7f47d116f64036da540d72a0226c8eeab859859b0dcb6df8e5b1ebf18013"
+    },
+    {
+      "id": "win-26100-9974",
+      "label": "audiodg 10.0.26100.9949 (OS build 26200.9974; 25H2 reference build)",
+      "sha256": "017628fc0ace806163950bb3019709ca3820531d7f19c1103429e09b4c54f6ca",
+      "targetRva": "0x32c40",
+      "targetSize": 474,
+      "prologue": "48 89 5c 24 08 48 89 6c 24 10 48 89 74 24 18 57",
+      "vt1Rva": "0x9e4e8",
+      "vt2Rva": "0xa1be0",
+      "functionSha256": "a03c7009990e7025a0ae54441cef4694b5ac239eb574ddb8c74f5ff938547e5b"
+    },
+    {
+      "id": "win-26100-10068",
+      "label": "audiodg 10.0.26100.10068 (25H2 2026-11-20 servicing build)",
+      "sha256": "e55b5365056273c133954ca7c44b8d4f1c3139a4b3fa766a94ffe58c2621a8b3",
+      "targetRva": "0x32c40",
+      "targetSize": 474,
+      "prologue": "48 89 5c 24 08 48 89 6c 24 10 48 89 74 24 18 57",
+      "vt1Rva": "0x9e4e8",
+      "vt2Rva": "0xa1c20",
+      "functionSha256": "289c27805609dff2b45917f0727da1646d7038bd9beabae54b23ead6766c449b"
+    }
+  ]
+}

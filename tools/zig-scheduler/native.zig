@@ -8,7 +8,7 @@ pub const Hook = struct {
     pid: u32,
     config: c.HookConfig,
     path: []const u8,
-    pub fn init(root: []const u8, out: []const u8, pid: u32, owner: u32, created: u64, fixture: bool) !Hook {
+    pub fn init(root: []const u8, out: []const u8, pid: u32, owner: u32, created: u64, fixture: bool, build: ?*const u.builds.Profile) !Hook {
         var nonce: [8]u8 = undefined;
         std.crypto.random.bytes(&nonce);
         var self = Hook{ .root = root, .pid = pid, .config = std.mem.zeroes(c.HookConfig), .path = try u.fmt("{s}/hook-config-{s}.bin", .{ out, std.fmt.fmtSliceHexLower(&nonce) }) };
@@ -20,6 +20,14 @@ pub const Hook = struct {
         self.config.owner_pid = owner;
         self.config.host_pid = c.GetCurrentProcessId();
         self.config.target_created = created;
+        if (build) |profile| {
+            self.config.target_rva = profile.target_rva;
+            self.config.target_size = profile.target_size;
+            self.config.vt1_rva = profile.vt1_rva;
+            self.config.vt2_rva = profile.vt2_rva;
+            @memcpy(self.config.prologue[0..], profile.prologue[0..]);
+            @memcpy(self.config.profile_sha256[0..], profile.sha256[0..]);
+        }
         return self;
     }
     pub fn text(dest: []u16, value: []const u8) !void {

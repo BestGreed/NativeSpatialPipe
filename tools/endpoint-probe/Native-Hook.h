@@ -12,4 +12,10 @@ typedef struct {
  uint64_t target_created;
  uint32_t legacy_stopped;
  uint64_t owner_handle,host_handle;
+ /* Runtime-selected audiodg build profile (Legacy hook; ignored by fixture and
+    by the separately compiled LNL profile). The controller verifies these
+    against the supported-build table before any hook is created. */
+ uint32_t target_rva,target_size,vt1_rva,vt2_rva;
+ unsigned char prologue[16];
+ unsigned char profile_sha256[32];
 } HookConfig;

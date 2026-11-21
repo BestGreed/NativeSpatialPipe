@@ -7,6 +7,7 @@ pub const c = @cImport({
     @cInclude("tlhelp32.h");
     @cInclude("Native-Hook.h");
 });
+pub const builds = @import("audiodg_builds.zig");
 pub const a = std.heap.page_allocator;
 pub const Value = std.json.Value;
 pub fn fmt(comptime f: []const u8, args: anytype) ![]u8 {
@@ -282,7 +283,13 @@ pub fn checkModules(pid: u32) !bool {
     }
     return inventory.has("nsp_native_hook.dll");
 }
-pub fn checkTarget(pid: u32) !u64 {
+pub const Target = struct {
+    created: u64,
+    /// Selected audiodg build profile; null for fixture targets and for the
+    /// separately compiled LNL lab profile.
+    build: ?*const builds.Profile,
+};
+pub fn checkTarget(pid: u32) !Target {
     try debugPrivilege();
     const h = c.OpenProcess(0x43a, 0, pid);
     if (h == null) return error.ProcessAccessDenied;
@@ -305,10 +312,13 @@ pub fn checkTarget(pid: u32) !u64 {
     defer a.free(image);
     var hash: [32]u8 = undefined;
     std.crypto.hash.sha2.Sha256.hash(image, &hash, .{});
-    var digest: [32]u8 = undefined;
-    const approved = try std.fmt.hexToBytes(&digest, "3dd24fe6faf0b56f99d5b00f24687b5f3b3e76e15b219e23f0963114a0dce9a5");
-    if (!std.mem.eql(u8, &hash, approved)) return error.TargetBuildMismatch;
-    return (try processIdentity(pid)) orelse error.TargetExited;
+    const created = (try processIdentity(pid)) orelse return error.TargetExited;
+    if (builds.match(&hash)) |profile| return .{ .created = created, .build = profile };
+    // No fallback: unknown images are reported with the actual SHA-256 and the
+    // supported-build list, so preflight logs are self-diagnosing.
+    var message: [1200]u8 = undefined;
+    std.debug.print("{s}\n", .{builds.unsupportedMessage(&message, &hash)});
+    return error.TargetBuildMismatch;
 }
 pub fn symbol(comptime T: type, lib: *std.DynLib, name: [:0]const u8) !T {
     return lib.lookup(T, name) orelse {

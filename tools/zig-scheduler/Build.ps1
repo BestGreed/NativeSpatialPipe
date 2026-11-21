@@ -16,6 +16,8 @@ if(-not $SkipTests){
  if($LASTEXITCODE){throw 'Unmarked startup stop-proof tests failed'}
  & $Zig test "$PSScriptRoot/routing.zig" -O ReleaseSafe
  if($LASTEXITCODE){throw 'Zig routing tests failed'}
+ & $Zig test "$PSScriptRoot/audiodg_builds_test.zig" -target x86_64-windows-gnu -O ReleaseSafe
+ if($LASTEXITCODE){throw 'Audiodg build-profile table tests failed'}
  & $Zig test "$PSScriptRoot/control.zig" @flags "-femit-bin=$out/control-tests.exe"
  if($LASTEXITCODE){throw 'Zig orphan recovery tests failed'}
  & $Zig test "$PSScriptRoot/output_control_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe -lc -I "$root/modules/audio-backends/src" "-femit-bin=$out/output-control-tests.exe"

@@ -283,7 +283,15 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     const owner = try std.fmt.parseInt(u32, u.option(args, "--owner-pid") orelse return error.OwnerRequired, 10);
     const stopFile = u.option(args, "--stop-file") orelse return error.StopFileRequired;
     const fixture = u.flag(args, "--fixture");
-    const created = if (fixture) (try u.processIdentity(pid)) orelse return error.TargetExited else try u.checkTarget(pid);
+    var created: u64 = undefined;
+    var target_build: ?*const u.builds.Profile = null;
+    if (fixture) {
+        created = (try u.processIdentity(pid)) orelse return error.TargetExited;
+    } else {
+        const target = try u.checkTarget(pid);
+        created = target.created;
+        target_build = target.build;
+    }
     if (try u.processIdentity(owner) == null) return error.OwnerExited;
     if (u.exists(out)) return error.OutputExists;
     try std.fs.cwd().makePath(out);
@@ -502,7 +510,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     };
     // PCM ingress begins only after every output callback has been configured.
     if(pcm) |*session| try session.startIngress();
-    var hook = try n.Hook.init(root, out, pid, owner, created, fixture);
+    var hook = try n.Hook.init(root, out, pid, owner, created, fixture, target_build);
     defer {
         u.remove(hook.path);
         a.free(hook.path);
