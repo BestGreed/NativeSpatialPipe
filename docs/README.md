@@ -10,6 +10,7 @@
 - [FreeSurround](freesurround.md)
 - [LSAC stereo DSP adapter](lsac-adapter.md)
 - [AES67 output](aes67-output.md)
+- [Output layouts](output-layouts.md)
 - [Source provenance](alpha-dev.md)
 - [License scope](../LICENSING.md)
 - [Retired documentation](archive/README.md)
