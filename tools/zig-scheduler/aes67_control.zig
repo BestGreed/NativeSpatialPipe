@@ -304,6 +304,11 @@ pub const Backend = struct {
         self.dll = null;
         self.stream = null;
     }
+    /// Owner pump hint: leases are queued for the AES67 ring.
+    pub fn pending(self: *Backend) bool {
+        const stream = self.stream orelse return false;
+        return stream.pending();
+    }
     pub fn pump(self: *Backend) !void {
         const stream = self.stream orelse return;
         self.pumpInner(stream) catch |err| {
@@ -338,7 +343,7 @@ pub const Backend = struct {
         try self.check(self.stats_fn(self.handle, &stats));
         // Fixed budget per pass, exactly like the ASIO owner: the C ring is the
         // only hand-off buffer and the lease is returned immediately after copy.
-        for (0..4) |_| {
+        for (0..16) |_| {
             const lease = stream.popLease() orelse break;
             // nsp_aes67_submit copies into the bounded ring and never retains
             // the pointer, so the lease returns immediately after the call.

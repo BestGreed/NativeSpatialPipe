@@ -411,7 +411,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
                     .lateTicks = status.net_late_ticks, .startMs = status.net_start_ms, .stopMs = status.net_stop_ms },
                 .outputHandoff = .{ .mode = "rust-pool-lease", .pcmCopiesBeforeSubmit = @as(u32, 1), .poolBlocksReceived = status.pool_blocks_received,
                     .poolBlocksReleased = status.pool_blocks_released, .dspTailFrames = status.dsp_tail_frames },
-                .submittedFrames = status.submitted_frames, .packets = status.callbacks,
+                .submittedFrames = status.submitted_frames, .packets = status.callbacks, .droppedLeases = status.dropped_leases,
                 .outputProcessing = if (net_config) |config| .{ .bypass = config.processing.bypass, .effectiveBypass = status.dsp_bypassed,
                     .placement = "rust-output-pool", .master = config.processing.master, .trim = config.processing.trim[0..output_channels],
                     .delayFrames = config.processing.delay_frames[0..output_channels],
