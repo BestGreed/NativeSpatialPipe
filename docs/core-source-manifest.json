@@ -4084,7 +4084,7 @@
       "path": "modules/native-capture/profiles/capture-profiles.json",
       "sourcePath": "modules/native-capture/profiles/capture-profiles.json",
       "sourceSha256": "b701de9572b67b19858a7fe350de76065842b7902f2709a2ebe90a0316498fcc",
-      "sha256": "b701de9572b67b19858a7fe350de76065842b7902f2709a2ebe90a0316498fcc"
+      "sha256": "c4582cfec45482dcc6f542d98980f80e17436323783a34d343b9d1d8e33882f7"
     },
     {
       "path": "modules/native-receiver/Build.ps1",
