@@ -11,7 +11,7 @@ combines them with PCM input, and renders the scene to your selected output.
 Final Spatial Audio (FSA) provides tray controls; a local web interface provides
 playback configuration and live visualization.
 
-![Spatial objects and energy in the NSP web interface](docs/assets/wwise-spatial-preview.gif)
+![Spatial objects and energy in the NSP web interface](docs/assets/wwise-spatial-preview.png)
 
 *Six-second excerpt from the preserved Wwise one-minute recording, replayed in the web interface with ROAR offline rendering.*
 
@@ -53,13 +53,7 @@ End-to-end playback latency also depends on the source, output backend and devic
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    Input["Spatial objects + PCM"] --> Croksor["Croksor · input and rendering"]
-    Croksor --> Output["ASIO / Inferno AoIP / WASAPI"]
-    FSA["FSA + Zig · session control"] -.-> Croksor
-    Croksor -.-> Web["Telemetry + web interface"]
-```
+![Native Spatial Pipe architecture](docs/assets/architecture.svg)
 
 Croksor integrates the patched ROAR 1.1 renderer and Inferno AoIP. LIRA and ASIO
 are separate backends. See [runtime architecture](docs/runtime-details.md) for

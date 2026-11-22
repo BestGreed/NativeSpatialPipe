@@ -8,7 +8,7 @@
 
 Native Spatial Pipe（NSP）捕获空间音频对象及其元数据，与 PCM 输入共同组成声场，再渲染到所选输出设备。Final Spatial Audio（FSA）提供托盘控制，本地网页界面用于播放配置和实时可视化。
 
-![NSP 网页界面中的空间对象与能量变化](docs/assets/wwise-spatial-preview.gif)
+![NSP 网页界面中的空间对象与能量变化](docs/assets/wwise-spatial-preview.png)
 
 *截取自保留的 Wwise 一分钟录制数据，经 ROAR 离线渲染后在网页前端回放，动图约 6 秒。*
 
@@ -48,13 +48,7 @@ Native Spatial Pipe（NSP）捕获空间音频对象及其元数据，与 PCM �
 
 ## 项目架构
 
-```mermaid
-flowchart LR
-    Input["空间对象 + PCM"] --> Croksor["Croksor · 输入与渲染"]
-    Croksor --> Output["ASIO / Inferno AoIP / WASAPI"]
-    FSA["FSA + Zig · 会话控制"] -.-> Croksor
-    Croksor -.-> Web["遥测 + 网页前端"]
-```
+![Native Spatial Pipe 项目架构](docs/assets/architecture.svg)
 
 Croksor 集成经过补丁适配的 ROAR 1.1 渲染器与 Inferno AoIP，LIRA 和 ASIO 分别作为独立后端。实现与验证范围见[运行时架构说明](docs/runtime-details.md)。
 
