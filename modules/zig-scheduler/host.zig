@@ -5,6 +5,8 @@ const routing = @import("routing.zig");
 const primary_election = @import("primary_election.zig");
 const playback = @import("output_playback.zig");
 const asio = @import("asio_control.zig");
+const aes67_playback = @import("aes67_playback.zig");
+const aes67_config = @import("aes67_config.zig");
 const a = u.a;
 const c = u.c;
 const Telemetry = struct {
@@ -283,6 +285,52 @@ fn reportPcmUnavailable(out: []const u8, err: anyerror) !void {
     try u.writeJson(path, .{ .state = "unavailable", .errorName = @errorName(err), .spatialCaptureAction = "unchanged" });
 }
 
+/// Health and final report for the AES67 transport. Written once per second
+/// while the session runs (aoip-resident style health) and again at shutdown.
+fn writeAes67Report(out: []const u8, session: *aes67_playback.Session, settings: @import("desktop_playback.zig").Config) void {
+    const path = u.join(&.{ out, "aes67-output.json" }) catch return;
+    defer a.free(path);
+    const net = settings.aes67 orelse return;
+    var prepared = aes67_config.prepare(net, settings.channelCount()) catch return;
+    const status = session.stream.snapshot();
+    const sources = settings.sources() catch return;
+    const labels = settings.labels() catch return;
+    const sdp = u.join(&.{ out, "aes67.sdp" }) catch return;
+    defer a.free(sdp);
+    const processing = settings.processingConfig();
+    const channels = settings.channelCount();
+    var gmid: []const u8 = "";
+    if (prepared.ptp_gmid) |*value| gmid = value[0..];
+    u.writeJson(path, .{
+        .scheduler = "zig", .outputBackend = "aes67", .state = @tagName(status.state),
+        .outputLayout = (settings.preset() catch return).id, .outputChannels = channels,
+        .sourceStream = settings.sourceStream, .outputOrder = settings.channelOrder,
+        .outputChannelLabels = labels[0..channels], .sourceChannelIndices = sources[0..channels],
+        .network = .{ .destIp = net.destIp, .port = prepared.port, .payloadType = prepared.payload_type,
+            .framesPerPacket = prepared.frames_per_packet, .ssrc = status.net_ssrc,
+            .ptpGmid = gmid, .ptpDomain = prepared.ptp_domain, .channels = channels, .sdp = sdp },
+        .health = .{ .active = status.net_active,
+            .failure = if (status.failure) |err| @errorName(err) else @as(?[]const u8, null),
+            .errorDetail = std.mem.sliceTo(&session.detail, 0) },
+        .stats = .{ .packetsSent = status.net_packets_sent, .silentPackets = status.net_silent_packets,
+            .framesSent = status.net_frames_sent, .framesSubmitted = status.net_frames_submitted,
+            .bytesSent = status.net_bytes_sent, .lastSeq = status.net_last_seq,
+            .lastTimestamp = status.net_last_timestamp, .ringDroppedFrames = status.net_ring_dropped_frames,
+            .sendErrors = status.net_send_errors, .lateTicks = status.net_late_ticks,
+            .bufferedFrames = status.net_buffered_frames, .startMs = status.net_start_ms, .stopMs = status.net_stop_ms },
+        .outputHandoff = .{ .mode = "rust-pool-lease", .pcmCopiesBeforeSubmit = @as(u32, 1),
+            .poolBlocksReceived = status.pool_blocks_received, .poolBlocksReleased = status.pool_blocks_released,
+            .dspTailFrames = status.dsp_tail_frames },
+        .outputProcessing = .{ .bypass = processing.bypass, .effectiveBypass = status.dsp_bypassed,
+            .placement = "rust-output-pool", .master = processing.master,
+            .trim = processing.trim[0..channels], .delayFrames = processing.delay_frames[0..channels],
+            .limiter = .{ .enabled = processing.limiter, .ceiling = processing.ceiling,
+                .releaseMs = processing.release_ms, .lookaheadFrames = processing.lookahead_frames } },
+        .playbackPolicy = .{ .lifetime = "session", .noInput = "silence",
+            .prebufferFrames = prepared.prebuffer_frames, .drainTimeoutMs = settings.drainTimeoutMs },
+    }) catch {};
+}
+
 fn publishReady(out: []const u8, event: c.HANDLE) !void {
     if (event) |handle| {
         if (c.SetEvent(handle) == 0) return error.ReadyEventSignal;
@@ -401,13 +449,17 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     const aoip_profile=if(desktop) |settings| (if(std.mem.eql(u8,settings.value.outputBackend,"aoip")) settings.value.aoip else null) else null;
     const aoip_enabled=aoip_path!=null or aoip_profile!=null;
     const wasapi_profile=if(desktop) |settings| (if(std.mem.eql(u8,settings.value.outputBackend,"wasapi")) settings.value.wasapi else null) else null;
+    const aes67_profile=if(desktop) |settings| (if(std.mem.eql(u8,settings.value.outputBackend,"aes67")) settings.value.aes67 else null) else null;
+    var aes67:?*aes67_playback.Session=null;
+    var aes67_source:usize=0;
+    var nextAes67Report:u64=0;
     var wasapi:?@import("wasapi_control.zig").Session=null;
     const wasapi_source:usize=if(desktop) |settings| @intCast(settings.value.sourceStream) else 0;
     const wasapi_pipeline=if(pcm_settings!=null and pcm_settings.?.enabled and pcm_settings.?.routeToOutput) &pcm.?.pipeline.? else &pipelines[wasapi_source];
     const wasapi_report=try u.join(&.{out,"wasapi-output.json"});
     defer a.free(wasapi_report);
     if(wasapi_profile) |settings| {
-        if(aoip_enabled)return error.DuplicateOutputBackend;
+        if(aoip_enabled or aes67_profile!=null)return error.DuplicateOutputBackend;
         for([_][]const u8{"--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
             if(u.option(args,key)!=null)return error.DuplicateOutputBackend;
         }
@@ -435,6 +487,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     var outputRoute:?@import("output_route.zig").Route=null;
     defer if(outputRoute) |*route| route.deinit();
     if(aoip_enabled) {
+        if(aes67_profile!=null)return error.DuplicateOutputBackend;
         if(aoip_path!=null and aoip_profile!=null)return error.DuplicateOutputBackend;
         for([_][]const u8{"--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
             if(u.option(args,key)!=null)return error.DuplicateOutputBackend;
@@ -452,7 +505,31 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         }
         aoip_source=0; // all source slots share the same network fault status.
     }
-    if (if(aoip_enabled or wasapi_profile!=null) @as(?[]const u8,null) else if(desktop) |settings| @as(?[]const u8,settings.value.driver) else u.option(args, "--asio-driver")) |driver| {
+    if(aes67_profile != null) {
+        if(aoip_enabled or wasapi_profile!=null)return error.DuplicateOutputBackend;
+        for([_][]const u8{"--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
+            if(u.option(args,key)!=null)return error.DuplicateOutputBackend;
+        }
+        const source=if(desktop) |active| @as(usize,active.value.sourceStream) else 0;
+        if(source>=pipelines.len)return error.InvalidAes67Stream;
+        const config=try @import("aes67_control.zig").Backend.Config.fromPlayback(desktop.?.value,out,@intCast(output_channels));
+        aes67_source=source;
+        aes67=try aes67_playback.Session.create(a,config);
+        pipelines[source].bindOutput(aes67.?.stream) catch |err| {
+            aes67.?.finish();aes67.?.destroy();aes67=null;return err;
+        };
+    }
+    defer if(aes67) |session| {
+        if(!pipelines[aes67_source].finished and !capture_may_have_started){
+            var unused=pipelines[aes67_source].finish() catch null;
+            if(unused) |*value| value.deinit();
+        }
+        while(!pipelines[aes67_source].finished)c.Sleep(1000);
+        session.finish();
+        writeAes67Report(out,session,desktop.?.value);
+        session.destroy();
+    };
+    if (if(aoip_enabled or wasapi_profile!=null or aes67_profile!=null) @as(?[]const u8,null) else if(desktop) |settings| @as(?[]const u8,settings.value.driver) else u.option(args, "--asio-driver")) |driver| {
         const device_dll = if(desktop) |settings| settings.value.asioDll else u.option(args, "--asio-dll") orelse return error.AsioDllRequired;
         var config = try asio.Backend.Config.init(device_dll, driver);
         audio_order = if(desktop) |settings| settings.value.channelOrder else u.option(args, "--asio-channel-order") orelse "olr";
@@ -608,6 +685,15 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     var nextCheck: u64 = 0;
     var reportedAoipFault:u32=0;
     while (c.GetTickCount64() < deadline and !u.exists(stopFile)) {
+        if(aes67) |session| {
+            const status=session.stream.snapshot();
+            if(status.failure!=null)break;
+            const reported=c.GetTickCount64();
+            if(reported>=nextAes67Report){
+                nextAes67Report=reported+1000;
+                writeAes67Report(out,session,desktop.?.value);
+            }
+        }
         if(aoip_source) |source| {
             const fault=try pipelines[source].aoipFault();
             if(fault!=reportedAoipFault){
@@ -661,6 +747,11 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     if (audio) |session| {
         session.finish();
         if (session.stream.snapshot().failure != null) return error.AsioOutputFailed;
+    }
+    if (aes67) |session| {
+        session.finish();
+        writeAes67Report(out,session,desktop.?.value);
+        if (session.stream.snapshot().failure != null) return error.Aes67OutputFailed;
     }
 }
 fn shutdown(hook: *n.Hook, receiver: *n.Receiver, pipelines: []n.Pipeline, bridge: *Bridge, thread: *std.Thread, recorder: *Recorder, recordThread: *?std.Thread, out: []const u8) !void {

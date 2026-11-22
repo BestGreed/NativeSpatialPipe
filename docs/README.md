@@ -11,6 +11,7 @@
 - [Telemetry and web visualization](telemetry-visualization.md)
 - [Build automation status](ci.md)
 - [WASAPI output and diagnostics](wasapi-diagnostics.md)
+- [AES67 RTP/L24 output transport](aes67-output.md)
 - [FreeSurround](freesurround.md)
 - [LSAC stereo DSP adapter](lsac-adapter.md)
 - [Source provenance](alpha-dev.md)

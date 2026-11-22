@@ -79,6 +79,7 @@ pub const Config = struct {
     unifiedSlotProfile: UnifiedSlotProfile = .standard,
     unifiedPrimaryPolicy: UnifiedPrimaryPolicy = .legacy,
     aoip:?@import("aoip_config.zig").File=null,
+    aes67:?@import("aes67_config.zig").File=null,
     wasapi:?Wasapi=null,
     pcmCapture:?PcmCapture=null,
     mediaFoundation:?MediaFoundation=null,
@@ -236,6 +237,7 @@ pub const Config = struct {
 
     pub fn validate(self: Config) !void {
         const network=std.mem.eql(u8,self.outputBackend,"aoip");
+        const aes67=std.mem.eql(u8,self.outputBackend,"aes67");
         const wasapi=std.mem.eql(u8,self.outputBackend,"wasapi");
         const unified = std.mem.eql(u8, self.sourcePolicy, "unified");
         if (!unified and (self.unifiedSlotProfile != .standard or self.unifiedPrimaryPolicy != .legacy))
@@ -268,13 +270,20 @@ pub const Config = struct {
         if (unified and self.pcmCapture != null and self.pcmCapture.?.routeToOutput)
             return error.UnifiedInputConflictsWithDedicatedPcm;
 
-        if(!network and !wasapi and !std.mem.eql(u8,self.outputBackend,"asio"))return error.InvalidOutputBackend;
+        if(!network and !aes67 and !wasapi and !std.mem.eql(u8,self.outputBackend,"asio"))return error.InvalidOutputBackend;
         if(self.aoip) |settings| _=try @import("aoip_config.zig").native(settings);
+        if(self.aes67) |settings| _=try @import("aes67_config.zig").prepare(settings,core.labels.len);
         if(network) {
             if(self.aoip==null)return error.AoipConfigRequired;
             // Keep inactive ASIO settings for switching back; native AoIP uses
             // standard renderer channels and its own buffering configuration.
             if(self.sampleRate!=48000)return error.AoipRequires48000;
+        } else if(aes67) {
+            // The RTP transport replaces the device side only. Channels and
+            // order come from outputLayout/sources(); no device is opened.
+            if(self.aes67==null)return error.Aes67ConfigRequired;
+            if(self.sampleRate!=48000)return error.Aes67Requires48000;
+            if(!unified and !std.mem.eql(u8,self.sourcePolicy,"fixed"))return error.Aes67RequiresFixedSource;
         } else if(wasapi) {
             const settings=self.wasapi orelse return error.WasapiConfigRequired;
             if(!std.mem.eql(u8,settings.mode,"shared") and !std.mem.eql(u8,settings.mode,"exclusive"))return error.InvalidWasapiMode;

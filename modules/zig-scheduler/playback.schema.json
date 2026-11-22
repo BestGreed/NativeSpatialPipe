@@ -411,9 +411,11 @@
       "enum": [
         "asio",
         "aoip",
+        "aes67",
         "wasapi"
       ],
-      "default": "asio"
+      "default": "asio",
+      "description": "Output transport. aes67 is a transport-only RTP/L24 sink; layout and downmix stay in the renderer/layout pipeline."
     },
     "wasapi": {
       "type": [
@@ -504,6 +506,78 @@
         "interfaceIp",
         "mac"
       ]
+    },
+    "aes67": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "destIp"
+      ],
+      "properties": {
+        "destIp": {
+          "type": "string",
+          "description": "Unicast IPv4 destination address. Multicast/broadcast/unspecified destinations are rejected in this step."
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 5004
+        },
+        "framesPerPacket": {
+          "const": 48,
+          "default": 48,
+          "description": "Fixed 1 ms packet (48 frames at 48 kHz) in this transport step."
+        },
+        "payloadType": {
+          "type": "integer",
+          "minimum": 96,
+          "maximum": 127,
+          "default": 96
+        },
+        "ssrc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "default": 0,
+          "description": "0 derives the fixed default SSRC 0x4E535036."
+        },
+        "srcInterfaceIp": {
+          "type": "string",
+          "default": "",
+          "description": "Optional local IPv4 address used to bind the sending socket (egress interface selection)."
+        },
+        "ptpGmid": {
+          "type": "string",
+          "pattern": "^([0-9a-fA-F]{2}-){7}[0-9a-fA-F]{2}$",
+          "default": "",
+          "description": "Optional IEEE 1588 grandmaster ID advertised in SDP as ts-refclk; empty advertises localmac instead."
+        },
+        "ptpDomain": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127,
+          "default": 0
+        },
+        "ringPackets": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 1024,
+          "default": 64,
+          "description": "Bounded sender ring in 1 ms packets; oldest audio is dropped if the owner falls behind."
+        },
+        "prebufferFrames": {
+          "type": "integer",
+          "minimum": 48,
+          "maximum": 48000,
+          "default": 480,
+          "description": "Frames buffered before the session leaves the waiting state; must fit inside ringPackets."
+        }
+      },
+      "description": "AES67 RTP/L24 transport only. Channel count, channel order and labels come from outputLayout and routing; no downmix happens here."
     },
     "unifiedSlotProfile": {
       "enum": ["standard", "dtsxHtCompact"],
@@ -879,13 +953,44 @@
         "if": {
           "properties": {
             "outputBackend": {
-              "const": "wasapi"
+              "const": "aes67"
             }
           },
           "required": [
             "outputBackend"
           ]
         },
+        "then": {
+          "required": [
+            "aes67",
+            "outputLayout"
+          ],
+          "properties": {
+            "aes67": {
+              "type": "object"
+            },
+            "sampleRate": {
+              "const": 48000
+            },
+            "sourcePolicy": {
+              "enum": [
+                "fixed",
+                "unified"
+              ]
+            }
+          }
+        },
+        "else": {
+          "if": {
+            "properties": {
+              "outputBackend": {
+                "const": "wasapi"
+              }
+            },
+            "required": [
+              "outputBackend"
+            ]
+          },
         "then": {
           "required": [
             "wasapi",
@@ -935,6 +1040,7 @@
               "pattern": "^asio:"
             }
           }
+        }
         }
       }
     },

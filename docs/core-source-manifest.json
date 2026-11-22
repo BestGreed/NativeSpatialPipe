@@ -185,9 +185,15 @@
     },
     {
       "path": "docs/README.md",
-      "sha256": "c69c0310674958f38ca36e07bc5e0efea839e14406699689db081da43be5bcf7",
+      "sha256": "02b4491b4f3869b501212c05c4b874a3fa423aefe7b9d96e0e2c3421fd5af6a5",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
+    },
+    {
+      "path": "docs/aes67-output.md",
+      "sourcePath": "docs/aes67-output.md",
+      "sourceSha256": "53a0d172845d57335070e422c38e02a0c374dbc2cf199551b685d47a4466f1e7",
+      "sha256": "53a0d172845d57335070e422c38e02a0c374dbc2cf199551b685d47a4466f1e7"
     },
     {
       "path": "docs/alpha-dev.md",
@@ -365,7 +371,7 @@
     },
     {
       "path": "docs/scheduler.md",
-      "sha256": "b8b77858e7e116d6b641e45f8857b78af11a106e489084e4665ccc15c022072c",
+      "sha256": "bb1565c78a83c880ccfeebe83d8ba4ed59c3f60fd134dea71e709d3bdd262130",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
@@ -5007,12 +5013,12 @@
     {
       "path": "modules/zig-scheduler/Build.ps1",
       "sourcePath": "modules/zig-scheduler/Build.ps1",
-      "sourceSha256": "4e216057935a29ae9f5fc71c48cc3086502e12ebeb7d16dc078a551fd84f7f2a",
-      "sha256": "4e216057935a29ae9f5fc71c48cc3086502e12ebeb7d16dc078a551fd84f7f2a"
+      "sourceSha256": "d6147bde966718564c2925283374eabdfd6964a8ab6ec608befc3c66cfc53e5b",
+      "sha256": "d6147bde966718564c2925283374eabdfd6964a8ab6ec608befc3c66cfc53e5b"
     },
     {
       "path": "modules/zig-scheduler/README.md",
-      "sha256": "441297b01639d6577464fcbb447e399b9181e21b4bc03fa33f6440d2419a3ed9",
+      "sha256": "d4c37ca75cae1ba2f80f3d99ca2095b09b0f43067de42e367e065f01156f5f2f",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
@@ -5045,6 +5051,54 @@
       "sourcePath": "modules/zig-scheduler/Test-WebHost.py",
       "sourceSha256": "2af6aabba4ccd5f87bdf88f4d6da7adda11c8518ae42d781be52ee496a3c96ff",
       "sha256": "2af6aabba4ccd5f87bdf88f4d6da7adda11c8518ae42d781be52ee496a3c96ff"
+    },
+    {
+      "path": "modules/zig-scheduler/aes67_config.zig",
+      "sourcePath": "modules/zig-scheduler/aes67_config.zig",
+      "sourceSha256": "6402ca0058bc5af780a40ae1828ffca7c6618e1f5dc3d0b3a8db9a0057327b1e",
+      "sha256": "6402ca0058bc5af780a40ae1828ffca7c6618e1f5dc3d0b3a8db9a0057327b1e"
+    },
+    {
+      "path": "modules/zig-scheduler/aes67_config_tests.zig",
+      "sourcePath": "modules/zig-scheduler/aes67_config_tests.zig",
+      "sourceSha256": "d27da2ddc1c6ebf15751a12625017902b43f682cfbbdbc1409c53a7898f1e7cd",
+      "sha256": "d27da2ddc1c6ebf15751a12625017902b43f682cfbbdbc1409c53a7898f1e7cd"
+    },
+    {
+      "path": "modules/zig-scheduler/aes67_control.zig",
+      "sourcePath": "modules/zig-scheduler/aes67_control.zig",
+      "sourceSha256": "e47b90a97cf20ddf383cd70ad4a3a911861b9630ad1b0be6e742dabb9f007871",
+      "sha256": "e47b90a97cf20ddf383cd70ad4a3a911861b9630ad1b0be6e742dabb9f007871"
+    },
+    {
+      "path": "modules/zig-scheduler/aes67_playback.zig",
+      "sourcePath": "modules/zig-scheduler/aes67_playback.zig",
+      "sourceSha256": "d92d9758141375b9f2841b4d033f08c9e6ea80af3eb70317f573f987400a42a1",
+      "sha256": "d92d9758141375b9f2841b4d033f08c9e6ea80af3eb70317f573f987400a42a1"
+    },
+    {
+      "path": "modules/zig-scheduler/aes67_rtp.zig",
+      "sourcePath": "modules/zig-scheduler/aes67_rtp.zig",
+      "sourceSha256": "dc7d174c407bb10c70ee32af3f6c3e06dabf7716b4cc69aa85f42b4b0f1dd0d1",
+      "sha256": "dc7d174c407bb10c70ee32af3f6c3e06dabf7716b4cc69aa85f42b4b0f1dd0d1"
+    },
+    {
+      "path": "modules/zig-scheduler/aes67_rtp_tests.zig",
+      "sourcePath": "modules/zig-scheduler/aes67_rtp_tests.zig",
+      "sourceSha256": "d4454f2178cab26befbbbe314163aed73c41866ac1309b0812fa8ee04ac24459",
+      "sha256": "d4454f2178cab26befbbbe314163aed73c41866ac1309b0812fa8ee04ac24459"
+    },
+    {
+      "path": "modules/zig-scheduler/aes67_tx.zig",
+      "sourcePath": "modules/zig-scheduler/aes67_tx.zig",
+      "sourceSha256": "b94be3b0d70f1041cef3177c2a0e066dc7a698dfd717d48cc828acdabdfebfed",
+      "sha256": "b94be3b0d70f1041cef3177c2a0e066dc7a698dfd717d48cc828acdabdfebfed"
+    },
+    {
+      "path": "modules/zig-scheduler/aes67_tx_tests.zig",
+      "sourcePath": "modules/zig-scheduler/aes67_tx_tests.zig",
+      "sourceSha256": "909ba641c567a7c5d36af0d378fb803cc567c3c3eec70f874758ff5c71148a1c",
+      "sha256": "909ba641c567a7c5d36af0d378fb803cc567c3c3eec70f874758ff5c71148a1c"
     },
     {
       "path": "modules/zig-scheduler/aoip_config.zig",
@@ -5091,8 +5145,8 @@
     {
       "path": "modules/zig-scheduler/desktop_playback.zig",
       "sourcePath": "modules/zig-scheduler/desktop_playback.zig",
-      "sourceSha256": "d5ea0ff6b4cff3845ee12a4987c6a35aa0f6c58651ea124ce458b8e39b2177e7",
-      "sha256": "d5ea0ff6b4cff3845ee12a4987c6a35aa0f6c58651ea124ce458b8e39b2177e7"
+      "sourceSha256": "efe2296bda322dc0f338e643a5816bc3d635fbe6df4cb14f119a77f6c0de84a7",
+      "sha256": "efe2296bda322dc0f338e643a5816bc3d635fbe6df4cb14f119a77f6c0de84a7"
     },
     {
       "path": "modules/zig-scheduler/desktop_playback_tests.zig",
@@ -5121,8 +5175,8 @@
     {
       "path": "modules/zig-scheduler/host.zig",
       "sourcePath": "modules/zig-scheduler/host.zig",
-      "sourceSha256": "fd40873bcdf6a509b686c3a6f9440c1ca3b6cfa0b296d4302d990a744fb1ea90",
-      "sha256": "fd40873bcdf6a509b686c3a6f9440c1ca3b6cfa0b296d4302d990a744fb1ea90"
+      "sourceSha256": "bfee702ae418d690e2f4377b83ec59fa140184bd42e89840e09fc0d604611b41",
+      "sha256": "bfee702ae418d690e2f4377b83ec59fa140184bd42e89840e09fc0d604611b41"
     },
     {
       "path": "modules/zig-scheduler/json_processing_probe.zig",
@@ -5223,8 +5277,8 @@
     {
       "path": "modules/zig-scheduler/output_stream.zig",
       "sourcePath": "modules/zig-scheduler/output_stream.zig",
-      "sourceSha256": "8ae9119c4abb257c269bc5330bab3caedce4e025edd70705146f9f576fdcbd4a",
-      "sha256": "8ae9119c4abb257c269bc5330bab3caedce4e025edd70705146f9f576fdcbd4a"
+      "sourceSha256": "676afdae4cb15dd95aec420c0b8f489c338b2a2086355532a7310a34a4f43a00",
+      "sha256": "676afdae4cb15dd95aec420c0b8f489c338b2a2086355532a7310a34a4f43a00"
     },
     {
       "path": "modules/zig-scheduler/output_stream_tests.zig",
@@ -5254,16 +5308,22 @@
       "sha256": "2883c8f9bff6bd6a0bf6c2846b94579af9ca19dee947fe1f01f1cf1b660bd679"
     },
     {
+      "path": "modules/zig-scheduler/playback.aes67.example.json",
+      "sourcePath": "modules/zig-scheduler/playback.aes67.example.json",
+      "sourceSha256": "051094a2e2af8105cbda62aedc02e22350cb446712f0426c8d847ba69080228e",
+      "sha256": "051094a2e2af8105cbda62aedc02e22350cb446712f0426c8d847ba69080228e"
+    },
+    {
       "path": "modules/zig-scheduler/playback.example.json",
       "sourcePath": "modules/zig-scheduler/playback.example.json",
-      "sourceSha256": "3c38f599ff8dcce4e8a80ab9559b2ae2d22567d9cf766d0d837c5967bf7bf56b",
-      "sha256": "3c38f599ff8dcce4e8a80ab9559b2ae2d22567d9cf766d0d837c5967bf7bf56b"
+      "sourceSha256": "a04df225f525c05d111fdf5cfd58b028d850d133fa4dc337ecb45605f037e293",
+      "sha256": "a04df225f525c05d111fdf5cfd58b028d850d133fa4dc337ecb45605f037e293"
     },
     {
       "path": "modules/zig-scheduler/playback.schema.json",
       "sourcePath": "modules/zig-scheduler/playback.schema.json",
-      "sourceSha256": "12cea5d50d230e7567cfa1b60ebc8909a57bb280a090b0534204f9d7c40ee3fd",
-      "sha256": "12cea5d50d230e7567cfa1b60ebc8909a57bb280a090b0534204f9d7c40ee3fd"
+      "sourceSha256": "dfa905c33f5ea086fcd577cdda7b5dc0536b0966f28e1d635c9219b5c9e0a8bc",
+      "sha256": "dfa905c33f5ea086fcd577cdda7b5dc0536b0966f28e1d635c9219b5c9e0a8bc"
     },
     {
       "path": "modules/zig-scheduler/playback.wasapi.example.json",
@@ -5276,6 +5336,12 @@
       "sourcePath": "modules/zig-scheduler/playback_probe.zig",
       "sourceSha256": "bb5cb8db1c611b41e5e87b1a78619a887c7850e4c7810657f1e98c5335a6750c",
       "sha256": "bb5cb8db1c611b41e5e87b1a78619a887c7850e4c7810657f1e98c5335a6750c"
+    },
+    {
+      "path": "modules/zig-scheduler/playback_schema_tests.zig",
+      "sourcePath": "modules/zig-scheduler/playback_schema_tests.zig",
+      "sourceSha256": "32067fb9e4f3af8c4312b3c64a3ed968d84c445c05d46ea80cd8990b967fc2f7",
+      "sha256": "32067fb9e4f3af8c4312b3c64a3ed968d84c445c05d46ea80cd8990b967fc2f7"
     },
     {
       "path": "modules/zig-scheduler/primary_election.zig",

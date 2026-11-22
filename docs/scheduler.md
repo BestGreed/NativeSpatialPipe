@@ -9,7 +9,10 @@ Use the [playback schema](../modules/zig-scheduler/playback.schema.json)
 and the [playback example](../modules/zig-scheduler/playback.example.json)
 for field names and values. The
 [WASAPI example](../modules/zig-scheduler/playback.wasapi.example.json)
-illustrates the stereo output path. Apply backend changes by restarting the
+illustrates the stereo output path. `outputBackend: "aes67"` selects the
+transport-only RTP/L24 network sink; see the
+[AES67 example](../modules/zig-scheduler/playback.aes67.example.json) and the
+[AES67 transport guide](aes67-output.md). Apply backend changes by restarting the
 corresponding session. Browser identity is optional and uses Node.js at
 runtime. See the [project README](../README.md#optional-nodejs-runtime).
 
