@@ -53,13 +53,13 @@
     },
     {
       "path": "README.md",
-      "sha256": "fb329eada0e177557e717e50ba6f3e4ce426a97a0f5641336894dbe1f43c5104",
+      "sha256": "9ff28e19cd761d6f8d84feb0b6c8305f4dd64a63540e5c50611197f92a6aaab8",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "5e9f4bed2a9ba478fef46295125cd7b24b27e1709358590eb06e22e9dc09159c",
+      "sha256": "0d6d684c363ce0e9e05bcc28f0c27cbeb98d10dc3f0fe0de0fac99b3254fa1c8",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
@@ -294,6 +294,18 @@
     {
       "path": "docs/archive/receiver-startup.md",
       "sha256": "4b01a44243064634063fbfc378a540f2a01b5664f17968c1cd0d5be765a7d928",
+      "origin": "public-maintained",
+      "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
+    },
+    {
+      "path": "docs/assets/architecture-dark.svg",
+      "sha256": "dd40e7168976b7fb59cb3aaf298414f92baaf7ef3a8677d9f014f3fa47448642",
+      "origin": "public-maintained",
+      "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
+    },
+    {
+      "path": "docs/assets/architecture.svg",
+      "sha256": "090be4b7c05a27dfb461f58d794d248783d25044d96cb33674d9aaad2bc91eb1",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },

@@ -48,15 +48,8 @@ Native Spatial Pipe（NSP）捕获空间音频对象及其元数据，与 PCM �
 
 ## 项目架构
 
-```mermaid
-flowchart LR
-    Input["空间对象 + PCM"] --> Croksor["Croksor<br/>ROAR / LIRA 渲染"]
-    Croksor --> Output["ASIO / Inferno AoIP / WASAPI"]
-    classDef neutral fill:#f6f8fa,stroke:#8c959f,color:#24292f,stroke-width:1px;
-    class Input,Croksor,Output neutral;
-```
-
-FSA 与 Zig 管理会话，遥测服务向本地网页界面提供数据。
+![Native Spatial Pipe 项目架构](docs/assets/architecture.svg#gh-light-mode-only)
+![Native Spatial Pipe 项目架构](docs/assets/architecture-dark.svg#gh-dark-mode-only)
 
 Croksor 集成经过补丁适配的 ROAR 1.1 渲染器与 Inferno AoIP，LIRA 和 ASIO 分别作为独立后端。实现与验证范围见[运行时架构说明](docs/runtime-details.md)。
 
