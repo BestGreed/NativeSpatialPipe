@@ -5474,7 +5474,7 @@
     },
     {
       "path": "tools/ci/Test-Candidate.ps1",
-      "sha256": "8e0bb5209976aa00ef28441d038cb167fb4ae6b917b1a2880be33fa9f02a53c5",
+      "sha256": "81657ac7907876fa238112626466ce47f81de8574bb07374115cdc5157e5b7e4",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },

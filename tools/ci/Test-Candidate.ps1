@@ -3,6 +3,7 @@ $ErrorActionPreference='Stop'
 $root=(Resolve-Path "$PSScriptRoot/../..").Path
 Set-Location -LiteralPath $root
 New-Item -ItemType Directory -Force build/ci-logs | Out-Null
+New-Item -ItemType Directory -Force build/zig-scheduler | Out-Null
 Start-Transcript build/ci-logs/contracts.txt
 try {
  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File modules/zig-scheduler/Build.ps1 -TargetDirectory build/nsp-product
