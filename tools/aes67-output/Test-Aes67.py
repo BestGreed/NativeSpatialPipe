@@ -4,7 +4,7 @@
 
 Runs aes67-send.exe against a UDP receiver on 127.0.0.1, then validates the RTP
 stream (header/seq/timestamp/L24 payload tone), the generated SDP file, and a
-best-effort multicast smoke test on 239.69.1.1. Standard library only.
+best-effort multicast smoke test on 239.1.1.1. Standard library only.
 
 Usage: python tools/aes67-output/Test-Aes67.py [--seconds 2] [--no-multicast]
 Writes tools/aes67-output/out/results.json and prints a PASS/FAIL table.
@@ -121,7 +121,7 @@ def collect_unicast(seconds, extra=None, sdp_path=None, stats_path=None):
     return packets, port, proc.returncode, stdout, stderr, arrivals
 
 
-def collect_multicast(seconds, group="239.69.1.1"):
+def collect_multicast(seconds, group="239.1.1.1"):
     recv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     recv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     recv.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 << 20)
@@ -320,13 +320,13 @@ def main(argv):
         if mc_error:
             multicast = {"status": "SKIP", "detail": mc_error, "port": mc_port, "packets": 0}
         elif not mc_packets:
-            multicast = {"status": "SKIP", "detail": "no packets on 239.69.1.1 (loopback multicast unavailable)", "port": mc_port, "packets": 0}
+            multicast = {"status": "SKIP", "detail": "no packets on 239.1.1.1 (loopback multicast unavailable)", "port": mc_port, "packets": 0}
         else:
             mc_parsed = [parse_rtp(p) for p in mc_packets]
             ok = len(mc_parsed) >= 1000 * 0.8 and all(p["pt"] == PT and p["version"] == 2 for p in mc_parsed)
             multicast = {"status": "PASS" if ok else "FAIL", "detail": "packets=%d expected~1000 port=%d" % (len(mc_parsed), mc_port),
                          "port": mc_port, "packets": len(mc_parsed)}
-            report.add("multicast:239.69.1.1", ok, multicast["detail"])
+            report.add("multicast:239.1.1.1", ok, multicast["detail"])
     elapsed = time.monotonic() - started
 
     summary = {

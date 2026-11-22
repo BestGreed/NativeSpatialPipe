@@ -19,7 +19,7 @@
       "type": ["object", "null"],
       "additionalProperties": false,
       "properties": {
-        "destIp": {"type": "string", "maxLength": 64, "default": "239.69.1.1", "description": "IPv4 unicast or multicast destination."},
+        "destIp": {"type": "string", "maxLength": 64, "default": "239.1.1.1", "description": "IPv4 unicast or multicast destination."},
         "port": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 5004},
         "framesPerPacket": {"enum": [48, 96, 192, 480], "default": 48, "description": "1/2/4/10 ms ptime at 48 kHz."},
         "ttl": {"type": "integer", "minimum": 1, "maximum": 255, "default": 32},

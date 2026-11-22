@@ -48,7 +48,7 @@ console.log('PASS seven layouts, speaker-identity calibration migration and coll
 const network={destIp:'192.168.1.10',port:5004,framesPerPacket:48,ttl:32,payloadType:96,ssrc:1314082870,srcInterfaceIp:'',ptpGmid:'',ptpDomain:0,ringPackets:512,prebufferFrames:480,dll:''};
 const aes=prepare({...original,outputBackend:'aes67'},'playback');
 assert.equal(aes.outputBackend,'aes67');
-assert.equal(aes.network.destIp,'239.69.1.1');
+assert.equal(aes.network.destIp,'239.1.1.1');
 assert.equal(aes.network.framesPerPacket,48);
 assert.equal(aes.network.prebufferFrames,480);
 assert.equal(aes.network.ringPackets,64);

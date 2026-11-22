@@ -144,7 +144,7 @@ static BOOL WINAPI ctrl_handler(DWORD type) {
 static void usage(void) {
     printf(
         "usage: aes67-send --dest <ip:port> [options]\n"
-        "  --dest <ip:port>       destination (unicast 127.0.0.1:5004 or multicast 239.69.1.1:5004)\n"
+        "  --dest <ip:port>       destination (unicast 127.0.0.1:5004 or multicast 239.1.1.1:5004)\n"
         "  --channels <n>         channel count 1..16 (default: layout channels, else 12)\n"
         "  --layout <id>          layout id from contracts/output-layouts.json (default 7.1.4)\n"
         "  --packet-ms <1|2|4|10> packet time in ms (default 1 => 48 frames)\n"

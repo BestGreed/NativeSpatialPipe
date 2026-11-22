@@ -12,7 +12,7 @@ export const outputBackends=[
  {value:'aes67',label:'AES67 网络输出'},
  {value:'dante',label:'Dante 网络输出（第三方实验性 · 未接入）',disabled:true},
 ];
-export const aes67Defaults={destIp:'239.69.1.1',port:5004,framesPerPacket:48,ttl:32,payloadType:96,ssrc:0,srcInterfaceIp:'',ptpGmid:'',ptpDomain:0,ringPackets:64,prebufferFrames:480,dll:''};
+export const aes67Defaults={destIp:'239.1.1.1',port:5004,framesPerPacket:48,ttl:32,payloadType:96,ssrc:0,srcInterfaceIp:'',ptpGmid:'',ptpDomain:0,ringPackets:64,prebufferFrames:480,dll:''};
 export function getPath(object,path){return path.split('.').reduce((value,key)=>value?.[key],object);}
 export function setPath(object,path,value){const keys=path.split('.');let target=object;for(const key of keys.slice(0,-1)){target[key]??={};target=target[key];}target[keys.at(-1)]=value;}
 export function prepare(config,id){
@@ -60,7 +60,7 @@ export function validateAes67(value){
  if(value?.outputBackend==='dante')problems.push({path:'outputBackend',message:'Dante 是第三方实验性后端，当前版本未接入，不能保存为运行后端'});
  if(value?.outputBackend!=='aes67')return problems;
  if(!net)return [{path:'network',message:'AES67 网络段缺失'}];
- if(!isIpv4(net.destIp))problems.push({path:'network.destIp',message:'目标 IP 必须是有效 IPv4（例如 192.168.1.10 或 239.69.1.1）'});
+ if(!isIpv4(net.destIp))problems.push({path:'network.destIp',message:'目标 IP 必须是有效 IPv4（例如 192.168.1.10 或 239.1.1.1）'});
  else if(net.destIp==='0.0.0.0'||net.destIp==='255.255.255.255')problems.push({path:'network.destIp',message:'0.0.0.0 / 255.255.255.255 不能作为发送目标'});
  if(!range(net.port,1,65535))problems.push({path:'network.port',message:'端口必须在 1–65535'});
  if(![48,96,192,480].includes(net.framesPerPacket))problems.push({path:'network.framesPerPacket',message:'每包帧数只允许 48 / 96 / 192 / 480'});

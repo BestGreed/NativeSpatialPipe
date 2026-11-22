@@ -91,7 +91,7 @@ try{
  assert.ok(danteOption&&danteOption.disabled);
  inputPath('outputBackend').value='aes67';inputPath('outputBackend').listeners.change();
  for(const path of ['network.destIp','network.port','network.framesPerPacket','network.payloadType','network.ssrc','network.ttl','network.ringPackets','network.prebufferFrames','network.srcInterfaceIp','network.ptpGmid','network.ptpDomain','network.dll'])assert.ok(inputPath(path),path);
- assert.equal(inputPath('network.destIp').value,'239.69.1.1');
+ assert.equal(inputPath('network.destIp').value,'239.1.1.1');
  inputPath('network.destIp').value='999.1.1.1';inputPath('network.destIp').listeners.input();
  const beforeInvalid=saves;await element('configForm').listeners.submit({preventDefault(){}});
  assert.equal(saves,beforeInvalid,'invalid IPv4 must not be saved');

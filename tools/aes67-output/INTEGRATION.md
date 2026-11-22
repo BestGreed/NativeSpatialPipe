@@ -40,7 +40,7 @@ DSP and the lease ABI are unchanged.
 {
   "outputBackend": "asio",
   "network": {
-    "destIp": "239.69.1.1",
+    "destIp": "239.1.1.1",
     "port": 5004,
     "framesPerPacket": 48,
     "ttl": 32,

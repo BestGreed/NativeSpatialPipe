@@ -17,7 +17,7 @@ pub const Recording=struct{pcm:bool=false,telemetrySnapshots:bool=false};
 /// AES67/RTP network sink parameters. Only read when outputBackend is "aes67".
 /// The sender is 48 kHz L24 only; sampleRate is fixed by the sink contract.
 pub const Network = struct {
-    destIp: []const u8 = "239.69.1.1",
+    destIp: []const u8 = "239.1.1.1",
     port: u16 = 5004,
     framesPerPacket: u16 = 48,
     ttl: u8 = 32,

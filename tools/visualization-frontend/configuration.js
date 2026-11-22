@@ -50,7 +50,7 @@ function render(){
  field(body,'drainTimeoutMs','显式停止时排空超时（ms）','integer');
  if(aes67){
   body=group('AES67 网络输出（RTP / L24，48 kHz）');
-  field(body,'network.destIp','目标 IP（dst）','text',null,'接收端 IPv4：单播填接收端地址（如 192.168.1.10），组播填组播组（如 239.69.1.1）。');
+  field(body,'network.destIp','目标 IP（dst）','text',null,'接收端 IPv4：单播填接收端地址（如 192.168.1.10），组播填组播组（如 239.1.1.1）。');
   field(body,'network.port','目标端口','integer',null,'RTP 端口，默认 5004。');
   field(body,'network.framesPerPacket','每包帧数（48 kHz）','integer',[{value:48,label:'48 帧 · 1 ms（推荐）'},{value:96,label:'96 帧 · 2 ms'},{value:192,label:'192 帧 · 4 ms'},{value:480,label:'480 帧 · 10 ms（兼容）'}]);
   field(body,'network.ttl','TTL（跳数）','integer',null,'组播时控制跨网段范围；单播同样需要 > 0。');

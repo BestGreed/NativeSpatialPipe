@@ -131,7 +131,7 @@ test "JSON bypass is explicit and retained separately from neutral auto bypass" 
 fn validAes67() Config {
     return .{ .bridgeDll = "C:\\fixture\\bridge.dll",
         .outputBackend = "aes67",
-        .network = .{ .destIp = "239.69.1.1", .port = 5004, .framesPerPacket = 48, .ttl = 32, .payloadType = 96,
+        .network = .{ .destIp = "239.1.1.1", .port = 5004, .framesPerPacket = 48, .ttl = 32, .payloadType = 96,
             .ssrc = 0x4E535036, .ptpGmid = "00-11-22-FF-FE-33-44-55", .ptpDomain = 0, .ringPackets = 64, .prebufferFrames = 480 } };
 }
 
@@ -219,5 +219,5 @@ test "AES67 network parameters reject before any socket side effect" {
     value.network.?.srcInterfaceIp = "192.168.1.999";
     try std.testing.expectError(error.InvalidSourceInterfaceIp, value.validate());
     try std.testing.expectError(error.UnknownField, options.parse(std.testing.allocator,
-        "{\"bridgeDll\":\"C:\\\\b.dll\",\"outputBackend\":\"aes67\",\"network\":{\"destIp\":\"239.69.1.1\",\"framesPerPacket\":480,\"unknownField\":1}}"));
+        "{\"bridgeDll\":\"C:\\\\b.dll\",\"outputBackend\":\"aes67\",\"network\":{\"destIp\":\"239.1.1.1\",\"framesPerPacket\":480,\"unknownField\":1}}"));
 }
