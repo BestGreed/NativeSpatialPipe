@@ -11,9 +11,9 @@ combines them with PCM input, and renders the scene to your selected output.
 Final Spatial Audio (FSA) provides tray controls; a local web interface provides
 playback configuration and live visualization.
 
-![Spatial objects and energy in the NSP web interface](docs/assets/wwise-spatial-preview.png)
+![Spatial audio visualization](docs/assets/spatial-audio-preview-hd.png)
 
-*Six-second excerpt from the preserved Wwise one-minute recording, replayed in the web interface with ROAR offline rendering.*
+*Spatial audio visualization*
 
 ## Capabilities and direction
 

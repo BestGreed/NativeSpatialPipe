@@ -8,9 +8,9 @@
 
 Native Spatial Pipe（NSP）捕获空间音频对象及其元数据，与 PCM 输入共同组成声场，再渲染到所选输出设备。Final Spatial Audio（FSA）提供托盘控制，本地网页界面用于播放配置和实时可视化。
 
-![NSP 网页界面中的空间对象与能量变化](docs/assets/wwise-spatial-preview.png)
+![空间音频可视化](docs/assets/spatial-audio-preview-hd.png)
 
-*截取自保留的 Wwise 一分钟录制数据，经 ROAR 离线渲染后在网页前端回放，动图约 6 秒。*
+*空间音频可视化*
 
 ## 核心能力与方向
 

@@ -53,13 +53,13 @@
     },
     {
       "path": "README.md",
-      "sha256": "9ff28e19cd761d6f8d84feb0b6c8305f4dd64a63540e5c50611197f92a6aaab8",
+      "sha256": "455bbacabe5661445dba45a4d5b21ebdbd0365bcf940a34a99bd7061c431c3fc",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "0d6d684c363ce0e9e05bcc28f0c27cbeb98d10dc3f0fe0de0fac99b3254fa1c8",
+      "sha256": "8717f187f3e8b915fd083931dec00d3dc7b7990ee001a9bf21131e0cdf66ad3b",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
@@ -310,8 +310,8 @@
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
     {
-      "path": "docs/assets/wwise-spatial-preview.png",
-      "sha256": "a740d6dbc81c14fb916802cd5c07d40cfda4456135c2505086ad9c04609a1fee",
+      "path": "docs/assets/spatial-audio-preview-hd.png",
+      "sha256": "d465d1374fea3d3f4845febd7e1d7e7c8e33ce89a2b45e0014dcea51693e7aec",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
