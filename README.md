@@ -1,5 +1,7 @@
 # Native Spatial Pipe
 
+[中文说明](README.zh-CN.md)
+
 Native Spatial Pipe (NSP) is a Windows spatial audio pipeline for routing
 application audio to a multichannel speaker system. It captures spatial
 objects with their metadata, accepts PCM alongside object streams, and
