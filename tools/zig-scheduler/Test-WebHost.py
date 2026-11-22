@@ -153,7 +153,7 @@ def main():
                 checks.append('seven-output-layouts-roundtrip-and-reserved-6dof-rejection')
                 # ---- Output backend switch + AES67 network settings ----
                 aes67_network = {'destIp': '192.168.1.10', 'port': 5004, 'framesPerPacket': 48, 'ttl': 32,
-                                 'payloadType': 96, 'ssrc': 1314082870, 'srcInterfaceIp': '',
+                                 'payloadType': 96, 'ssrc': 305419896, 'srcInterfaceIp': '',
                                  'ptpGmid': '00-11-22-FF-FE-33-44-55', 'ptpDomain': 0, 'ringPackets': 512,
                                  'prebufferFrames': 96, 'dll': ''}
                 current = get('/api/web/config/playback')
@@ -240,7 +240,7 @@ def main():
                 live = {'schema': 'nsp-aes67-live/1', 'scheduler': 'zig', 'outputBackend': 'aes67',
                         'outputLayout': '4.1.2', 'observedMs': int(time.time() * 1000), 'state': 'playing',
                         'network': {'destIp': '192.168.1.10', 'port': 5004, 'framesPerPacket': 48, 'ttl': 32,
-                                    'payloadType': 96, 'ssrc': 1314082870, 'srcInterfaceIp': '', 'ptpDomain': 0,
+                                    'payloadType': 96, 'ssrc': 305419896, 'srcInterfaceIp': '', 'ptpDomain': 0,
                                     'ringPackets': 512, 'prebufferFrames': 96, 'channels': 7, 'sdp': 'aes67.sdp'},
                         'stats': {'packetsSent': 12345, 'silentPackets': 10, 'framesSent': 592560,
                                   'framesSubmitted': 600000, 'bytesSent': 22671360, 'ringDroppedFrames': 0,
@@ -293,7 +293,7 @@ def main():
                     assert network['aes67']['stats']['silentPackets'] == 10
                     assert network['aes67']['stats']['bytesSent'] == 22671360
                     assert network['aes67']['rates']['packetsPerSecond'] == 996.2
-                    assert network['aes67']['network']['ssrc'] == 1314082870
+                    assert network['aes67']['network']['ssrc'] == 305419896
                     assert network['aes67']['layout'] == '4.1.2'
                     checks.append('live-aes67-status-through-stub-session')
                     # Stale live file falls back to the shutdown report, labelled FINAL.

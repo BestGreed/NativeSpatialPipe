@@ -45,7 +45,7 @@ DSP and the lease ABI are unchanged.
     "framesPerPacket": 48,
     "ttl": 32,
     "payloadType": 96,
-    "ssrc": 1314082870,
+    "ssrc": 305419896,
     "srcInterfaceIp": "",
     "ptpGmid": "00-11-22-FF-FE-33-44-55",
     "ptpDomain": 0
