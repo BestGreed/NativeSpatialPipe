@@ -16,7 +16,7 @@
   },
   "renderer": "roar",
   "mode": "olr",
-  "bridgeDll": "D:/replace/nsp_roar_bridge.dll",
+  "bridgeDll": "C:/path/to/nsp_roar_bridge.dll",
   "rendererDll": "",
   "sourceStream": 0,
   "sampleRate": 48000,
