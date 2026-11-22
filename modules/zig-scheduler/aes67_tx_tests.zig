@@ -211,6 +211,7 @@ const LoopbackPacket = struct {
     timestamp: u32,
     ssrc: u32,
     payload_type: u8,
+    source_port: u16,
     payload_first_sample: [3]u8,
     payload_all_zero: bool,
 };
@@ -236,6 +237,7 @@ fn recvLoopbackPacket(sock: c.SOCKET) !LoopbackPacket {
         .timestamp = (@as(u32, buffer[4]) << 24) | (@as(u32, buffer[5]) << 16) | (@as(u32, buffer[6]) << 8) | buffer[7],
         .ssrc = (@as(u32, buffer[8]) << 24) | (@as(u32, buffer[9]) << 16) | (@as(u32, buffer[10]) << 8) | buffer[11],
         .payload_type = buffer[1],
+        .source_port = c.ntohs(from.sin_port),
         .payload_first_sample = .{ buffer[12], buffer[13], buffer[14] },
         .payload_all_zero = all_zero,
     };
@@ -318,6 +320,151 @@ test "multi-flow loopback sends 2 x 8ch with one shared timestamp timeline and p
     try std.testing.expectEqual(@as(u32, packets0[23].sequence), stats.flows[0].last_seq);
     try std.testing.expectEqual(packets0[23].timestamp, stats.flows[1].last_timestamp);
 }
+const active = @import("aes67_route.zig");
+const Backend = @import("aes67_control.zig").Backend;
+const Stream = @import("output_stream.zig").Stream;
+
+fn releaseTestLease(token: ?*anyopaque) callconv(.C) void {
+    const count: *usize = @ptrCast(@alignCast(token.?));
+    count.* += 1;
+}
+
+const PairReceiver = struct {
+    sockets: [2]c.SOCKET,
+    last: ?[2]LoopbackPacket = null,
+
+    fn read(self: *PairReceiver) ![2]LoopbackPacket {
+        const packets = [2]LoopbackPacket{ try recvLoopbackPacket(self.sockets[0]), try recvLoopbackPacket(self.sockets[1]) };
+        try std.testing.expectEqual(packets[0].timestamp, packets[1].timestamp);
+        for (packets, 0..) |packet, index| {
+            try std.testing.expectEqual(rtp.packetBytes(48, 1), packet.size);
+            try std.testing.expectEqual(cfg.default_ssrc + @as(u32, @intCast(index)), packet.ssrc);
+            if (self.last) |last| {
+                try std.testing.expectEqual(last[index].sequence +% 1, packet.sequence);
+                try std.testing.expectEqual(last[index].timestamp +% 48, packet.timestamp);
+                try std.testing.expectEqual(last[index].source_port, packet.source_port);
+            }
+        }
+        self.last = packets;
+        return packets;
+    }
+
+    fn expectSample(packets: [2]LoopbackPacket, samples: [2]f32) !void {
+        for (packets, samples) |packet, sample| {
+            var expected: [3]u8 = undefined;
+            rtp.encodeL24(sample, &expected);
+            try std.testing.expectEqualSlices(u8, &expected, &packet.payload_first_sample);
+        }
+    }
+};
+
+test "active route sends one source across both RTP flows, silences loss, and resumes in session" {
+    if (std.process.getEnvVarOwned(std.testing.allocator, "NSP_AES67_LOOPBACK_TEST")) |value| {
+        std.testing.allocator.free(value);
+    } else |_| return error.SkipZigTest;
+    var ws: c.WSADATA = undefined;
+    if (c.WSAStartup(0x0202, &ws) != 0) return error.Aes67LoopbackWinsock;
+    defer _ = c.WSACleanup();
+    const first = try bindLoopbackReceiver();
+    defer _ = c.closesocket(first.sock);
+    const second = try bindLoopbackReceiver();
+    defer _ = c.closesocket(second.sock);
+    var pairs = PairReceiver{ .sockets = .{ first.sock, second.sock } };
+
+    const prepared = try cfg.prepare(.{
+        .srcInterfaceIp = "127.0.0.1",
+        .prebufferFrames = 480,
+        .ringPackets = 64,
+        .flows = &.{
+            .{ .destIp = "127.0.0.1", .port = first.port, .channels = 1, .channelOffset = 0 },
+            .{ .destIp = "127.0.0.1", .port = second.port, .channels = 1, .channelOffset = 1 },
+        },
+    }, 2);
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    const dir_path = try tmp.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(dir_path);
+    const sdp_path = try std.fs.path.join(std.testing.allocator, &.{ dir_path, "test.sdp" });
+    defer std.testing.allocator.free(sdp_path);
+    const stream = try Stream.create(std.testing.allocator);
+    defer stream.destroy();
+    var route: active.Route = undefined;
+    route.init(2, 500);
+    var config = Backend.Config{ .prepared = prepared, .stream = stream, .route = &route, .drain_timeout_ms = 500 };
+    @memcpy(config.sdp_path[0..sdp_path.len], sdp_path);
+    const session_name = "NativeSpatialPipe AES67 test output";
+    @memcpy(config.session_name[0..session_name.len], session_name);
+    var backend = Backend{};
+    try backend.open(config);
+    defer backend.close() catch unreachable;
+    defer backend.stop() catch unreachable;
+    const pcm_a = [_]f32{ 0.25, 0.125 } ** 480;
+    const pcm_b = [_]f32{ -0.25, -0.125 } ** 480;
+    var released: usize = 0;
+    const expect = std.testing.expectEqual;
+
+    var routes = @import("routing.zig").Routes{};
+    route.select(routes.update(0, .{ 0, 0, null, null }));
+    try expect(@as(c_int, 0), active.publishPool(&route.inputs[0], 0, &pcm_a, 480, 2, 0, &released, releaseTestLease));
+    try expect(@as(usize, 1), released);
+    route.select(routes.update(100, .{ 1, 0, null, null }));
+    try expect(@as(c_int, 0), active.publishPool(&route.inputs[0], 480, &pcm_a, 480, 2, 0, &released, releaseTestLease));
+    try backend.pump();
+    try expect(@as(?u32, 0), stream.snapshot().net_selected_source);
+    try expect(@as(u64, 480), backend.tx.?.snapshot().buffered_frames);
+    route.select(routes.update(200, .{ 2, 1, null, null }));
+    // Leave a descriptor from A pending as well as the earlier A PCM in Tx.
+    try expect(@as(c_int, 0), active.publishPool(&route.inputs[0], 960, &pcm_a, 480, 2, 0, &released, releaseTestLease));
+    route.select(routes.update(300, .{ 3, 2, null, null }));
+    try expect(@as(c_int, 0), active.publishPool(&route.inputs[1], 0, &pcm_b, 480, 2, 0, &released, releaseTestLease));
+    try backend.pump();
+    try expect(@as(?u32, 1), stream.snapshot().net_selected_source);
+    try expect(@as(u64, 480), backend.tx.?.snapshot().ring_discarded_frames);
+    try expect(@as(u64, 0), backend.tx.?.snapshot().ring_dropped_frames);
+    try expect(@as(u64, 480), backend.tx.?.snapshot().buffered_frames);
+    try backend.start();
+    try PairReceiver.expectSample(try pairs.read(), .{ -0.25, -0.125 });
+    route.select(routes.update(1400, .{ 3, 2, null, null }));
+    try backend.pump();
+    try expect(@as(?u32, null), stream.snapshot().net_selected_source);
+    for (0..10) |_| {
+        const packets = try pairs.read();
+        if (packets[0].payload_all_zero) {
+            try std.testing.expect(packets[1].payload_all_zero);
+            break;
+        }
+        try PairReceiver.expectSample(packets, .{ -0.25, -0.125 });
+    } else return error.Aes67MissingRoutedSilence;
+    route.select(routes.update(1500, .{ 4, 2, null, null }));
+    // Input B can end while A is selected. It must not stop the sender.
+    try expect(@as(c_int, 0), active.publishPool(&route.inputs[1], 480, &pcm_b, 48, 2, 1, &released, releaseTestLease));
+    try expect(@as(c_int, 0), active.publishPool(&route.inputs[0], 1440, &pcm_a, 480, 2, 0, &released, releaseTestLease));
+    try backend.pump();
+    try expect(@as(?u32, 0), stream.snapshot().net_selected_source);
+    try std.testing.expect(!route.ended());
+    for (0..128) |_| {
+        const packets = try pairs.read();
+        if (!packets[0].payload_all_zero) {
+            try PairReceiver.expectSample(packets, .{ 0.25, 0.125 });
+            break;
+        }
+        try std.testing.expect(packets[1].payload_all_zero);
+    } else return error.Aes67MissingRecoveredInput;
+    // Deliberately leave a partial RTP packet after the selected tail. The
+    // complete audio packets drain before the owner drops only the remainder.
+    try expect(@as(c_int, 0), active.publishPool(&route.inputs[0], 1920, &pcm_a, 49, 2, 1, &released, releaseTestLease));
+    route.finishing.store(true, .release);
+    var drain_timer = try std.time.Timer.start();
+    while (stream.snapshot().state != .done and drain_timer.read() < std.time.ns_per_s) {
+        try backend.pump();
+        std.time.sleep(std.time.ns_per_ms);
+    }
+    try expect(@import("output_stream.zig").State.done, stream.snapshot().state);
+    try expect(@as(u64, 0), backend.tx.?.snapshot().buffered_frames);
+    try expect(@as(usize, 7), released);
+    try expect(route.stats().received, route.stats().released);
+}
+
 test "multicast flow applies TTL/egress options and requires an explicit source" {
     const prepared = try cfg.prepare(.{
         .payloadType = 96,

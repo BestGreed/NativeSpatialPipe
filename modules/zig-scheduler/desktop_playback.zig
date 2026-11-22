@@ -283,7 +283,6 @@ pub const Config = struct {
             // order come from outputLayout/sources(); no device is opened.
             if(self.aes67==null)return error.Aes67ConfigRequired;
             if(self.sampleRate!=48000)return error.Aes67Requires48000;
-            if(!unified and !std.mem.eql(u8,self.sourcePolicy,"fixed"))return error.Aes67RequiresFixedSource;
         } else if(wasapi) {
             const settings=self.wasapi orelse return error.WasapiConfigRequired;
             if(!std.mem.eql(u8,settings.mode,"shared") and !std.mem.eql(u8,settings.mode,"exclusive"))return error.InvalidWasapiMode;

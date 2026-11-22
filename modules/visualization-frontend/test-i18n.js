@@ -9,6 +9,8 @@ assert.equal(normalizeLanguage('zh'),'zh');
 for(const value of ['en','fr','',null,undefined])assert.equal(normalizeLanguage(value),'en');
 assert.equal(translate('配置与状态','en'),'Configuration and status');
 assert.equal(translate('配置与状态','zh'),'配置与状态');
+assert.equal(translate('自动跟随活动流','en'),'Follow active stream');
+assert.equal(translate('AES67 默认使用固定源流。','en'),'AES67 defaults to a fixed source stream.');
 assert.equal(translate('输出槽 3 的设备输出通道','en'),'Output slot 3 device output channel');
 assert.equal(translate('asio:{1234} 48000 7.1.4','en'),'asio:{1234} 48000 7.1.4');
 assert.equal(translate('C → 第 2 路','en'),'C → channel 2');

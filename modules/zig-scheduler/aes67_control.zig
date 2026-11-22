@@ -10,6 +10,7 @@ const playback_config = @import("desktop_playback.zig");
 const rtp = @import("aes67_rtp.zig");
 const cfg = @import("aes67_config.zig");
 const tx_mod = @import("aes67_tx.zig");
+const Route = @import("aes67_route.zig").Route;
 
 pub const Backend = struct {
     pub const Config = struct {
@@ -24,6 +25,7 @@ pub const Backend = struct {
         processing: processing.Config = .{},
         drain_timeout_ms: u32 = 5000,
         stream: ?*Stream = null,
+        route: ?*Route = null,
 
         /// Builds the transport config from an already validated playback
         /// document. Channel count/order/labels come from outputLayout and the
@@ -67,7 +69,7 @@ pub const Backend = struct {
     limits: Config = undefined,
     timer: ?std.time.Timer = null,
     state: StreamState = .waiting,
-    next_frame: u64 = 0,
+    applied_epoch: ?u64 = null,
     drain_started: u64 = 0,
     started: bool = false,
     message: [1024]u8 = [_]u8{0} ** 1024,
@@ -98,7 +100,7 @@ pub const Backend = struct {
         self.limits = config;
         self.state = .waiting;
         self.started = false;
-        self.next_frame = 0;
+        self.applied_epoch = null;
     }
     pub fn start(self: *Backend) !void {
         const tx = self.tx orelse return error.Aes67NotOpen;
@@ -112,6 +114,7 @@ pub const Backend = struct {
     pub fn stop(self: *Backend) !void {
         if (self.tx) |tx| tx.stop();
         self.started = false;
+        self.applied_epoch = null;
         if (self.stream) |stream| {
             const stats = if (self.tx) |tx| tx.snapshot() else tx_mod.Stats{};
             self.publish(stream, stats);
@@ -120,6 +123,9 @@ pub const Backend = struct {
     }
     pub fn close(self: *Backend) !void {
         if (self.tx) |tx| {
+            // A successful open initializes limits. At cleanup, every Rust
+            // producer has joined or the session failed before binding them.
+            if (self.limits.route) |route| route.discardAll();
             tx.destroy();
             self.tx = null;
         }
@@ -128,13 +134,22 @@ pub const Backend = struct {
     pub fn pump(self: *Backend) !void {
         const stream = self.stream orelse return;
         self.pumpInner(stream) catch |err| {
+            if (self.limits.route) |route| {
+                route.failed.store(true, .release);
+                route.discardAll();
+                self.applied_epoch = null;
+                if (self.tx) |tx| {
+                    tx.discardBuffered();
+                    self.publish(stream, tx.snapshot());
+                }
+            }
             stream.fail(err);
             return err;
         };
     }
     fn publish(self: *Backend, stream: *Stream, stats: tx_mod.Stats) void {
-        _ = self;
         stream.updateNet(.{
+            .selected_source = if (self.applied_epoch) |epoch| Route.selected(epoch) else null,
             .packets_sent = stats.packets_sent,
             .silent_packets = stats.silent_packets,
             .frames_sent = stats.frames_sent,
@@ -146,6 +161,7 @@ pub const Backend = struct {
             .channels = stats.channels,
             .ssrc = stats.ssrc,
             .ring_dropped_frames = stats.ring_dropped_frames,
+            .ring_discarded_frames = stats.ring_discarded_frames,
             .send_errors = stats.send_errors,
             .late_ticks = stats.late_ticks,
             .buffered_frames = stats.buffered_frames,
@@ -159,19 +175,36 @@ pub const Backend = struct {
         const tx = self.tx orelse return error.Aes67NotOpen;
         // Bounded hand-off: the sender ring is the only buffer between the pool
         // owner and the network. submit() copies, so the lease returns at once.
-        for (0..4) |_| {
-            const lease = stream.popLease() orelse break;
-            const channels = self.limits.prepared.channels;
-            const lease_pcm = lease.pcm[0..@as(usize, lease.frames) * channels];
-            const result = tx.submit(lease_pcm, lease.frames, @intCast(channels), self.limits.prepared.channel_map[0..channels]);
-            stream.releaseLease(lease);
-            try result;
-            self.next_frame += lease.frames;
+        if (self.limits.route) |route| {
+            if (route.failed.load(.acquire)) return error.OutputRouteInput;
+            const epoch = route.requested.load(.acquire);
+            if (self.applied_epoch != epoch) {
+                tx.discardBuffered();
+                self.applied_epoch = epoch;
+            }
+            const source = Route.selected(epoch);
+            route.discardInactive(source);
+            if (source) |index| {
+                const input = &route.inputs[index];
+                for (0..4) |_| {
+                    if (route.requested.load(.acquire) != epoch) break;
+                    const lease = input.popSelected(epoch) orelse break;
+                    defer input.releaseLease(lease);
+                    if (route.requested.load(.acquire) != epoch) break;
+                    try self.submit(tx, lease);
+                }
+            }
+        } else {
+            for (0..4) |_| {
+                const lease = stream.popLease() orelse break;
+                defer stream.releaseLease(lease);
+                try self.submit(tx, lease);
+            }
         }
         const stats = tx.snapshot();
         self.publish(stream, stats);
         const now = if (self.timer) |*timer| timer.read() else 0;
-        const ended = stream.ended();
+        const ended = if (self.limits.route) |route| route.ended() else stream.ended();
         switch (self.state) {
             .waiting => {
                 if (ended) {
@@ -188,7 +221,14 @@ pub const Backend = struct {
                 }
             },
             .draining => {
-                if (stats.frames_sent >= stats.frames_submitted) {
+                // Silence advances frames_sent, so active routing drains by
+                // actual queued whole packets, including the selected DSP tail.
+                const drained = if (self.limits.route != null)
+                    stats.buffered_frames < stats.frames_per_packet
+                else
+                    stats.frames_sent >= stats.frames_submitted;
+                if (drained) {
+                    if (self.limits.route != null and stats.buffered_frames != 0) tx.discardBuffered();
                     self.state = .done;
                 } else if (now >= self.drain_started and now - self.drain_started >= @as(u64, self.limits.drain_timeout_ms) * std.time.ns_per_ms) {
                     return error.OutputTimeout;
@@ -200,6 +240,12 @@ pub const Backend = struct {
         const prebuffer: u32 = @intCast(self.limits.prepared.prebuffer_frames);
         stream.metrics(rtp.sample_rate, stats.frames_per_packet, @intCast(stats.buffered_frames), 0, 0, 0, prebuffer, 0);
     }
+    fn submit(self: *const Backend, tx: *tx_mod.Tx, lease: Stream.Lease) !void {
+        const channels = self.limits.prepared.channels;
+        const pcm = lease.pcm[0..@as(usize, lease.frames) * channels];
+        try tx.submit(pcm, lease.frames, channels, self.limits.prepared.channel_map[0..channels]);
+    }
+
     fn writeSdp(self: *Backend, config: *const Config) !void {
         _ = self;
         var labels: [16][]const u8 = undefined;
@@ -233,7 +279,7 @@ pub const Backend = struct {
                 .ptp_gmid = gmid,
                 .ptp_domain = config.prepared.ptp_domain,
                 .layout_id = layout,
-                .channel_labels = labels[offset .. offset + flow.channels],
+                .channel_labels = if (count == 0) &.{} else labels[offset .. offset + flow.channels],
                 .flow_index = @intCast(index),
                 .channel_offset = flow.channel_offset,
                 // RFC 4566: multicast connections carry the TTL suffix in c=.

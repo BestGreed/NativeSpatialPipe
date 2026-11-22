@@ -687,8 +687,13 @@ function aes67StatusRows(observation,backend){
   else if(backend?.state!=='running')statusText='已停止 · 上次会话报告';
   else statusText=health.active?'LIVE · 正在发送':'等待发送 · 未激活';
  }
+ const selectedSource=payload.selectedSourceStream;
+ const selectionRows=payload.sourcePolicy==='active'
+  ?[['AES67 选中源流',Number.isInteger(selectedSource)?String(selectedSource):'等待活动流']]
+  :[];
  const items=[
   ['AES67 状态',statusText],
+  ...selectionRows,
   ...flowItems,
   ['AES67 布局 / 声道',(payload.outputLayout??'—')+' · '+labels],
   ['AES67 发送 / 静音包',aes67Count(stats.packetsSent)+' / '+aes67Count(stats.silentPackets)],

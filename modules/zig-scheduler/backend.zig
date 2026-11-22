@@ -213,9 +213,9 @@ pub const Controller = struct {
         const age_ms: u64 = @intCast(@divTrunc(age_ns, std.time.ns_per_ms));
         const source = parsed.value.object;
         var projected = std.json.ObjectMap.init(arena);
-        try copyFields(&projected, source, &.{ "outputBackend", "outputLayout", "outputChannels", "outputChannelLabels" });
+        try copyFields(&projected, source, &.{ "outputBackend", "outputLayout", "outputChannels", "outputChannelLabels", "sourcePolicy", "selectedSourceStream" });
         try copySubset(&projected, arena, source, "health", &.{ "active", "failure", "errorDetail" });
-        try copySubset(&projected, arena, source, "stats", &.{ "packetsSent", "silentPackets", "framesSent", "framesSubmitted", "ringDroppedFrames", "sendErrors", "lateTicks", "bufferedFrames" });
+        try copySubset(&projected, arena, source, "stats", &.{ "packetsSent", "silentPackets", "framesSent", "framesSubmitted", "ringDroppedFrames", "ringDiscardedFrames", "sendErrors", "lateTicks", "bufferedFrames" });
         try copySubset(&projected, arena, source, "network", &.{ "destIp", "port", "payloadType", "framesPerPacket", "ssrc", "ptpGmid", "ptpDomain", "channels", "multicast", "ttl", "flowCount", "flows" });
         var outer = std.json.ObjectMap.init(arena);
         try outer.put("state", std.json.Value{ .string = if (age_ms > 5000) "stale" else "live" });

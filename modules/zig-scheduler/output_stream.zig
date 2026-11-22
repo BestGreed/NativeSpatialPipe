@@ -23,6 +23,7 @@ pub const Status = struct {
     pool_blocks_released: u64 = 0,
     // AES67 network sink telemetry. Zero for every other backend.
     net_active: bool = false,
+    net_selected_source: ?u32 = null,
     net_packets_sent: u64 = 0,
     net_silent_packets: u64 = 0,
     net_frames_sent: u64 = 0,
@@ -34,6 +35,7 @@ pub const Status = struct {
     net_channels: u32 = 0,
     net_ssrc: u32 = 0,
     net_ring_dropped_frames: u64 = 0,
+    net_ring_discarded_frames: u64 = 0,
     net_send_errors: u64 = 0,
     net_late_ticks: u64 = 0,
     net_buffered_frames: u64 = 0,
@@ -161,6 +163,7 @@ pub const Stream = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
         self.status.net_active = true;
+        self.status.net_selected_source = stats.selected_source;
         self.status.net_packets_sent = stats.packets_sent;
         self.status.net_silent_packets = stats.silent_packets;
         self.status.net_frames_sent = stats.frames_sent;
@@ -172,6 +175,7 @@ pub const Stream = struct {
         self.status.net_channels = stats.channels;
         self.status.net_ssrc = stats.ssrc;
         self.status.net_ring_dropped_frames = stats.ring_dropped_frames;
+        self.status.net_ring_discarded_frames = stats.ring_discarded_frames;
         self.status.net_send_errors = stats.send_errors;
         self.status.net_late_ticks = stats.late_ticks;
         self.status.net_buffered_frames = stats.buffered_frames;

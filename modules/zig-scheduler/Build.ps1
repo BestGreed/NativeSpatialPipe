@@ -35,7 +35,7 @@ if(-not $SkipTests){
  & $Zig test "$PSScriptRoot/aes67_rtp_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/aes67-rtp-tests.exe"
  if($LASTEXITCODE){throw 'AES67 RTP/SDP tests failed'}
  & $Zig test "$PSScriptRoot/aes67_tx_tests.zig" @flags "-femit-bin=$out/aes67-tx-tests.exe"
- if($LASTEXITCODE){throw 'AES67 sender/pacing tests failed'}
+ if($LASTEXITCODE){throw 'AES67 sender/pacing/active routing tests failed'}
  & $Zig test "$PSScriptRoot/output_stream_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/output-stream-tests.exe"
  if($LASTEXITCODE){throw 'Reliable output stream tests failed'}
  & $Zig test "$PSScriptRoot/output_layout_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/output-layout-tests.exe"

@@ -296,14 +296,16 @@ pub const Pipeline = struct {
         if (self.enableFn(self.handle, @intFromBool(value)) != 0) return error.TelemetryEnable;
     }
     pub fn bindOutput(self: *Pipeline, stream: *@import("output_stream.zig").Stream) !void {
-        const pool = @import("output_stream.zig");
-        const Publish = *const @TypeOf(pool.publishPool);
-        const Config = @import("output_processing.zig").NativeConfig;
-        const Bind = *const fn (?*anyopaque, *const Config, Publish, ?*anyopaque) callconv(.C) c_int;
-        const bind = try u.symbol(Bind, &self.lib, "nsp_pipeline_set_native_pool_output");
-        const config = Config.from(stream.processing_config orelse return error.OutputNotConfigured);
+        const config = stream.processing_config orelse return error.OutputNotConfigured;
         try stream.holdLibrary(self.dll_path);
-        if (bind(self.handle, &config, pool.publishPool, stream) != 0) return error.OutputPoolBind;
+        try self.bindPoolOutput(config, @import("output_stream.zig").publishPool, stream);
+    }
+    pub fn bindPoolOutput(self: *Pipeline, processing: @import("output_processing.zig").Config, publish: *const @TypeOf(@import("output_stream.zig").publishPool), context: *anyopaque) !void {
+        const Config = @import("output_processing.zig").NativeConfig;
+        const Bind = *const fn (?*anyopaque, *const Config, @TypeOf(publish), ?*anyopaque) callconv(.C) c_int;
+        const bind = try u.symbol(Bind, &self.lib, "nsp_pipeline_set_native_pool_output");
+        const config = Config.from(processing);
+        if (bind(self.handle, &config, publish, context) != 0) return error.OutputPoolBind;
     }
     pub fn bindAoip(self:*Pipeline, processing:@import("output_processing.zig").Config, json:[]const u8) !void {
         const Config=@import("output_processing.zig").NativeConfig;

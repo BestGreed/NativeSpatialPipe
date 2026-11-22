@@ -51,6 +51,7 @@ pub const Stats = struct {
     bytes_sent: u64 = 0,
     submit_calls: u64 = 0,
     ring_dropped_frames: u64 = 0,
+    ring_discarded_frames: u64 = 0,
     send_errors: u64 = 0,
     late_ticks: u64 = 0,
     buffered_frames: u64 = 0,
@@ -317,6 +318,16 @@ pub const Tx = struct {
         self.stats.submit_calls += 1;
         self.stats.frames_submitted += frames;
         self.stats.ring_dropped_frames += dropped;
+    }
+
+    /// Discard only queued PCM at a source change. An in-flight RTP packet
+    /// keeps one source for all flows, and the pacing timeline keeps running.
+    pub fn discardBuffered(self: *Tx) void {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        self.stats.ring_discarded_frames += self.ring.count;
+        self.ring.head = 0;
+        self.ring.count = 0;
     }
 
     pub fn snapshot(self: *Tx) Stats {

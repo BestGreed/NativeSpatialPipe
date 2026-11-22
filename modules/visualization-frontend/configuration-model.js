@@ -47,10 +47,19 @@ export const channelLabels=['L','R','C','LFE','Ls','Rs','Lrs','Rrs','Ltf','Rtf',
 export const orders={olr:[0,1,2,3,4,5,6,7,8,9,10,11],'dvs-speakers':[0,2,1,5,4,7,6,3,10,8,9,11]};
 export function getPath(object,path){return path.split('.').reduce((value,key)=>value?.[key],object);}
 export function setPath(object,path,value){const keys=path.split('.');let target=object;for(const key of keys.slice(0,-1)){target[key]??={};target=target[key];}target[keys.at(-1)]=value;}
-export function updateSourceSelection(value,backendChanged=false){
+export const supportsActiveSource=backend=>backend==='aoip'||backend==='aes67';
+function normalizeSourcePolicy(value){
+ value.sourcePolicy??=value.outputBackend==='aoip'?'active':'fixed';
+ if(value.sourcePolicy==='active'&&!supportsActiveSource(value.outputBackend))value.sourcePolicy='fixed';
+}
+export function updateSourceSelection(value,previousBackend){
  const backend=value.outputBackend;
- if(backendChanged&&value.sourcePolicy!=='unified')value.sourcePolicy=backend==='aoip'?'active':'fixed';
- if((value.sourcePolicy==='unified'&&value.renderer==='lira')||(backend!=='aoip'&&value.sourcePolicy==='active'))value.sourcePolicy='fixed';
+ // Preserve policy choices between network transports. Native AoIP still
+ // defaults to active when switching from a device backend in fixed mode.
+ if(previousBackend&&previousBackend!==backend&&!supportsActiveSource(previousBackend)&&
+    backend==='aoip'&&value.sourcePolicy==='fixed')value.sourcePolicy='active';
+ normalizeSourcePolicy(value);
+ if(value.sourcePolicy==='unified'&&value.renderer==='lira')value.sourcePolicy='fixed';
  if(value.sourcePolicy==='unified')value.sourceStream=0;
  else{
   delete value.unifiedSlotProfile;
@@ -65,7 +74,7 @@ export function updateSourceSelection(value,backendChanged=false){
 export function prepare(config,id){
  const value=structuredClone(config);
  if(id==='playback'){
-  value.outputBackend??='asio';value.sourcePolicy??='fixed';value.aoip??={interfaceIp:'',masterIp:'',mac:'',name:'NSP Native AoIP',prebufferFrames:960,txLatencyUs:4000,framesPerPacket:32};value.aoip.name??='NSP Native AoIP';value.aoip.prebufferFrames??=960;value.aoip.txLatencyUs??=4000;value.aoip.framesPerPacket??=32;
+  value.outputBackend??='asio';normalizeSourcePolicy(value);value.aoip??={interfaceIp:'',masterIp:'',mac:'',name:'NSP Native AoIP',prebufferFrames:960,txLatencyUs:4000,framesPerPacket:32};value.aoip.name??='NSP Native AoIP';value.aoip.prebufferFrames??=960;value.aoip.txLatencyUs??=4000;value.aoip.framesPerPacket??=32;
   // The scheduler validates the AES67 block even while another backend is
   // selected, so normalise it in place instead of dropping or recreating it.
   if(value.aes67&&typeof value.aes67==='object')value.aes67={...aes67Defaults,...value.aes67};
@@ -247,7 +256,7 @@ export function validateAes67(value){
  else if(value?.outputBackend==='aes67')problems.push({path:'aes67.flows.0.destIp',message:'AES67 后端需要完整的 aes67 网络配置'});
  if(value?.outputBackend==='aes67'){
   if(value.sampleRate!==48000)problems.push({path:'sampleRate',message:'AES67 需要设备采样率 48000 Hz'});
-  if(!['fixed','unified'].includes(value.sourcePolicy))problems.push({path:'sourcePolicy',message:'AES67 选流方式必须是固定源流或统一输入'});
+  if(!['active','fixed','unified'].includes(value.sourcePolicy))problems.push({path:'sourcePolicy',message:'AES67 选流方式必须是自动跟随活动流、固定源流或统一输入'});
  }
  return problems;
 }

@@ -626,7 +626,7 @@
         "unified"
       ],
       "default": "fixed",
-      "description": "AoIP active follows live-render selection; fixed uses sourceStream; unified sends the combined spatial and PCM renderer to the selected backend."
+      "description": "AoIP and AES67 active follow live-render selection; fixed uses sourceStream; unified sends the combined spatial and PCM renderer to the selected backend."
     },
     "pcmCapture": {
       "type": [
@@ -1001,12 +1001,6 @@
             },
             "sampleRate": {
               "const": 48000
-            },
-            "sourcePolicy": {
-              "enum": [
-                "fixed",
-                "unified"
-              ]
             }
           }
         },

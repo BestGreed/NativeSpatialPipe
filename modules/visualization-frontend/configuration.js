@@ -1,4 +1,4 @@
-import {channelLabels,orders,getPath,setPath,prepare,numeric,finish,outputLayouts,layoutFor,deviceChannels,migrateLayout,updateSourceSelection,validateAes67,problemText,deriveAes67Flows,proposeAes67Flows,materializeAes67Destinations,effectiveAes67FlowSsrc,aes67MaxFlowChannels,parseAes67Ssrc,formatAes67Ssrc} from './configuration-model.js';
+import {channelLabels,orders,getPath,setPath,prepare,numeric,finish,outputLayouts,layoutFor,deviceChannels,migrateLayout,supportsActiveSource,updateSourceSelection,validateAes67,problemText,deriveAes67Flows,proposeAes67Flows,materializeAes67Destinations,effectiveAes67FlowSsrc,aes67MaxFlowChannels,parseAes67Ssrc,formatAes67Ssrc} from './configuration-model.js';
 import {translate,uiReady} from './i18n.js';
 await uiReady;
 const $=id=>document.getElementById(id);
@@ -51,7 +51,7 @@ function field(container,path,label,type='number',options=null,note='',offset=0)
       }
      }
     }
-   if(backendChanged||path==='renderer'||path==='sourcePolicy'||path==='outputLayout')updateSourceSelection(next,backendChanged);
+   if(backendChanged||path==='renderer'||path==='sourcePolicy'||path==='outputLayout')updateSourceSelection(next,backendChanged?working.outputBackend:undefined);
    working=prepare(next,id);render();
   }catch(error){message(error.message,true);}
  });
@@ -145,8 +145,8 @@ function render(){
  }
  field(body,'mediaFoundation.enabled','启用 Media Foundation 播放适配','checkbox');
  const sourcePolicies=[{value:'fixed',label:'固定源流'},{value:'unified',label:'空间流与普通 PCM 统一输入',disabled:working.renderer==='lira'}];
- if(working.outputBackend==='aoip')sourcePolicies.unshift({value:'active',label:'自动跟随活动流'});
- field(body,'sourcePolicy','选流方式','text',sourcePolicies,working.outputBackend==='aes67'?'AES67 不支持自动跟随活动流；只有固定源流或统一输入能通过后端校验。':'');
+ if(supportsActiveSource(working.outputBackend))sourcePolicies.unshift({value:'active',label:'自动跟随活动流'});
+ field(body,'sourcePolicy','选流方式','text',sourcePolicies,working.outputBackend==='aes67'?'AES67 默认使用固定源流。':'');
  if(working.sourcePolicy==='unified'){
   const slotProfile=field(body,'unifiedSlotProfile','输入槽位配置','text',[
    {value:'standard',label:'标准'},

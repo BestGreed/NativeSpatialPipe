@@ -130,6 +130,7 @@ const Bridge = struct {
     routes: routing.Routes = .{},
     selected: ?usize = null,
     audioRoute:?*@import("output_route.zig").Route=null,
+    aes67Route: ?*aes67_playback.Route = null,
     audioAutomatic:bool=false,
     unified: bool = false,
     unified_slot_profile: ?[]const u8 = null,
@@ -151,6 +152,7 @@ const Bridge = struct {
     objectBuffer: [32 + 160 * 1968]u8 = undefined,
     pub fn run(self: *Bridge) void {
         self.loop() catch |err| {
+            if (self.aes67Route) |route| route.select(null);
             self.failure = @errorName(err);
         };
     }
@@ -174,6 +176,7 @@ const Bridge = struct {
                 var sizes: [4]?u64 = .{ null, null, null, null };
                 for(self.pipelines,0..) |*pipeline,i| sizes[i]=pipeline.progress();
                 const next = self.routes.update(now, sizes);
+                if (self.aes67Route) |route| route.select(next);
                 if(if(self.unified) null else self.audioRoute) |route| {
                     const path=try u.join(&.{self.out,"output-route-request.json"});defer a.free(path);
                     if(u.exists(path)){
@@ -293,6 +296,9 @@ fn writeAes67Report(out: []const u8, session: *aes67_playback.Session, settings:
     const net = settings.aes67 orelse return;
     var prepared = aes67_config.prepare(net, settings.channelCount()) catch return;
     const status = session.stream.snapshot();
+    const active_route = if (session.route) |*route| route.stats() else null;
+    const selected_source = if (active_route != null) status.net_selected_source else
+        if (!session.retired and status.failure == null) @as(?u32, settings.sourceStream) else null;
     const sources = settings.sources() catch return;
     const labels = settings.labels() catch return;
     const sdp = u.join(&.{ out, "aes67.sdp" }) catch return;
@@ -341,7 +347,8 @@ fn writeAes67Report(out: []const u8, session: *aes67_playback.Session, settings:
     u.writeJson(path, .{
         .scheduler = "zig", .outputBackend = "aes67", .state = @tagName(status.state),
         .outputLayout = (settings.preset() catch return).id, .outputChannels = channels,
-        .sourceStream = settings.sourceStream, .outputOrder = settings.channelOrder,
+        .sourceStream = settings.sourceStream, .sourcePolicy = settings.sourcePolicy,
+        .selectedSourceStream = selected_source, .outputOrder = settings.channelOrder,
         .outputChannelLabels = labels[0..channels], .sourceChannelIndices = sources[0..channels],
         .network = .{ .destIp = std.mem.sliceTo(&prepared.flows[0].dest_text, 0), .port = prepared.port, .payloadType = prepared.payload_type,
             .framesPerPacket = prepared.frames_per_packet, .ssrc = status.net_ssrc,
@@ -356,11 +363,14 @@ fn writeAes67Report(out: []const u8, session: *aes67_playback.Session, settings:
             .framesSent = status.net_frames_sent, .framesSubmitted = status.net_frames_submitted,
             .bytesSent = status.net_bytes_sent, .lastSeq = status.net_last_seq,
             .lastTimestamp = status.net_last_timestamp, .ringDroppedFrames = status.net_ring_dropped_frames,
+            .ringDiscardedFrames = status.net_ring_discarded_frames,
             .sendErrors = status.net_send_errors, .lateTicks = status.net_late_ticks,
             .bufferedFrames = status.net_buffered_frames, .startMs = status.net_start_ms, .stopMs = status.net_stop_ms },
         .outputHandoff = .{ .mode = "rust-pool-lease", .pcmCopiesBeforeSubmit = @as(u32, 1),
-            .poolBlocksReceived = status.pool_blocks_received, .poolBlocksReleased = status.pool_blocks_released,
-            .dspTailFrames = status.dsp_tail_frames },
+            .poolBlocksReceived = if (active_route) |stats| stats.received else status.pool_blocks_received,
+            .poolBlocksReleased = if (active_route) |stats| stats.released else status.pool_blocks_released,
+            .sourceQueueDroppedFrames = if (active_route) |stats| stats.queue_dropped_frames else 0,
+            .dspTailFrames = if (active_route) |stats| stats.tail_frames else status.dsp_tail_frames },
         .outputProcessing = .{ .bypass = processing.bypass, .effectiveBypass = status.dsp_bypassed,
             .placement = "rust-output-pool", .master = processing.master,
             .trim = processing.trim[0..channels], .delayFrames = processing.delay_frames[0..channels],
@@ -491,7 +501,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     const wasapi_profile=if(desktop) |settings| (if(std.mem.eql(u8,settings.value.outputBackend,"wasapi")) settings.value.wasapi else null) else null;
     const aes67_profile=if(desktop) |settings| (if(std.mem.eql(u8,settings.value.outputBackend,"aes67")) settings.value.aes67 else null) else null;
     var aes67:?*aes67_playback.Session=null;
-    var aes67_source:usize=0;
+    var aes67_bound = [_]bool{false} ** pipeline_storage.len;
     var nextAes67Report:u64=0;
     var wasapi:?@import("wasapi_control.zig").Session=null;
     const wasapi_source:usize=if(desktop) |settings| @intCast(settings.value.sourceStream) else 0;
@@ -545,30 +555,44 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         }
         aoip_source=0; // all source slots share the same network fault status.
     }
-    if(aes67_profile != null) {
-        if(aoip_enabled or wasapi_profile!=null)return error.DuplicateOutputBackend;
-        for([_][]const u8{"--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
-            if(u.option(args,key)!=null)return error.DuplicateOutputBackend;
+    defer if (aes67) |session| {
+        for (pipelines, aes67_bound[0..pipelines.len]) |*pipeline, bound| {
+            if (!bound) continue;
+            if (!pipeline.finished and !capture_may_have_started) {
+                var unused = pipeline.finish() catch null;
+                if (unused) |*value| value.deinit();
+            }
+            // Preserve the callback contexts until all bound writers join.
+            while (!pipeline.finished) c.Sleep(1000);
         }
-        const source=if(desktop) |active| @as(usize,active.value.sourceStream) else 0;
-        if(source>=pipelines.len)return error.InvalidAes67Stream;
-        const config=try @import("aes67_control.zig").Backend.Config.fromPlayback(desktop.?.value,out,@intCast(output_channels));
-        aes67_source=source;
-        aes67=try aes67_playback.Session.create(a,config);
-        pipelines[source].bindOutput(aes67.?.stream) catch |err| {
-            aes67.?.finish();aes67.?.destroy();aes67=null;return err;
-        };
-    }
-    defer if(aes67) |session| {
-        if(!pipelines[aes67_source].finished and !capture_may_have_started){
-            var unused=pipelines[aes67_source].finish() catch null;
-            if(unused) |*value| value.deinit();
-        }
-        while(!pipelines[aes67_source].finished)c.Sleep(1000);
         session.finish();
-        writeAes67Report(out,session,desktop.?.value);
+        writeAes67Report(out, session, desktop.?.value);
         session.destroy();
     };
+    if (aes67_profile != null) {
+        if (aoip_enabled or wasapi_profile != null) return error.DuplicateOutputBackend;
+        for ([_][]const u8{"--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
+            if (u.option(args, key) != null) return error.DuplicateOutputBackend;
+        }
+        const settings = desktop.?.value;
+        const active = std.mem.eql(u8, settings.sourcePolicy, "active");
+        const source: usize = settings.sourceStream;
+        if (source >= pipelines.len) return error.InvalidAes67Stream;
+        const config = try @import("aes67_control.zig").Backend.Config.fromPlayback(settings, out, @intCast(output_channels));
+        const session = try aes67_playback.Session.create(a, config, active);
+        aes67 = session;
+        if (session.route) |*route| {
+            // Release callbacks remain valid after pipeline handles close.
+            try session.stream.holdLibrary(dll);
+            for (pipelines, 0..) |*pipeline, index| {
+                aes67_bound[index] = true;
+                try pipeline.bindPoolOutput(config.processing, @import("aes67_route.zig").publishPool, &route.inputs[index]);
+            }
+        } else {
+            aes67_bound[source] = true;
+            try pipelines[source].bindOutput(session.stream);
+        }
+    }
     if (if(aoip_enabled or wasapi_profile!=null or aes67_profile!=null) @as(?[]const u8,null) else if(desktop) |settings| @as(?[]const u8,settings.value.driver) else u.option(args, "--asio-driver")) |driver| {
         const device_dll = if(desktop) |settings| settings.value.asioDll else u.option(args, "--asio-dll") orelse return error.AsioDllRequired;
         var config = try asio.Backend.Config.init(device_dll, driver);
@@ -694,6 +718,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         .unified_primary_policy = if (unified) (if (auto_primary) "objectCount" else "legacy") else null,
         .renderer_layout=output_layout,.device_layout=if(desktop) |settings| settings.value.deviceLayout() else output_layout,.lsac_enabled=notebook_file!=null,
         .audioRoute=if(outputRoute) |*route| route else null,
+        .aes67Route = if (aes67) |session| if (session.route != null) &session.route.? else null else null,
         .audioAutomatic=aoip_automatic,
         .audioSelected=aoip_selected };
     var thread = try std.Thread.spawn(.{}, Bridge.run, .{&bridge});
@@ -858,6 +883,16 @@ fn shutdown(hook: *n.Hook, receiver: *n.Receiver, pipelines: []n.Pipeline, bridg
         passed = passed and u.yes(u.field(v.value, "captureLibraryReleased")) and u.yes(u.field(v.value, "transportLibraryReleased"));
         for ([_][]const u8{ "queueDropped", "budgetRejected", "queueRemaining", "concurrentRejected", "faults", "sendErrors" }) |key| passed = passed and (u.number(u.field(v.value, key)) catch 1) == 0;
     }
+    // Once ingress is joined, report errors must still finish all producers
+    // before their output sessions retire and free callback contexts.
+    errdefer for (pipelines) |*pipeline| {
+        if (pipeline.handle == null) continue;
+        if (!pipeline.finished) {
+            var unused = pipeline.finish() catch null;
+            if (unused) |*value| value.deinit();
+        }
+        if (pipeline.finished) pipeline.close();
+    };
     for (pipelines, 0..) |*pipeline, i| {
         var summary = try pipeline.finish();
         defer summary.deinit();

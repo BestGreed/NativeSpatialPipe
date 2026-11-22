@@ -108,11 +108,19 @@ such a config through the UI (no silent migration happens).
 | `ringPackets` | 64 | 8–1024 sender ring slots in 1 ms packets. Overflow discards the oldest audio and increments `ringDroppedFrames`. |
 | `prebufferFrames` | 480 | 48–48000 and must fit inside the ring. Frames buffered before the stream leaves the waiting state. |
 
-ASIO device fields (`asioDll`, `driver`) are not required and are never opened
-with `aes67`. `sourcePolicy` must be `fixed` for non-unified sessions (AES67
-does not implement AoIP-style active stream following) and may be `unified`
-for the combined spatial + PCM renderer path. The `aes67` object is validated even when another backend is
-selected, so switching a saved profile cannot land on a bad transport block.
+AES67 sessions do not need ASIO driver configuration. The `sourcePolicy` field
+selects the renderer input to the sender.
+
+- `fixed` (default) uses the configured `sourceStream` index.
+- `active` follows rendering progress across the available pipelines. A change
+  in source keeps the same RTP flows and their existing sequence and timestamp
+  timelines. The sender discards queued audio from the previous source and
+  transmits silence while no pipeline is active. The status report exposes
+  `selectedSourceStream` and counts intentional discards in
+  `ringDiscardedFrames`.
+- `unified` combines spatial and optional PCM input in one ROAR pipeline.
+
+The scheduler validates the `aes67` object when loading any playback profile.
 With `aes67`, `sampleRate` must be 48000 and the existing LSAC stereo downmix
 adapter is not available (it requires WASAPI).
 

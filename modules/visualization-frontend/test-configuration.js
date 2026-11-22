@@ -52,12 +52,22 @@ assert.equal(mixed.sourceStream,0);
 assert.equal(mixed.pcmCapture.routeToOutput,false);
 assert.equal(mixed.wasapiUpmix.enabled,true);
 mixed.outputBackend='aoip';
-updateSourceSelection(mixed,true);
+updateSourceSelection(mixed,'wasapi');
 assert.equal(mixed.sourcePolicy,'unified');
 assert.equal(mixed.wasapiUpmix.enabled,true);
 assert.equal(mixed.wasapiUpmix.modelPath,'C:/model.onnx');
 mixed.outputBackend='asio';
-assert.equal(updateSourceSelection(mixed,true).sourcePolicy,'unified');
+assert.equal(updateSourceSelection(mixed,'aoip').sourcePolicy,'unified');
+for(const backend of ['aes67','aoip','asio','wasapi']){
+ const network=backend==='aes67'||backend==='aoip';
+ assert.equal(prepare({...original,outputBackend:backend},'playback').sourcePolicy,backend==='aoip'?'active':'fixed');
+ for(const policy of ['active','fixed','unified']){
+  const expected=policy==='active'&&!network?'fixed':policy;
+  assert.equal(prepare({...original,outputBackend:backend,sourcePolicy:policy},'playback').sourcePolicy,expected);
+  assert.equal(updateSourceSelection({...original,outputBackend:backend,sourcePolicy:policy},backend==='aoip'?'aes67':'aoip').sourcePolicy,expected);
+ }
+}
+assert.equal(updateSourceSelection({...original,outputBackend:'aoip',sourcePolicy:'fixed'},'asio').sourcePolicy,'active');
 mixed.outputBackend='wasapi';
 mixed.sourcePolicy='unified';
 mixed.unifiedSlotProfile='dtsxHtCompact';
@@ -108,6 +118,7 @@ assert.equal(finish({...asioBase,aes67:{...aes67Defaults,flows:[{destIp:'',port:
 // A valid AES67 backend configuration passes client validation.
 assert.deepEqual(validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}),[]);
 assert.deepEqual(validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'unified',sampleRate:48000}),[]);
+assert.deepEqual(validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'active',sampleRate:48000}),[]);
 // Field-level problems mirror aes67_config.zig. Flow destinations validate
 // per flow; scalar transport fields validate at the top of the block.
 const invalidFlow=modifier=>validateAes67({...aesPrepared,aes67:{...aes67,flows:[{...aes67.flows[0],...modifier}]},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.flows.0.'+Object.keys(modifier)[0]);
@@ -142,8 +153,8 @@ assert.ok(invalidScalar({ttl:0}));
 assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,flows:[]},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.flows.0.destIp'));
 assert.ok(validateAes67({...asioBase,outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.flows.0.destIp'));
 const backendRule=validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'active',sampleRate:44100}).map(problem=>problem.path);
-assert.ok(backendRule.includes('sampleRate'));
-assert.ok(backendRule.includes('sourcePolicy'));
+assert.deepEqual(backendRule,['sampleRate']);
+assert.ok(validateAes67({...aesPrepared,aes67,sourcePolicy:'unknown'}).some(problem=>problem.path==='sourcePolicy'));
 assert.ok(validateAes67({...asioBase,aes67,sourcePolicy:'fixed',sampleRate:48000}).length===0);
 assert.equal(isIpv4('192.0.2.10'),true);
 assert.equal(isIpv4('192.0.2.256'),false);

@@ -3,14 +3,16 @@
 const std = @import("std");
 const aes67 = @import("aes67_control.zig");
 pub const Stream = @import("output_stream.zig").Stream;
+pub const Route = @import("aes67_route.zig").Route;
 pub const Session = struct {
     allocator: std.mem.Allocator,
     stream: *Stream,
     worker: *aes67.Worker,
+    route: ?Route = null,
     retired: bool = false,
     wait_ms: u64,
     detail: [256:0]u8 = std.mem.zeroes([256:0]u8),
-    pub fn create(allocator: std.mem.Allocator, value: aes67.Backend.Config) !*Session {
+    pub fn create(allocator: std.mem.Allocator, value: aes67.Backend.Config, active: bool) !*Session {
         const self = try allocator.create(Session);
         errdefer allocator.destroy(self);
         const stream = try Stream.create(allocator);
@@ -22,6 +24,13 @@ pub const Session = struct {
         self.* = .{ .allocator = allocator, .stream = stream, .worker = worker, .wait_ms = @as(u64, value.drain_timeout_ms) + 5000 };
         var config = value;
         config.stream = stream;
+        if (active) {
+            // Optional payload must be present before taking its stable address.
+            self.route = Route{ .channels = value.processing.channels, .drain_timeout_ms = value.drain_timeout_ms };
+            const route = &self.route.?;
+            route.init(value.processing.channels, value.drain_timeout_ms);
+            config.route = route;
+        }
         _ = worker.submit(1, .open, config, null) catch unreachable;
         self.waitCommand() catch |err| {
             self.retire();
@@ -47,7 +56,7 @@ pub const Session = struct {
     /// keeps pumping until the sender drained its ring (bounded by the timeout).
     pub fn finish(self: *Session) void {
         if (self.retired) return;
-        self.stream.finish();
+        if (self.route) |*route| route.finishing.store(true, .release) else self.stream.finish();
         var timer = std.time.Timer.start() catch unreachable;
         while (true) {
             const status = self.stream.snapshot();
