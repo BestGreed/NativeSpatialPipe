@@ -11,7 +11,7 @@
     },
     {
       "path": ".github/workflows/windows-build.yml",
-      "sha256": "eb5549bfb63fdeccfca68e66a77bd5c59b174c91313c65609c3bb810917528d9",
+      "sha256": "da0416683f092335ede64030932147f9e140f567ee760ddc1e13a0ad66a11a68",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
@@ -305,7 +305,7 @@
     },
     {
       "path": "docs/ci.md",
-      "sha256": "b1bafe3fa55dfd10e331d4335ee73db748eb48f4533dada54d0a2dff468103ee",
+      "sha256": "17fbf44e75a7a7d68b35249dd1a0747748148cafd9e81c9181400b26cafdf37e",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },

@@ -2,8 +2,10 @@
 
 The Windows workflow validates the cleaned public checkout using the current
 `modules/` ownership and `tools/Build-Product.ps1` entry point. It is independent
-of downstream development builds. It runs for public `main`/`alpha-dev`, pull
-requests and manual dispatch, with read-only repository permissions.
+of downstream development builds. Push validation runs on public `alpha-dev`.
+Promoting that validated commit to `main` does not repeat the workflow. Pull
+requests to either branch and manual dispatch remain available, with read-only
+repository permissions.
 
 ## Jobs and inputs
 
@@ -39,8 +41,9 @@ with explicit development dependency paths. The shared Rust initialization
 fallback fixture passed against the private implementation with identical
 imported source. These checks leave the hosted inference scope unchanged.
 
-This records local reproduction of the workflow's build/test commands with
-prepared dependencies. The refreshed GitHub-hosted cold bootstrap has not run
-yet, and is not reported as green. It must be observed on the public candidate
-before treating hosted CI as validated. Source checks, local contracts, real
-device playback and release-package acceptance each keep their own evidence.
+The GitHub-hosted cold bootstrap, product build and isolated contracts passed
+for implementation commit `c9b0eeb`; see the
+[successful dev run](https://github.com/BestGreed/NativeSpatialPipe/actions/runs/44972768641).
+Subsequent README and workflow-trigger edits leave the implementation unchanged.
+Source checks, isolated contracts, device playback and installer acceptance
+keep their own evidence.

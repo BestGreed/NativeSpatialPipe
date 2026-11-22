@@ -2,7 +2,7 @@ name: Public Windows candidate
 
 on:
   push:
-    branches: [main, alpha-dev]
+    branches: [alpha-dev]
   pull_request:
     branches: [main, alpha-dev]
   workflow_dispatch:
