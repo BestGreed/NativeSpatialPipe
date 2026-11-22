@@ -57,7 +57,7 @@ if ($LASTEXITCODE) { throw 'Zig is unavailable' }
 }
 
 if($Stage -in @('All','Rust')) {
-Download-Verified 'https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-gnu/rustup-init.exe' "$tools/rustup-init.exe" 'd2845ad914acf5add202100c0a7ddf19ab1c3e52521e12841bafff13888e49bb'
+Download-Verified 'https://static.rust-lang.org/rustup/archive/1.28.2/x86_64-pc-windows-gnu/rustup-init.exe' "$tools/rustup-init.exe" 'ccbfd951d8024856043b3a0c3903a59f39937bce8d3074768b0d3da55f21e817'
 $env:RUSTUP_INIT_SKIP_PATH_CHECK='yes'
 & "$tools/rustup-init.exe" -y --no-modify-path --profile minimal --default-host x86_64-pc-windows-gnullvm --default-toolchain 1.97.1
 if ($LASTEXITCODE) { throw 'Pinned Rust installation failed' }
@@ -89,9 +89,8 @@ if ($LASTEXITCODE) { throw 'ROAR pin checkout failed' }
 if ($LASTEXITCODE) { throw 'ROAR product patch failed' }
 $cargo=Join-Path $env:CARGO_HOME 'bin/cargo.exe'
 foreach ($manifest in @('modules/native-receiver/Cargo.toml','modules/croksor/Cargo.toml','modules/media-foundation/decoder/Cargo.toml')) {
-    $features=if($manifest -eq 'modules/croksor/Cargo.toml'){@('--features','aoip-output')}else{@()}
     $registry=if($manifest -eq 'modules/croksor/Cargo.toml'){@('--config',"$root/tools/aoip/cargo-official-index.toml")}else{@()}
-    & $cargo +1.97.1-x86_64-pc-windows-gnullvm @registry fetch --locked --target x86_64-pc-windows-gnullvm --manifest-path $manifest @features
+    & $cargo +1.97.1-x86_64-pc-windows-gnullvm @registry fetch --locked --target x86_64-pc-windows-gnullvm --manifest-path $manifest
     if ($LASTEXITCODE) { throw "Locked dependency fetch failed: $manifest" }
 }
 }

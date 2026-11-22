@@ -5468,7 +5468,7 @@
     },
     {
       "path": "tools/ci/Prepare-Windows.ps1",
-      "sha256": "6dc50a3e0ff8bec713466c7c26ba7d8b04a4ce76bd5f56938aef07382081b914",
+      "sha256": "9c7e161ac7d2cf7779e10cbf0129767f140f88055d18f5a80b9448e147cc4574",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
