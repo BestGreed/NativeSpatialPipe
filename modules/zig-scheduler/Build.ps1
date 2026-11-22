@@ -18,6 +18,10 @@ if(-not $SkipTests){
  if($LASTEXITCODE){throw 'Zig routing tests failed'}
  & $Zig test "$PSScriptRoot/control.zig" @flags "-femit-bin=$out/control-tests.exe"
  if($LASTEXITCODE){throw 'Zig orphan recovery tests failed'}
+ & $Zig test "$PSScriptRoot/backend.zig" @flags "-femit-bin=$out/backend-tests.exe"
+ if($LASTEXITCODE){throw 'Zig backend recovery and state readback tests failed'}
+ & $Zig test "$PSScriptRoot/endpoint_retirement.zig" @flags "-femit-bin=$out/endpoint-retirement-tests.exe"
+ if($LASTEXITCODE){throw 'Zig endpoint retirement tests failed'}
  & $Zig test "$PSScriptRoot/output_control_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe -lc -I "$root/modules/audio-backends/src" "-femit-bin=$out/output-control-tests.exe"
  if($LASTEXITCODE){throw 'Output control worker tests failed'}
  & $Zig test "$PSScriptRoot/output_processing_config_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/output-processing-config-tests.exe"
@@ -30,5 +34,11 @@ if(-not $SkipTests){
  if($LASTEXITCODE){throw 'Output speaker mapping tests failed'}
  & $Zig test "$PSScriptRoot/pcm_capture_tests.zig" @flags "-femit-bin=$out/pcm-capture-tests.exe"
  if($LASTEXITCODE){throw 'PCM source attachment tests failed'}
+ & $Zig test "$PSScriptRoot/desktop_playback_tests.zig" @flags "-femit-bin=$out/desktop-playback-tests.exe"
+ if($LASTEXITCODE){throw 'Playback configuration tests failed'}
+ & $Zig test "$PSScriptRoot/profile_refresh_tests.zig" @flags "-femit-bin=$out/profile-refresh-tests.exe"
+ if($LASTEXITCODE){throw 'Capture profile refresh tests failed'}
+ & $Zig test "$PSScriptRoot/profile_cli_tests.zig" @flags "-femit-bin=$out/profile-cli-tests.exe"
+ if($LASTEXITCODE){throw 'Capture profile command tests failed'}
 }
 Write-Output "Built native scheduler: $out/nsp-scheduler.exe"

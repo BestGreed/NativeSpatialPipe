@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory=$true)][string]$OutputDirectory,[switch]$FullTiming,[ValidateSet('WindowsSonic','DTSXForHomeTheater','DolbyAtmosForHomeTheater','DolbyAtmosForHeadphones','DolbyAtmosForSpeakers','DTSHeadphoneX','DTSXUltra')][string]$SpatialFormat='WindowsSonic',[switch]$Managed,[int]$OwnerPid=0,[string]$Endpoint='',[string]$SchedulerExecutable='',[string]$TelemetryPython='python.exe',[int]$TelemetryPort=8766,[string]$FrontendOrigin='http://127.0.0.1:8765',[string]$PlaybackConfig='')
+﻿param([Parameter(Mandatory=$true)][string]$OutputDirectory,[switch]$FullTiming,[ValidateSet('WindowsSonic','DTSXForHomeTheater','DolbyAtmosForHomeTheater','DolbyAtmosForHeadphones','DolbyAtmosForSpeakers','DTSHeadphoneX','DTSXUltra')][string]$SpatialFormat='WindowsSonic',[switch]$Managed,[int]$OwnerPid=0,[string]$Endpoint='',[string]$SchedulerExecutable='',[string]$TelemetryPython='python.exe',[int]$TelemetryPort=8766,[string]$FrontendOrigin='http://127.0.0.1:8765',[string]$PlaybackConfig='',[string]$ReadyEvent='')
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Set-Location -LiteralPath $root
@@ -31,8 +31,16 @@ $cfg=[Windows.Media.Audio.SpatialAudioDeviceConfiguration,Windows.Media.Audio,Co
 $record=[ordered]@{endpoint=$endpoint;spatialFormat=$SpatialFormat;targetFormat=$targetFormat;beforeSelected=$cfg.DefaultSpatialAudioFormat;beforeActive=$cfg.ActiveSpatialAudioFormat;startedUtc=[DateTime]::UtcNow.ToString('o')}
 $record|ConvertTo-Json|Set-Content -LiteralPath "$out/endpoint-before.json" -Encoding UTF8
 $hook=$null
+$readyHandle=$null
 try {
  if(Test-Path -LiteralPath $stopFile){throw 'Session cancelled before activation'}
+ if($ReadyEvent){
+  if($ReadyEvent -cnotmatch '^Local\\NSP\.Ready\.[0-9a-f]{32}$'){throw 'Invalid session ready event'}
+  $readyHandle=[Threading.EventWaitHandle]::OpenExisting($ReadyEvent,[Security.AccessControl.EventWaitHandleRights]::Synchronize)
+ }else{
+  $ReadyEvent='Local\NSP.Ready.'+[guid]::NewGuid().ToString('N')
+  $readyHandle=[Threading.EventWaitHandle]::new($false,[Threading.EventResetMode]::ManualReset,$ReadyEvent)
+ }
  if(-not $cfg.IsSpatialAudioFormatSupported($targetFormat)){
   # Only a matching, fresh memory tag can waive this extra support precheck.
   # Selection and active readback below remain mandatory and unmodified.
@@ -54,6 +62,7 @@ try {
  $env:NSP_RENDER_MMCSS='1'
   $arguments='host --root "'+$root+'" --out "'+$out+'/observed" --pid '+$hosts[0].Id+' --owner-pid '+$OwnerPid+' --stop-file "'+$stopFile+'" --python "'+$TelemetryPython+'" --telemetry-port '+$TelemetryPort+' --origin "'+$FrontendOrigin+'"'
   $arguments+=' --active-spatial-format '+$SpatialFormat
+  $arguments+=' --ready-event '+$ReadyEvent
   if($FullTiming){$arguments+=' --full-timing'}
   if($PlaybackConfig){
    if(-not [IO.Path]::IsPathRooted($PlaybackConfig) -or $PlaybackConfig.Contains('"')){throw 'Invalid playback config path'}
@@ -66,9 +75,12 @@ try {
  $null=$hook.Handle
  $record.hostPid=$hook.Id
  $deadline=[DateTime]::UtcNow.AddSeconds(50)
- while(-not(Test-Path "$out/observed/ready.txt") -and -not $hook.HasExited -and -not(Test-Path -LiteralPath $stopFile) -and [DateTime]::UtcNow -lt $deadline){Start-Sleep -Milliseconds 100}
+ $ready=$false
+ while(-not $hook.HasExited -and -not(Test-Path -LiteralPath $stopFile) -and [DateTime]::UtcNow -lt $deadline){
+  if($readyHandle.WaitOne(100)){$ready=$true;break}
+ }
  if(Test-Path -LiteralPath $stopFile){throw 'Session cancelled during startup'}
- if(-not(Test-Path "$out/observed/ready.txt")){throw 'Observer not ready'}
+ if(-not $ready -or $hook.HasExited){throw 'Observer not ready'}
  Write-Output ('FRONTEND_CONNECT '+(Get-Content "$out/observed/telemetry-service.json" -Raw -ErrorAction SilentlyContinue))
  $record.readyUtc=[DateTime]::UtcNow.ToString('o')
  while(-not $hook.HasExited){
@@ -80,6 +92,7 @@ try {
  else{$record.error=$_.Exception.ToString()}
 }
 finally {
+ if($readyHandle){$readyHandle.Dispose()}
  if($hook){'stop'|Set-Content -LiteralPath $stopFile;$record.hookCompleted=$hook.WaitForExit(30000);if($record.hookCompleted){$hook.WaitForExit();$record.hookExitCode=$hook.ExitCode}}
  else{$record.hookCompleted=$true;$record.hookExitCode=0}
  try {

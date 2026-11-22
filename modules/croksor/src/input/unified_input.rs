@@ -15,6 +15,9 @@ const PERIOD_NS: i128 = 10_000_000;
 const PREROLL: Duration = Duration::from_millis(20);
 const UPMIX_PREROLL: Duration = Duration::from_millis(25);
 const QUEUE_LIMIT: usize = 4;
+// Windows PCM producers can publish several render periods in one burst.
+// Keep a bounded PCM backlog without expanding spatial or primary queues.
+const PCM_QUEUE_LIMIT: usize = 24;
 const ACTIVE_LANE: Duration = PERIOD.saturating_mul(3);
 const START_JOIN: Duration = Duration::from_micros(2500);
 const SPATIAL_WINDOWS_US: [u64; 4] = [200, 300, 400, 500];
@@ -297,7 +300,7 @@ impl Ingress {
             closed_through: None,
             source_leases: [0; LANES],
             last_spatial_arrival: [None; PCM],
-            pcm: std::array::from_fn(|_| VecDeque::with_capacity(QUEUE_LIMIT)),
+            pcm: std::array::from_fn(|_| VecDeque::with_capacity(PCM_QUEUE_LIMIT)),
             pcm_deadline: [None; PCM_LANES],
             pcm_join: None,
             render_epoch: None,
@@ -365,10 +368,10 @@ impl Ingress {
             if first_sequence.is_none() { return; }
         }
 
-        // Control changes are rare and bounded to the existing 36 owned packets.
+        // Control changes are rare and move only the packets already queued.
         // Preserve unconsumed packets across the handoff, never replay a packet
         // already used as either primary or auxiliary by the previous owner.
-        let mut packets = Vec::with_capacity(LANES * QUEUE_LIMIT);
+        let mut packets = Vec::with_capacity(PCM * QUEUE_LIMIT + PCM_LANES * PCM_QUEUE_LIMIT);
         let mut consumed = [None; LANES];
         if let Some(mut primary) = self.primary.take() {
             consumed = primary.consumed;
@@ -503,7 +506,7 @@ impl Ingress {
             let deadline = *self.pcm_deadline[index].get_or_insert(epoch + self.preroll);
             self.pcm_join.get_or_insert(packet.received + START_JOIN);
             let due = packet_due(deadline, first_due, self.pcm[index].back().map(|(last, _)| *last));
-            if self.pcm[index].len() == QUEUE_LIMIT {
+            if self.pcm[index].len() == PCM_QUEUE_LIMIT {
                 let (_, evicted) = self.pcm[index].pop_front().unwrap();
                 self.discard(evicted, recycle, trace);
             }
@@ -1392,6 +1395,28 @@ mod tests {
     }
 
     #[test]
+    fn burst_pcm_keeps_order_and_renders_at_one_block_per_period() {
+        let start = Instant::now();
+        let mut ingress = Ingress::with_early_spatial_render(None, false);
+        let (recycle, _rx) = sync_channel(PCM_QUEUE_LIMIT);
+        let burst = 11_u32;
+        for group in 0..3 {
+            let arrival = start + PERIOD * (group * burst);
+            for block in 0..burst {
+                let seq = u64::from(group * burst + block);
+                ingress.enqueue(packet(PCM, seq, arrival, 0), &recycle, None);
+            }
+            for block in 0..burst {
+                let at = (arrival + PERIOD * block).max(start + START_JOIN);
+                let output = batch(&mut ingress, at, &recycle);
+                assert_eq!(output[PCM].as_ref().unwrap().seq, u64::from(group * burst + block));
+                assert!(!matches!(ingress.poll_at(at, &recycle, None), Poll::Batch(_)));
+            }
+        }
+        assert_eq!(ingress.discarded, 0);
+    }
+
+    #[test]
     fn a_faster_pcm_source_does_not_push_queued_packets_past_the_render_clock() {
         let start = Instant::now();
         let mut previous = None;
@@ -1410,7 +1435,7 @@ mod tests {
             }
             let due = packet_due(deadline, arrived + UPMIX_PREROLL, previous);
             assert!(due <= arrived + UPMIX_PREROLL + PERIOD / 2);
-            if queue.len() == QUEUE_LIMIT { queue.pop_front(); dropped += 1; }
+            if queue.len() == PCM_QUEUE_LIMIT { queue.pop_front(); dropped += 1; }
             queue.push_back(due);
             previous = Some(due);
         }

@@ -3,11 +3,11 @@ import ctypes as C, importlib.util, json, pathlib
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 
 class Receiver:
-    def __init__(self,pipeline,target_pid=None,timing=True,mmcss=False,full_timing=False,receiver_dll_path=None,priority_pipelines=None,priority_timeout_ms=500):
+    def __init__(self,pipeline,target_pid=None,timing=True,mmcss=False,full_timing=False,receiver_dll_path=None,priority_pipelines=None,priority_timeout_ms=500,send_dll_path=None):
         if pipeline.handle is None:raise ValueError('Prewarm native pipeline before starting receiver')
         spec=importlib.util.spec_from_file_location('receiver_transport',ROOT/'tools/endpoint-probe/Native-Send.py')
         module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
-        self.transport=module.Receiver(target_pid)
+        self.transport=module.Receiver(target_pid,dll_path=send_dll_path)
         self.config=self.transport.config;self.dll_path=self.transport.dll_path
         self.priority_pipelines=[pipeline]+list(priority_pipelines) if priority_pipelines is not None else None
         self.priority_timeout_ms=priority_timeout_ms
@@ -79,7 +79,9 @@ class Receiver:
         if not self.handle:
             self.transport.finish();raise RuntimeError('Rust receiver was not started')
         size=self.lib.nsp_receiver_finish(self.handle,None,0)
-        if not 0<size<1024*1024:raise RuntimeError('Receiver stop incomplete; retain pipeline, DLL and mapping')
+        # Full timing can return thousands of packet records with stage timestamps.
+        report_limit = (8 if self.full_timing else 1) * 1024 * 1024
+        if not 0 < size < report_limit:raise RuntimeError('Receiver stop incomplete or report exceeds size limit; retain pipeline, DLL and mapping')
         buf=C.create_string_buffer(size)
         if self.lib.nsp_receiver_finish(self.handle,buf,size)!=size:raise RuntimeError('Receiver report mismatch')
         result=json.loads(buf.value)

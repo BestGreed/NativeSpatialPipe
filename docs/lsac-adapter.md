@@ -10,7 +10,7 @@ From the public checkout root, run the crate tests with the Rust toolchain from 
 cargo test --locked --manifest-path modules/lsac-adapter/Cargo.toml
 ```
 
-The public scheduler does not load this crate. Integrating it into a host requires block ownership, frame alignment, an output sink and the host's own limiter policy.
+Croksor links this crate for the product LSAC path; Zig configures the session and its WASAPI output. Standalone hosts must supply block ownership, frame alignment, an output sink and their limiter policy.
 
 ## FIR input
 

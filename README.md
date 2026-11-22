@@ -7,6 +7,9 @@ renders the resulting scene to a configured output. Final Spatial Audio
 (FSA) manages sessions, while a local web interface exposes configuration
 and live audio telemetry.
 
+Read the [User guide](docs/user-guide.md) / [中文用户手册](docs/user-guide.zh-CN.md) for installation, tray controls,
+playback configuration and everyday operation.
+
 ## Architecture
 
 ```mermaid
@@ -73,7 +76,14 @@ latency also depends on the source, output backend, and device buffering.
 - Telemetry and the web frontend run as separate asynchronous services.
 - Downstream integrations can provide a desktop app entry point. The project uses the FSA tray as its desktop entry point.
 
-## Build
+## Install and use
+
+Use the NSP Setup installer for a packaged installation. Its audio setup pages
+select the spatial mode, output device and routing and generate the initial
+configuration. Start with the [user guide](docs/user-guide.md). Source archives,
+developer tools and build instructions are separate from the installed runtime.
+
+## Build from source
 
 Run from the source root with an explicit Windows x64 Python executable:
 
@@ -93,20 +103,13 @@ of a spatial audio setting alone does not establish capture compatibility.
 
 ## Native spatial capture compatibility
 
-The native capture controller requires an exact SHA-256 match for the
-`audiodg.exe` profile compiled into the controller. Each profile assumes
-a specific Windows audio engine layout.
-
-| Profile | Capture layout |
-| --- | --- |
-| `Legacy` | Original validated build with primary and secondary vtables. |
-| `Lnl20261102` | Validated LNL build with the primary vtable only. |
-
-The build script defaults to `Auto`. It selects `Lnl20261102` when the local
-system binary matches that profile's hash and selects `Legacy` otherwise.
-At runtime, the controller independently checks the target binary against the
-selected profile and rejects mismatches. A successful build therefore does
-not establish that native capture will run on the target machine.
+Native capture uses a runtime layout selected for the target Windows audio
+engine. The shipped table, cached profile, fingerprint checks and public-PDB
+resolution replace the earlier compiled-in binary-hash gate. The native Hook
+still rejects an unusable layout or mismatched entry anchor. A table entry is
+not a claim of complete real-device acceptance on that Windows build. See
+[capture compatibility](docs/capture-compatibility.md) for the selection path
+and validation boundaries.
 
 ## Optional Node.js runtime
 
@@ -115,4 +118,4 @@ resolves node.exe from PATH by default. Use -NodeExe to specify an executable
 explicitly. The script records the resolved absolute path in playback settings.
 The Windows product build and the default audio session require no Node.js.
 
-See the [documentation index](docs/README.md) for dependency paths, runtime details and license scope.
+Start with the [user guide](docs/user-guide.md) or [developer guide](docs/development.md). See the [documentation index](docs/README.md) for dependency paths, runtime details and license scope.

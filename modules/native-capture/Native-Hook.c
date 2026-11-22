@@ -24,11 +24,31 @@ static uintptr_t detour(void *a,void *b,void *c){
  __try {
   result=original(a,b,c);DWORD last=GetLastError();LONG old;
   do {old=read_atomic(&gate);if(old&1)goto done;}while(InterlockedCompareExchange(&gate,old+2,old)!=old);
-  if(epoch==read_atomic(&generation))packet(ctx,(char*)a-0x590);
+  if(epoch==read_atomic(&generation))packet(ctx,a);
   InterlockedExchangeAdd(&gate,-2);
  done:SetLastError(last);
  } __finally {InterlockedDecrement(&wrappers);}
  return result;
+}
+/* Read this process image's CodeView RSDS as GUID+age hex. The injected DLL runs
+   inside audiodg, so this is the running image by construction. */
+static int own_symbol_key(char out[34]){
+ IMAGE_DOS_HEADER *dos=(IMAGE_DOS_HEADER*)GetModuleHandleW(NULL);
+ if(!dos||dos->e_magic!=IMAGE_DOS_SIGNATURE)return 0;
+ IMAGE_NT_HEADERS *nt=(IMAGE_NT_HEADERS*)((BYTE*)dos+dos->e_lfanew);
+ if(nt->Signature!=IMAGE_NT_SIGNATURE)return 0;
+ IMAGE_DATA_DIRECTORY dir=nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DEBUG];
+ if(!dir.VirtualAddress||dir.Size<sizeof(IMAGE_DEBUG_DIRECTORY))return 0;
+ IMAGE_DEBUG_DIRECTORY *dbg=(IMAGE_DEBUG_DIRECTORY*)((BYTE*)dos+dir.VirtualAddress);
+ if(dbg->Type!=IMAGE_DEBUG_TYPE_CODEVIEW||dbg->SizeOfData<24)return 0;
+ BYTE *data=(BYTE*)dos+dbg->AddressOfRawData;
+ if(memcmp(data,"RSDS",4))return 0;
+ DWORD d1;WORD d2,d3;memcpy(&d1,data+4,4);memcpy(&d2,data+8,2);memcpy(&d3,data+10,2);
+ DWORD age;memcpy(&age,data+20,4);
+ snprintf(out,34,"%08lX%04X%04X",(unsigned long)d1,d2,d3);
+ for(int i=0;i<8;i++)snprintf(out+16+i*2,3,"%02X",data[12+i]);
+ snprintf(out+32,3,"%lX",(unsigned long)age);
+ return 1;
 }
 static void finish(void){
  LONG old;do {old=read_atomic(&gate);}while(InterlockedCompareExchange(&gate,old|1,old)!=old);
@@ -67,9 +87,19 @@ __declspec(dllexport) DWORD WINAPI nsp_hook_start(HookConfig *c){
  HMODULE image=GetModuleHandleW(c->fixture?L"nsp_fixture.dll":NULL);
  wchar_t image_path[1024];if(!image||!GetModuleFileNameW(image,image_path,1024)){result=fail(c,4);goto done;}
  if(!c->fixture){const wchar_t *name=wcsrchr(image_path,L'\\');if(!name||_wcsicmp(name+1,L"audiodg.exe")){result=fail(c,5);goto done;}}
- void *address=c->fixture?(void*)GetProcAddress(image,"boundary"):(char*)image+0x31930;
- const unsigned char prologue[]={0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x6c,0x24,0x10,0x48,0x89,0x74,0x24,0x18,0x57};
- if(!address||(!c->fixture&&memcmp(address,prologue,sizeof(prologue)))){result=fail(c,6);goto done;}
+ /* No profile, no hook. Every build-specific value arrives through HookConfig. */
+ /* Absent or wrong-version profile is 40; a present but implausible layout is
+    41. The two must stay distinguishable so a bad profile is not reported as a
+    missing one. */
+ if(c->layout.version!=NSP_LAYOUT_VERSION){result=fail(c,NSP_HOOK_ERR_PROFILE_MISSING);goto done;}
+ if(!nsp_layout_usable(&c->layout)){result=fail(c,NSP_HOOK_ERR_PROFILE_INVALID);goto done;}
+ /* The profile must describe the image we are actually loaded into. */
+ if(c->layout.symbolKey[0]){
+  char own[34];if(!own_symbol_key(own)||strcmp(own,c->layout.symbolKey)){result=fail(c,NSP_HOOK_ERR_SYMBOL_KEY);goto done;}
+ }
+ void *address=c->fixture?(void*)GetProcAddress(image,"boundary"):(char*)image+c->layout.entryRva;
+ if(!address){result=fail(c,NSP_HOOK_ERR_PROFILE_INVALID);goto done;}
+ if(!c->fixture&&memcmp(address,c->layout.prologue,c->layout.prologueSize)){result=fail(c,NSP_HOOK_ERR_ANCHOR_MISMATCH);goto done;}
  if(target&&target!=address){result=fail(c,7);goto done;}
  capture_dll=LoadLibraryW(c->capture);send_dll=LoadLibraryW(c->send);
  if(!capture_dll||!send_dll){result=fail(c,8);goto cleanup;}
@@ -77,12 +107,8 @@ __declspec(dllexport) DWORD WINAPI nsp_hook_start(HookConfig *c){
  Open open=(Open)GetProcAddress(send_dll,"nsp_link_open");close_link=(Close)GetProcAddress(send_dll,"nsp_link_close");void *publish=(void*)GetProcAddress(send_dll,"nsp_link_send");
  if(!create||!packet||!stop_capture||!report_capture||!destroy_capture||!open||!close_link||!publish){result=fail(c,9);goto cleanup;}
  link=open(c->mapping,c->event,0);if(!link){result=fail(c,10);goto cleanup;}
-#ifdef NSP_AUDIODG_LNL_20261102
- /* Only the public-symbol-verified primary vtable is enabled on this profile. */
- ctx=create((char*)image+0x9f4f8,(char*)image+0x9f4f8,publish,link,c->budget);
-#else
- ctx=create((char*)image+0x9f4f8,(char*)image+0xa2d58,publish,link,c->budget);
-#endif
+ /* Vtable identity comes from the resolved profile, never from a build flag. */
+ ctx=create(&c->layout,image,publish,link,c->budget);
  if(!ctx){result=fail(c,11);goto cleanup;}
  if(!target){
   MH_STATUS status=MH_Initialize();if(status!=MH_OK){result=fail(c,100+(DWORD)status);goto cleanup;}

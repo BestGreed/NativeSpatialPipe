@@ -11,28 +11,34 @@ static void check_ht(FSA_MenuState *s,UINT command,int visible){
 }
 int main(void){
     Popup menu={0};menu.advanced=2;
-    assert(!wcscmp(label_at(&menu,1),L"Enum OLR") && command_at(&menu,1)==412);
-    assert(!wcscmp(label_at(&menu,2),L"Enum OBR") && command_at(&menu,2)==411);
-    menu.state.extreme=4;
-    assert(fsa_menu_checked(&menu.state,command_at(&menu,1)));
-    assert(!fsa_menu_checked(&menu.state,command_at(&menu,2)));
-    menu.state.extreme=2;
-    assert(!fsa_menu_checked(&menu.state,command_at(&menu,1)));
-    assert(fsa_menu_checked(&menu.state,command_at(&menu,2)));
-    assert(count(&menu)==5 && command_at(&menu,4)==414);
-    menu.state.edid=0;assert(!enabled(&menu,4) && !fsa_menu_checked(&menu.state,414));
-    menu.state.edid=FSA_EDID_SUPPORTED;assert(!enabled(&menu,4) && fsa_menu_checked(&menu.state,414));
-    menu.state.edid=FSA_EDID_ELIGIBLE;assert(enabled(&menu,4) && !fsa_menu_checked(&menu.state,414));
-    menu.state.edid|=FSA_EDID_SUPPORTED;assert(enabled(&menu,4) && fsa_menu_checked(&menu.state,414));
-    menu.state.edid|=FSA_EDID_BUSY;assert(!enabled(&menu,4));
+    assert(count(&menu)==1 && command_at(&menu,0)==414);
+    menu.state.edid=0;assert(!enabled(&menu,0) && !fsa_menu_checked(&menu.state,414));
+    menu.state.edid=FSA_EDID_SUPPORTED;assert(!enabled(&menu,0) && fsa_menu_checked(&menu.state,414));
+    menu.state.edid=FSA_EDID_ELIGIBLE;assert(enabled(&menu,0) && !fsa_menu_checked(&menu.state,414));
+    menu.state.edid|=FSA_EDID_SUPPORTED;assert(enabled(&menu,0) && fsa_menu_checked(&menu.state,414));
+    menu.state.edid|=FSA_EDID_BUSY;assert(!enabled(&menu,0));
     FSA_MenuState s={0};s.selected=-1;
     Popup main={0};main.state=s;main.state.nsp_locked=1;
     assert(enabled(&main,row(106)) && fsa_nsp_toggle_request(&main.state)==2);
     assert(!wcscmp(main_label(&main.state,row(106)),fsa_text(main.state.language,TXT_NSP_STOP)));
     main.state.nsp_locked=0;assert(!enabled(&main,row(106)));
-    Popup advanced={0};advanced.advanced=1;assert(count(&advanced)==8);
+    Popup advanced={0};advanced.advanced=1;assert(count(&advanced)==10);
     int emergency=0;for(int i=0;i<count(&advanced);i++){assert(command_at(&advanced,i)!=208);emergency+=command_at(&advanced,i)==209;}
     assert(emergency==1 && submenu_row(&advanced,7));
+    assert(command_at(&advanced,8)==FSA_CMD_CAPTURE_LAYOUT && command_at(&advanced,9)==FSA_CMD_CAPTURE_IMPORT);
+    FSA_MenuState capture_state={0};
+    Popup capture_popup={0};capture_popup.advanced=1;capture_popup.state=capture_state;
+    assert(!enabled(&capture_popup,8) && !enabled(&capture_popup,9));
+    capture_state.capture=FSA_CP_READABLE;capture_popup.state=capture_state;
+    assert(enabled(&capture_popup,8) && enabled(&capture_popup,9));
+    assert(!fsa_menu_checked(&capture_state,FSA_CMD_CAPTURE_LAYOUT));
+    capture_state.capture|=FSA_CP_READY|FSA_CP_AVAILABLE;capture_popup.state=capture_state;
+    assert(fsa_menu_checked(&capture_state,FSA_CMD_CAPTURE_LAYOUT));
+    capture_state.capture|=FSA_CP_BUSY;capture_popup.state=capture_state;
+    assert(!enabled(&capture_popup,8) && !enabled(&capture_popup,9) &&
+           fsa_menu_checked(&capture_state,FSA_CMD_CAPTURE_LAYOUT));
+    capture_state.capture=FSA_CP_READABLE|FSA_CP_AVAILABLE;capture_state.nsp_locked=1;capture_popup.state=capture_state;
+    assert(!enabled(&capture_popup,8) && !enabled(&capture_popup,9));
     check_ht(&s,103,0);check_ht(&s,104,0);
     s.available=1u<<3;check_ht(&s,103,1);check_ht(&s,104,0);
     s.available=1u<<4;check_ht(&s,103,0);check_ht(&s,104,1);

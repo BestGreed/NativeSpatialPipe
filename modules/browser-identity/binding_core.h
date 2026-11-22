@@ -50,8 +50,7 @@ struct BrowserBindingCore{
   HANDLE snap=CreateToolhelp32Snapshot(TH32CS_SNAPMODULE|TH32CS_SNAPMODULE32,host);MODULEENTRY32W mod{sizeof(mod)};
   if(snap!=INVALID_HANDLE_VALUE){if(Module32FirstW(snap,&mod))p.image=(uintptr_t)mod.modBaseAddr;CloseHandle(snap);}
   if(changed)AdjustTokenPrivileges(token,FALSE,&old,0,nullptr,nullptr);if(token)CloseHandle(token);
-  compare=(CompareHandles)GetProcAddress(GetModuleHandleW(L"kernelbase.dll"),"CompareObjectHandles");BYTE prologue[32]{};
-  return p.process&&hostDup&&client&&compare&&sha_matches()&&read(p.process,p.image+PCM_INPUT_FUNCTION_RVA,prologue,32)&&!memcmp(prologue,PCM_INPUT_PROLOGUE,32);
+  compare=(CompareHandles)GetProcAddress(GetModuleHandleW(L"kernelbase.dll"),"CompareObjectHandles");return p.process&&hostDup&&client&&compare&&p.image&&p.select_pcm_profile();
  }
  bool event(HANDLE process,uintptr_t handle,HANDLE&copy){
   if(!handle||!DuplicateHandle(process,(HANDLE)handle,GetCurrentProcess(),&copy,0,FALSE,0))return false;
@@ -68,7 +67,7 @@ struct BrowserBindingCore{
    if(r.State!=MEM_COMMIT||r.Type!=MEM_PRIVATE||(r.Protect&(PAGE_GUARD|PAGE_NOACCESS))||!(r.Protect&(PAGE_READWRITE|PAGE_WRITECOPY))||r.RegionSize>32*1024*1024)continue;
    for(size_t off=0;off<r.RegionSize;off+=buffer.size()){
     size_t n=(std::min)(buffer.size(),r.RegionSize-off);uintptr_t address=(uintptr_t)r.BaseAddress+off;scanned+=n;hostScan+=n;if(!read(p.process,address,buffer.data(),n))continue;
-    for(size_t i=0;i+8<=n;i+=8){uintptr_t v=0;memcpy(&v,buffer.data()+i,8);if(v==p.image+PCM_INPUT_VTABLE_RVA&&address+i>=0x1e0){QueueInfo q;if(p.inspect(address+i-0x1e0,q,allowed)&&std::none_of(out.begin(),out.end(),[&](auto&o){return o.base==q.base;}))out.push_back(q);}}
+    for(size_t i=0;i+8<=n;i+=8){uintptr_t v=0;memcpy(&v,buffer.data()+i,8);if(v==p.inputVtable&&address+i>=0x1e0){QueueInfo q;if(p.inspect(address+i-0x1e0,q,allowed)&&std::none_of(out.begin(),out.end(),[&](auto&o){return o.base==q.base;}))out.push_back(q);}}
    }
   }return out;
  }
@@ -94,7 +93,7 @@ struct BrowserBindingCore{
  bool validate(){
   if(links.empty())return false;bool ok=true;
   for(auto&l:links){uint64_t t[2]{};uintptr_t vtptr=0,mapping=0,control=0,ev=0;DWORD pid=0;
-   if(!graph(l,false)||!read(client,l.logical.address,t,16)||t[0]!=l.logical.a||t[1]!=l.logical.b||!value(p.process,l.queue.base+0x1e0,vtptr)||vtptr!=p.image+PCM_INPUT_VTABLE_RVA||!value(p.process,l.queue.base+0x1cc,pid)||pid!=p.source||!value(p.process,l.queue.base+0x50,mapping)||mapping!=l.queue.mapping||!value(p.process,l.queue.base+0x58,control)||control!=l.queue.control||!value(p.process,l.queue.base+0x1b8,ev)||ev!=l.hostEvent){ok=false;break;}
+   if(!graph(l,false)||!read(client,l.logical.address,t,16)||t[0]!=l.logical.a||t[1]!=l.logical.b||!value(p.process,l.queue.base+0x1e0,vtptr)||vtptr!=p.inputVtable||!value(p.process,l.queue.base+0x1cc,pid)||pid!=p.source||!value(p.process,l.queue.base+0x50,mapping)||mapping!=l.queue.mapping||!value(p.process,l.queue.base+0x58,control)||control!=l.queue.control||!value(p.process,l.queue.base+0x1b8,ev)||ev!=l.hostEvent){ok=false;break;}
    HANDLE c=nullptr,h=nullptr;bool same=event(client,l.clientEvent,c)&&event(hostDup,l.hostEvent,h)&&compare(c,l.clientCopy)&&compare(h,l.hostCopy)&&compare(c,h);if(c)CloseHandle(c);if(h)CloseHandle(h);if(!same){ok=false;break;}
   }if(!ok)clear();return ok;
  }

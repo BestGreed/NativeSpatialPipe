@@ -1,0 +1,703 @@
+{
+  "layouts": {
+    "L31630_9D4F8": {
+      "capture": {
+        "entryRva": 202288,
+        "prologue": "48895c240848896c2410488974241857",
+        "vtableCandidates": [
+          644344,
+          658776
+        ],
+        "vtableRva": [
+          644344
+        ]
+      },
+      "fileVersions": [
+        "10.0.26100.7309"
+      ],
+      "pcm": {
+        "baseOffset": -480,
+        "contract": "lea rXX,[rcx+disp]",
+        "getInputRva": 331216,
+        "inputVtableRva": 640696,
+        "level": "anchor",
+        "prologue": "4c894424185355565741544155415641574883ec684533db488d9920fefffff6"
+      }
+    },
+    "L31630_9E4F8": {
+      "capture": {
+        "entryRva": 202288,
+        "prologue": "48895c240848896c2410488974241857",
+        "vtableCandidates": [
+          648440,
+          663096
+        ],
+        "vtableRva": [
+          648440
+        ]
+      },
+      "fileVersions": [
+        "10.0.26100.5074"
+      ],
+      "pcm": {
+        "baseOffset": -480,
+        "contract": "lea rXX,[rcx+disp]",
+        "getInputRva": 331264,
+        "inputVtableRva": 644792,
+        "level": "anchor",
+        "prologue": "4c894424185355565741544155415641574883ec684533db488d9920fefffff6"
+      }
+    },
+    "L31930_9F4F8": {
+      "capture": {
+        "entryRva": 203056,
+        "prologue": "48895c240848896c2410488974241857",
+        "vtableCandidates": [
+          652536,
+          666440
+        ],
+        "vtableRva": [
+          652536
+        ]
+      },
+      "fileVersions": [
+        "10.0.26100.9278",
+        "10.0.26100.9444",
+        "10.0.26100.9549",
+        "10.0.26100.9711"
+      ],
+      "labels": {
+        "display": "local System32, FileVersion string 9949, fixed part 9711"
+      },
+      "pcm": {
+        "baseOffset": -480,
+        "contract": "lea rXX,[rcx+disp]",
+        "fieldOffsets": [
+          "0x00",
+          "0x50",
+          "0x58",
+          "0x60",
+          "0x68",
+          "0x6C",
+          "0x74",
+          "0x78",
+          "0x7C",
+          "0x80",
+          "0xA8",
+          "0xC0"
+        ],
+        "fieldSource": "normalised static disassembly (llvm-objdump), 26100.9711",
+        "getInputRva": 329920,
+        "inputVtableRva": 648896,
+        "level": "anchor",
+        "prologue": "4c894424185355565741544155415641574883ec684533db488d9920fefffff6"
+      }
+    },
+    "L32C40_9E4E8": {
+      "capture": {
+        "entryRva": 207936,
+        "prologue": "48895c240848896c2410488974241857",
+        "vtableCandidates": [
+          648424,
+          662496
+        ],
+        "vtableRva": [
+          648424
+        ]
+      },
+      "fileVersions": [
+        "10.0.26100.10003",
+        "10.0.26100.10013",
+        "10.0.26100.9587",
+        "10.0.26100.9596",
+        "10.0.26100.9606",
+        "10.0.26100.9616",
+        "10.0.26100.9739",
+        "10.0.26100.9750",
+        "10.0.26100.9756",
+        "10.0.26100.9767",
+        "10.0.26100.9807",
+        "10.0.26100.9817",
+        "10.0.26100.9818",
+        "10.0.26100.9836",
+        "10.0.26100.9843",
+        "10.0.26100.9882",
+        "10.0.26100.9968",
+        "10.0.26100.9974"
+      ],
+      "labels": {
+        "display": "24H2 sample, FileVersion 10.0.26100.9974"
+      },
+      "pcm": {
+        "baseOffset": -480,
+        "contract": "lea rXX,[rcx+disp]",
+        "fieldOffsets": [
+          "0x00",
+          "0x50",
+          "0x58",
+          "0x60",
+          "0x68",
+          "0x6C",
+          "0x74",
+          "0x78",
+          "0x7C",
+          "0x80",
+          "0xA8",
+          "0xC0"
+        ],
+        "fieldSource": "inherited from 10.0.26100.9711 static disassembly; this build's base offset was verified independently (-480) and no real-machine evidence shows a different PCM layout",
+        "getInputRva": 330384,
+        "inputVtableRva": 644784,
+        "level": "anchor",
+        "prologue": "4c894424185355565741544155415641574883ec684533db488d9920fefffff6"
+      }
+    },
+    "L3ABD0_9D4E8": {
+      "capture": {
+        "entryRva": 240592,
+        "prologue": "48895c240848896c2410488974241857",
+        "vtableCandidates": [
+          644328,
+          658808
+        ],
+        "vtableRva": [
+          644328
+        ]
+      },
+      "fileVersions": [
+        "10.0.26100.1"
+      ],
+      "pcm": {
+        "baseOffset": -480,
+        "contract": "lea rXX,[rcx+disp]",
+        "getInputRva": 337696,
+        "inputVtableRva": 640688,
+        "level": "anchor",
+        "prologue": "4c894424185355565741544155415641574883ec684533db488d9920fefffff6"
+      }
+    },
+    "L3D170_9E4F0": {
+      "capture": {
+        "entryRva": 250224,
+        "prologue": "48895c240848896c2410488974241857",
+        "vtableCandidates": [
+          648432,
+          662712
+        ],
+        "vtableRva": [
+          648432
+        ]
+      },
+      "fileVersions": [
+        "10.0.26100.1591"
+      ],
+      "pcm": {
+        "baseOffset": -480,
+        "contract": "lea rXX,[rcx+disp]",
+        "getInputRva": 337968,
+        "inputVtableRva": 645200,
+        "level": "anchor",
+        "prologue": "4c894424185355565741544155415641574883ec684533db488d9920fefffff6"
+      }
+    },
+    "L61BC0_6AC38": {
+      "capture": {
+        "entryRva": 400320,
+        "prologue": "4c8bdc49895b0849896b104989731857",
+        "vtableCandidates": [
+          437304,
+          435520
+        ],
+        "vtableRva": [
+          437304
+        ]
+      },
+      "fileVersions": [
+        "10.0.17763.292"
+      ],
+      "pcm": {
+        "baseOffset": -456,
+        "candidateFieldOffsets": {
+          "endInStatic": "0x9c",
+          "frameBytes": "0x50",
+          "mappingAndControl": "0x40",
+          "readCursorInControl": "0x18",
+          "ringCapacity": "0x98",
+          "startInStatic": "0x98",
+          "staticBlock": "0x48",
+          "waveFormatInStatic": "0xac",
+          "writeCursorInControl": "0x10"
+        },
+        "closed": true,
+        "contract": "lea rXX,[rcx+disp]",
+        "contractStatus": "pending-contract-match",
+        "getInputRva": 81792,
+        "inputVtableRva": 416712,
+        "level": "unavailable",
+        "prologue": "48895c24205556574154415541564157488dac2490feffff4881ec7002000048",
+        "reason": "Win10 queue field contract needs runtime matching, including PID, owner and association"
+      }
+    },
+    "L61FE0_6ABC0": {
+      "capture": {
+        "entryRva": 401376,
+        "prologue": "4c8bdc49895b0849896b104989731857",
+        "vtableCandidates": [
+          437184,
+          435880
+        ],
+        "vtableRva": [
+          437184
+        ]
+      },
+      "fileVersions": [
+        "10.0.17763.9376"
+      ],
+      "pcm": {
+        "baseOffset": -456,
+        "candidateFieldOffsets": {
+          "endInStatic": "0x9c",
+          "frameBytes": "0x50",
+          "mappingAndControl": "0x40",
+          "readCursorInControl": "0x18",
+          "ringCapacity": "0x98",
+          "startInStatic": "0x98",
+          "staticBlock": "0x48",
+          "waveFormatInStatic": "0xac",
+          "writeCursorInControl": "0x10"
+        },
+        "closed": true,
+        "contract": "lea rXX,[rcx+disp]",
+        "contractStatus": "pending-contract-match",
+        "getInputRva": 82672,
+        "inputVtableRva": 416424,
+        "level": "unavailable",
+        "prologue": "48895c24205556574154415541564157488dac2490feffff4881ec7002000048",
+        "reason": "Win10 queue field contract needs runtime matching, including PID, owner and association"
+      }
+    },
+    "L623C0_6AC80": {
+      "capture": {
+        "entryRva": 402368,
+        "prologue": "4c8bdc49895b0849896b104989731857",
+        "vtableCandidates": [
+          437376,
+          435560
+        ],
+        "vtableRva": [
+          437376
+        ]
+      },
+      "fileVersions": [
+        "10.0.17763.9488"
+      ],
+      "pcm": {
+        "baseOffset": -456,
+        "candidateFieldOffsets": {
+          "endInStatic": "0x9c",
+          "frameBytes": "0x50",
+          "mappingAndControl": "0x40",
+          "readCursorInControl": "0x18",
+          "ringCapacity": "0x98",
+          "startInStatic": "0x98",
+          "staticBlock": "0x48",
+          "waveFormatInStatic": "0xac",
+          "writeCursorInControl": "0x10"
+        },
+        "closed": true,
+        "contract": "lea rXX,[rcx+disp]",
+        "contractStatus": "pending-contract-match",
+        "getInputRva": 82720,
+        "inputVtableRva": 416424,
+        "level": "unavailable",
+        "prologue": "48895c24205556574154415541564157488dac2490feffff4881ec7002000048",
+        "reason": "Win10 queue field contract needs runtime matching, including PID, owner and association"
+      }
+    },
+    "L64AB0_6CE20": {
+      "capture": {
+        "entryRva": 412336,
+        "prologue": "4c8bdc49895b0849896b104989731849",
+        "vtableCandidates": [
+          445984,
+          444520
+        ],
+        "vtableRva": [
+          445984
+        ]
+      },
+      "fileVersions": [
+        "10.0.19041.264"
+      ],
+      "pcm": {
+        "baseOffset": -456,
+        "candidateFieldOffsets": {
+          "endInStatic": "0xa4",
+          "frameBytes": "0x58",
+          "mappingAndControl": "0x48",
+          "readCursorInControl": "0x18",
+          "ringCapacity": "0x98",
+          "startInStatic": "0xa0",
+          "staticBlock": "0x50",
+          "waveFormatInStatic": "0xb4",
+          "writeCursorInControl": "0x10"
+        },
+        "closed": true,
+        "contract": "lea rXX,[rcx+disp]",
+        "contractStatus": "pending-contract-match",
+        "getInputRva": 88160,
+        "inputVtableRva": 427192,
+        "level": "unavailable",
+        "prologue": "4c894424185355565741544155415641574883ec584533db4c8db138fefffff6",
+        "reason": "Win10 queue field contract needs runtime matching, including PID, owner and association"
+      }
+    },
+    "L6D570_76870": {
+      "capture": {
+        "entryRva": 447856,
+        "prologue": "4c8bdc49895b0849896b104989731849",
+        "vtableCandidates": [
+          485488,
+          484144
+        ],
+        "vtableRva": [
+          485488
+        ]
+      },
+      "fileVersions": [
+        "10.0.19041.3636"
+      ],
+      "pcm": {
+        "baseOffset": -456,
+        "candidateFieldOffsets": {
+          "endInStatic": "0xa4",
+          "frameBytes": "0x58",
+          "mappingAndControl": "0x48",
+          "readCursorInControl": "0x18",
+          "ringCapacity": "0x98",
+          "startInStatic": "0xa0",
+          "staticBlock": "0x50",
+          "waveFormatInStatic": "0xb4",
+          "writeCursorInControl": "0x10"
+        },
+        "closed": true,
+        "contract": "lea rXX,[rcx+disp]",
+        "contractStatus": "pending-contract-match",
+        "getInputRva": 87824,
+        "inputVtableRva": 463280,
+        "level": "unavailable",
+        "prologue": "4c894424185355565741544155415641574883ec584533db4c8db138fefffff6",
+        "reason": "Win10 queue field contract needs runtime matching, including PID, owner and association"
+      }
+    },
+    "L6D590_76870": {
+      "capture": {
+        "entryRva": 447888,
+        "prologue": "4c8bdc49895b0849896b104989731849",
+        "vtableCandidates": [
+          485488,
+          483984
+        ],
+        "vtableRva": [
+          485488
+        ]
+      },
+      "fileVersions": [
+        "10.0.19041.1503"
+      ],
+      "pcm": {
+        "baseOffset": -456,
+        "candidateFieldOffsets": {
+          "endInStatic": "0xa4",
+          "frameBytes": "0x58",
+          "mappingAndControl": "0x48",
+          "readCursorInControl": "0x18",
+          "ringCapacity": "0x98",
+          "startInStatic": "0xa0",
+          "staticBlock": "0x50",
+          "waveFormatInStatic": "0xb4",
+          "writeCursorInControl": "0x10"
+        },
+        "closed": true,
+        "contract": "lea rXX,[rcx+disp]",
+        "contractStatus": "pending-contract-match",
+        "getInputRva": 87840,
+        "inputVtableRva": 463280,
+        "level": "unavailable",
+        "prologue": "4c894424185355565741544155415641574883ec584533db4c8db138fefffff6",
+        "reason": "Win10 queue field contract needs runtime matching, including PID, owner and association"
+      }
+    },
+    "L6D650_76870": {
+      "capture": {
+        "entryRva": 448080,
+        "prologue": "4c8bdc49895b0849896b104989731849",
+        "vtableCandidates": [
+          485488,
+          484144
+        ],
+        "vtableRva": [
+          485488
+        ]
+      },
+      "fileVersions": [
+        "10.0.19041.4717"
+      ],
+      "labels": {
+        "display": "Win10 sample, FileVersion 10.0.19041.4717"
+      },
+      "pcm": {
+        "baseOffset": -456,
+        "candidateFieldOffsets": {
+          "endInStatic": "0xa4",
+          "frameBytes": "0x58",
+          "mappingAndControl": "0x48",
+          "readCursorInControl": "0x18",
+          "ringCapacity": "0x98",
+          "startInStatic": "0xa0",
+          "staticBlock": "0x50",
+          "waveFormatInStatic": "0xb4",
+          "writeCursorInControl": "0x10"
+        },
+        "closed": true,
+        "contract": "lea rXX,[rcx+disp]",
+        "contractStatus": "pending-contract-match",
+        "fieldOffsets": [
+          "0x48",
+          "0x50",
+          "0x58",
+          "0x5C",
+          "0x64",
+          "0x68",
+          "0x6C",
+          "0x70",
+          "0x98",
+          "0xB0"
+        ],
+        "fieldSource": "normalised static disassembly (llvm-objdump), 10.0.19041.4717",
+        "getInputRva": 87776,
+        "inputVtableRva": 463280,
+        "level": "unavailable",
+        "prologue": "4c894424185355565741544155415641574883ec584533db4c8db138fefffff6",
+        "reason": "Win10 queue field contract needs runtime matching, including PID, owner and association"
+      }
+    },
+    "L6E860_779E0": {
+      "capture": {
+        "entryRva": 452704,
+        "prologue": "4c8bdc49895b0849896b104989731849",
+        "vtableCandidates": [
+          489952,
+          488056
+        ],
+        "vtableRva": [
+          489952
+        ]
+      },
+      "fileVersions": [
+        "10.0.19041.7811"
+      ],
+      "pcm": {
+        "baseOffset": -456,
+        "candidateFieldOffsets": {
+          "endInStatic": "0xa4",
+          "frameBytes": "0x58",
+          "mappingAndControl": "0x48",
+          "readCursorInControl": "0x18",
+          "ringCapacity": "0x98",
+          "startInStatic": "0xa0",
+          "staticBlock": "0x50",
+          "waveFormatInStatic": "0xb4",
+          "writeCursorInControl": "0x10"
+        },
+        "closed": true,
+        "contract": "lea rXX,[rcx+disp]",
+        "contractStatus": "pending-contract-match",
+        "getInputRva": 92256,
+        "inputVtableRva": 467080,
+        "level": "unavailable",
+        "prologue": "4c894424185355565741544155415641574883ec584533db4c8db138fefffff6",
+        "reason": "Win10 queue field contract needs runtime matching, including PID, owner and association"
+      }
+    },
+    "L6EE80_788B0": {
+      "capture": {
+        "entryRva": 454272,
+        "prologue": "4c8bdc49895b0849896b104989731849",
+        "vtableCandidates": [
+          493744,
+          492400
+        ],
+        "vtableRva": [
+          493744
+        ]
+      },
+      "fileVersions": [
+        "10.0.19041.7844"
+      ],
+      "pcm": {
+        "baseOffset": -456,
+        "candidateFieldOffsets": {
+          "endInStatic": "0xa4",
+          "frameBytes": "0x58",
+          "mappingAndControl": "0x48",
+          "readCursorInControl": "0x18",
+          "ringCapacity": "0x98",
+          "startInStatic": "0xa0",
+          "staticBlock": "0x50",
+          "waveFormatInStatic": "0xb4",
+          "writeCursorInControl": "0x10"
+        },
+        "closed": true,
+        "contract": "lea rXX,[rcx+disp]",
+        "contractStatus": "pending-contract-match",
+        "getInputRva": 92288,
+        "inputVtableRva": 471176,
+        "level": "unavailable",
+        "prologue": "4c894424185355565741544155415641574883ec584533db4c8db138fefffff6",
+        "reason": "Win10 queue field contract needs runtime matching, including PID, owner and association"
+      }
+    },
+    "L9F330_A9DB0": {
+      "capture": {
+        "entryRva": 652080,
+        "prologue": "4c8bdc49895b0849896b104989731849",
+        "vtableCandidates": [
+          695728,
+          694952
+        ],
+        "vtableRva": [
+          695728
+        ]
+      },
+      "fileVersions": [
+        "10.0.22621.2361"
+      ],
+      "pcm": {
+        "contract": "lea rXX,[rcx+disp]",
+        "getInputRva": 42160,
+        "inputVtableRva": 669408,
+        "level": "unavailable",
+        "prologue": "4c894424185355565741544155415641574883ec584533ed4d8bc8f605ef430c",
+        "reason": "base displacement instruction absent"
+      }
+    },
+    "L9F330_A9EE0": {
+      "capture": {
+        "entryRva": 652080,
+        "prologue": "4c8bdc49895b0849896b104989731849",
+        "vtableCandidates": [
+          696032,
+          695176
+        ],
+        "vtableRva": [
+          696032
+        ]
+      },
+      "fileVersions": [
+        "10.0.22621.1344"
+      ],
+      "pcm": {
+        "contract": "lea rXX,[rcx+disp]",
+        "getInputRva": 42160,
+        "inputVtableRva": 669408,
+        "level": "unavailable",
+        "prologue": "4c894424185355565741544155415641574883ec584533ed4d8bc8f605ef430c",
+        "reason": "base displacement instruction absent"
+      }
+    },
+    "LA0AC0_AAD10": {
+      "capture": {
+        "entryRva": 658112,
+        "prologue": "4c8bdc49895b0849896b104989731849",
+        "vtableCandidates": [
+          699664,
+          699432
+        ],
+        "vtableRva": [
+          699664
+        ]
+      },
+      "fileVersions": [
+        "10.0.22621.5331"
+      ],
+      "pcm": {
+        "baseOffset": -464,
+        "closed": true,
+        "contract": "lea rXX,[rcx+disp]",
+        "contractStatus": "pending-contract-match",
+        "getInputRva": 37488,
+        "inputVtableRva": 672560,
+        "level": "unavailable",
+        "prologue": "488bc44c89401853415541574881ec90000000488968e04533dbf605f0660c00",
+        "reason": "Win11 22621 object base differs from the runtime PCM queue contract"
+      }
+    },
+    "LA2E60_ADE70": {
+      "capture": {
+        "entryRva": 667232,
+        "prologue": "4c8bdc49895b0849896b104989731849",
+        "vtableCandidates": [
+          712304,
+          711480
+        ],
+        "vtableRva": [
+          712304
+        ]
+      },
+      "fileVersions": [
+        "10.0.22621.608"
+      ],
+      "pcm": {
+        "contract": "lea rXX,[rcx+disp]",
+        "getInputRva": 42272,
+        "inputVtableRva": 685792,
+        "level": "unavailable",
+        "prologue": "4c894424185355565741544155415641574883ec584533ed4d8bc8f6053f940c",
+        "reason": "base displacement instruction absent"
+      }
+    }
+  },
+  "members": {
+    "0218F26965122444422AD1A05B69F33D1": "L32C40_9E4E8",
+    "05D1F85F4EA9FF1F7680B101BD8F1F311": "L31930_9F4F8",
+    "07662A728CA9EA7479EF603C72F667911": "L31930_9F4F8",
+    "089967253C639DD3DE4F23565C31EA381": "L6D590_76870",
+    "0B2B54D406FD92BBC471A908C627A9751": "L32C40_9E4E8",
+    "11F14BF1A12B0CD7C16F67ED578947921": "L32C40_9E4E8",
+    "1CF383F4312CB0D2723233AEC015E8491": "L32C40_9E4E8",
+    "1F4A01A02CEDBE049BDDCF86EF0D130E1": "L32C40_9E4E8",
+    "2673852546A94A758E373C52BE6A07851": "L31630_9E4F8",
+    "2D79B446FD6B939E2D2A68B95B9BB9E31": "L3D170_9E4F0",
+    "2E1095935C6531603BAF30BFE33005301": "L32C40_9E4E8",
+    "33CE87438FB16C3CEAF1C718D24602CD1": "L64AB0_6CE20",
+    "3FBAFD4231A1E39D3ACB61B478DEF4501": "L9F330_A9DB0",
+    "416AE8FDCEB117B19ABCCF85F23BA89F1": "L61FE0_6ABC0",
+    "4C030C5DE8C4E41CD082586708C920281": "L32C40_9E4E8",
+    "4D2050CF60EDDC7A5C8E336E2222632F1": "L32C40_9E4E8",
+    "4DD6D3E7963C27E134B3DECA532309201": "L6EE80_788B0",
+    "5144E38A7BFFE0034C20F6F44CF13CC81": "L32C40_9E4E8",
+    "5EB56A74BEC868FE8FCB2FBB5F5529C51": "L623C0_6AC80",
+    "6A16C1E03EC962E1383F5C175CA87B171": "L32C40_9E4E8",
+    "6A1BD329063E20A6BCF1DAC159EA3DD81": "L32C40_9E4E8",
+    "6C562F65797F75EF4955C1318B7E1C6F1": "L6E860_779E0",
+    "7A432F8EC68A26FE54CBCB46DD4774DA1": "L6D570_76870",
+    "882DC2C4101A0C7A6008528B0BB73AED1": "L31930_9F4F8",
+    "9361ED277FB4DB4A37AF169AE9172E321": "LA2E60_ADE70",
+    "A6DB9667C1F13CFC0ED2C086A41FE0FF1": "L32C40_9E4E8",
+    "B883EFDDD8FAC1CE0DDEAD58E658B9A61": "LA0AC0_AAD10",
+    "C1BF776F8B1917A36FFFB753CB890D631": "L31630_9D4F8",
+    "C2610BE45AA2D5019125DF008BA4CBD21": "L32C40_9E4E8",
+    "C34B512D7DA3871B66DD8617A5A7C19A1": "L3ABD0_9D4E8",
+    "C58FCF0C0E597313D4EC8751372B0AE21": "L32C40_9E4E8",
+    "C75B2CA71FFFBF6D134A53EACE6E5D261": "L32C40_9E4E8",
+    "CFB1B3F575E43D61A392E451400422B81": "L32C40_9E4E8",
+    "D08CEAC0E33AD1959564D4192BE43BA51": "L6D650_76870",
+    "D77F175F9562E1A3D441DB79F21B34011": "L9F330_A9EE0",
+    "ED4F93B2B767BD29A03A75B88C3AE8721": "L61BC0_6AC38",
+    "F25B27AAF25CBC54A44901016B07AFB91": "L32C40_9E4E8",
+    "F531DD3F03E3E55E2F2C422E353AFECC1": "L31930_9F4F8",
+    "FF257BA9771D066905A785618687FE511": "L32C40_9E4E8"
+  },
+  "schema": 2
+}

@@ -8,13 +8,13 @@
 static const UINT main_commands[]={100,101,102,105,107,108,103,109,110,104,106,200,300,205};
 static const wchar_t *spatial_labels[]={L"Windows Sonic",L"Dolby Atmos (Headphones)",L"Dolby Atmos (Speakers)",L"Dolby Atmos (Home Theater)",L"DTS Headphone:X",L"DTS:X Ultra",L"DTS:X (Home Theater)"};
 static const UINT spatial_commands[]={105,107,108,103,109,110,104};
-static const wchar_t *extreme_labels[]={L"Expand Online",L"Enum OLR",L"Enum OBR",L"Rec Hook",L"HT Support"};
+static const wchar_t *extreme_labels[]={L"HT Support"};
 /* Preserve command/config semantics: 411=headphones, 412=speakers. */
-static const UINT extreme_commands[]={410,412,411,413,414};
+static const UINT extreme_commands[]={414};
 enum { MAIN_NSP_ROW=10, MAIN_ADVANCED_ROW=12, ADVANCED_EXTREME_ROW=7 };
 static const FSA_Text advanced_labels[]={TXT_CAPTURE,TXT_EDIT,TXT_RELOAD,TXT_LOG,TXT_STARTUP,TXT_NSP_EMERGENCY};
-static const UINT advanced_commands[]={206,202,203,204,207,209,311,310};
-static const wchar_t *advanced_label(FSA_Language language,int i){return i==ADVANCED_EXTREME_ROW?L"NS Extreme":i==6?L"NSp Lock":fsa_text(language,advanced_labels[i]);}
+static const UINT advanced_commands[]={206,202,203,204,207,209,311,310,FSA_CMD_CAPTURE_LAYOUT,FSA_CMD_CAPTURE_IMPORT};
+static const wchar_t *advanced_label(FSA_Language language,int i){return i==ADVANCED_EXTREME_ROW?L"NS Extreme":i==6?L"NSp Lock":i==8?fsa_text(language,TXT_CAPTURE_LAYOUT):i==9?fsa_text(language,TXT_CAPTURE_LAYOUT_IMPORT):fsa_text(language,advanced_labels[i]);}
 static const wchar_t *main_label(const FSA_MenuState *state,int i){
     FSA_Language language=state->language;
     UINT c=main_commands[i];for(int j=0;j<7;j++)if(c==spatial_commands[j])return spatial_labels[j];
@@ -67,6 +67,10 @@ static int enabled(Popup *p,int i) {
     UINT c=command_at(p,i);
     if(c==414)return (p->state.edid&FSA_EDID_ELIGIBLE) && !(p->state.edid&FSA_EDID_BUSY) &&
         (!p->state.nsp_locked || (p->state.edid&FSA_EDID_SUPPORTED));
+    /* Capture-layout rows: unavailable while an update runs, while NSp holds the
+       session, or when the disk image identity could not be read. */
+    if(c==FSA_CMD_CAPTURE_LAYOUT || c==FSA_CMD_CAPTURE_IMPORT)
+        return (p->state.capture&FSA_CP_READABLE) && !(p->state.capture&FSA_CP_BUSY) && !p->state.nsp_locked;
     if((p->state.edid&FSA_EDID_BUSY) && ((c>=100 && c<=110) || c==200 || c==206 || c==311 || (c>=410 && c<=413)))return 0;
     if(c==106 && fsa_nsp_toggle_request(&p->state)==2)return 1;
     if(c==311 && (p->state.extreme&FSA_MENU_LOCK_PENDING))return 0;

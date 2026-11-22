@@ -11,6 +11,8 @@ typedef enum {
     TXT_READY, TXT_SWITCHING, TXT_VERIFIED, TXT_SWITCH_FAILED, TXT_UNKNOWN,
     TXT_MANUAL, TXT_STARTUP_FAILED, TXT_NO_SPATIAL, TXT_CAPTURE_OK, TXT_CAPTURE_FAILED,
     TXT_NSP, TXT_NSP_STOP, TXT_NSP_EMERGENCY, TXT_SONIC,
+    TXT_CAPTURE_LAYOUT, TXT_CAPTURE_LAYOUT_IMPORT, TXT_CAPTURE_LAYOUT_UPDATED,
+    TXT_CAPTURE_LAYOUT_FAILED,
     TXT_COUNT
 } FSA_Text;
 
@@ -46,6 +48,10 @@ static inline const wchar_t *fsa_text(FSA_Language language,FSA_Text id) {
         ,{L"Stop NSp",L"\u505c\u6b62 NSp"}
         ,{L"Emergency stop NSp",L"\u6025\u505c NSp"}
         ,{L"Windows Sonic",L"Windows Sonic"}
+        ,{L"Capture layout",L"\u6355\u83b7\u5e03\u5c40"}
+        ,{L"Import layout...",L"\u5bfc\u5165\u5e03\u5c40\u2026"}
+        ,{L"The capture layout for this Windows build is ready.",L"\u5f53\u524d Windows \u7248\u672c\u7684\u6355\u83b7\u5e03\u5c40\u5df2\u5c31\u7eea\u3002"}
+        ,{L"Capture layout update failed. See the log for details.",L"\u6355\u83b7\u5e03\u5c40\u66f4\u65b0\u5931\u8d25\u3002\u8be6\u60c5\u89c1\u65e5\u5fd7\u3002"}
     };
     if((unsigned)id>=TXT_COUNT) return L"";
     return strings[id][language==FSA_ZH?FSA_ZH:FSA_EN];

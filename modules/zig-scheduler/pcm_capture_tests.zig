@@ -42,7 +42,7 @@ fn testClose(handle: ?*anyopaque) callconv(.C) void {
 }
 
 test "prepared PCM rings attach once before activation and retry a late source independently" {
- const dll = try std.fs.cwd().realpathAlloc(u.a, "build/roar-native/release/nsp_croksor.dll");
+ const dll = try std.fs.cwd().realpathAlloc(u.a, "build/nsp-product/runtime/release/nsp_croksor.dll");
  defer u.a.free(dll);
  const config = d.Config{ .bridgeDll = dll, .asioDll = "unused", .driver = "unused", .sourcePolicy = "unified", .unifiedSlotProfile = .dtsxHtCompact };
  var pipeline = try n.Pipeline.initUnified(dll, "unused.f32", false, 1.0, config);

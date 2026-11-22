@@ -1,12 +1,15 @@
 #ifndef FSA_FLUENT_MENU_H
 #define FSA_FLUENT_MENU_H
 #include "language.h"
-typedef struct { int selected,automatic,startup; unsigned available; FSA_Language language; int nsp_locked; unsigned extreme; int frontend; unsigned edid; } FSA_MenuState;
+#include "capture_profile.h"
+typedef struct { int selected,automatic,startup; unsigned available; FSA_Language language; int nsp_locked; unsigned extreme; int frontend; unsigned edid; unsigned capture; } FSA_MenuState;
 #define FSA_EDID_ELIGIBLE 1u
 #define FSA_EDID_SUPPORTED 2u
 #define FSA_EDID_BUSY 4u
 #define FSA_MENU_ROUTE_LOCK 8u
 #define FSA_MENU_LOCK_PENDING 16u
+#define FSA_CMD_CAPTURE_LAYOUT 415
+#define FSA_CMD_CAPTURE_IMPORT 416
 static inline const wchar_t *fsa_locked_nsp_label(int frontend){
     static const wchar_t *labels[]={L"Sonic NSp",L"Dolby Atmos B NSp",L"Dolby Atmos L NSp",L"Dolby Atmos HT NSp",L"DTS:X B NSp",L"DTS:X L NSp",L"DTS:X HT NSp"};
     return frontend>=0 && frontend<7?labels[frontend]:L"NSp";
@@ -15,6 +18,7 @@ static inline int fsa_menu_checked(const FSA_MenuState *state,UINT command) {
     if(command==106)return state->selected==6;
     if(command==311)return (state->extreme&FSA_MENU_ROUTE_LOCK)!=0;
     if(command==414)return (state->edid&FSA_EDID_SUPPORTED)!=0;
+    if(command==FSA_CMD_CAPTURE_LAYOUT)return (state->capture&FSA_CP_READY)!=0;
     if(command>=410 && command<=412)return (state->extreme&(1u<<(command-410)))!=0;
     int active=state->selected;
     if(active==6 && state->frontend>=0 && state->frontend<7){const int modes[]={5,7,8,3,9,10,4};active=modes[state->frontend];}

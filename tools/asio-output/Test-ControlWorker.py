@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import shutil
 
 ROOT = Path(__file__).absolute().parents[2]
 OUT = ROOT / 'build/dev16-n05-control'
@@ -30,8 +31,10 @@ run([LLVM/'clang++.exe','-std=c++20','-O2','-DUNICODE','-D_UNICODE','-DNOMINMAX'
      '-Imodules/audio-backends/third_party/asio/common',fixture,
      *[ROOT/'modules/audio-backends/src'/name for name in ('asio_output_c.cpp','asio_backend.cpp','asio_format.cpp','diagnostics.cpp','sinc_resampler.cpp')],
      '-lole32','-ladvapi32','-luser32','-luuid','-lavrt','-lwinmm','-o',dll])
+for runtime in ('libc++.dll','libunwind.dll'):
+    shutil.copyfile(LLVM/runtime,OUT/runtime)
 env['NSP_ASIO_CONTROL_TEST_DLL']=str(dll)
-run([ZIG,'test',ROOT/'tools/zig-scheduler/output_control_tests.zig','-target','x86_64-windows-gnu',
+run([ZIG,'test',ROOT/'modules/zig-scheduler/output_control_tests.zig','-target','x86_64-windows-gnu',
      '-O','ReleaseSafe','-lc','-I',ROOT/'modules/audio-backends/src','-femit-bin='+str(OUT/'control-tests.exe')])
 (OUT/'checks.json').write_text(json.dumps(dict(passed=True,tests=7,
     scope='Owned mock backend and fake ASIO DLL only; no capture, endpoint, FSA or real driver',

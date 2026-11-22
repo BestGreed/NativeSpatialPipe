@@ -11,6 +11,7 @@ constexpr uint64_t PCM_SOURCE_IDLE_NS = 500000000;
 struct PcmSourceKey {
     uint64_t base = 0, mapping = 0, control = 0, processStarted = 0;
     uint32_t pid = 0, start = 0, capacity = 0, align = 0, channels = 0, mask = 0;
+    std::array<uint64_t, 2> streamId{};
     bool operator==(const PcmSourceKey&) const = default;
 };
 

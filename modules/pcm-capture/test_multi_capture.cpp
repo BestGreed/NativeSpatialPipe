@@ -8,8 +8,7 @@ struct OwnedQueue {
     std::array<float, 8192> samples{};
     QueueInfo info;
 
-    OwnedQueue(uintptr_t image) {
-        const uintptr_t vtable = image + PCM_INPUT_VTABLE_RVA;
+    explicit OwnedQueue(uintptr_t vtable) {
         memcpy(object.data() + 0x1e0, &vtable, sizeof(vtable));
         info.base = reinterpret_cast<uintptr_t>(object.data());
         info.mapping = reinterpret_cast<uintptr_t>(samples.data());
@@ -57,6 +56,11 @@ int main() {
     capture.process = GetCurrentProcess();
     capture.host = GetCurrentProcessId();
     capture.image = 0x10000000;
+    uintptr_t vtable_rva = 0;
+    for (const auto& profile : NSP_PCM_PROFILES)
+        if (profile.level == NSP_PCM_ANCHOR) { vtable_rva = profile.inputVtableRva; break; }
+    assert(vtable_rva);
+    capture.inputVtable = capture.image + vtable_rva;
     capture.baseName = L"Local\\NSP-Multi-Test-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(pcm_qpc_ns());
     capture.baseEvent = capture.baseName + L"-event";
     for (uint32_t lane = 0; lane < PCM_SOURCE_INITIAL; ++lane) assert(capture.prepare(lane));
@@ -64,9 +68,9 @@ int main() {
     assert(nsp_pcm_capture_activate_source(&capture, 4) == -1);
 
     std::array<OwnedQueue, 9> sources{
-        OwnedQueue(capture.image), OwnedQueue(capture.image), OwnedQueue(capture.image),
-        OwnedQueue(capture.image), OwnedQueue(capture.image), OwnedQueue(capture.image),
-        OwnedQueue(capture.image), OwnedQueue(capture.image), OwnedQueue(capture.image)};
+        OwnedQueue(capture.inputVtable), OwnedQueue(capture.inputVtable), OwnedQueue(capture.inputVtable),
+        OwnedQueue(capture.inputVtable), OwnedQueue(capture.inputVtable), OwnedQueue(capture.inputVtable),
+        OwnedQueue(capture.inputVtable), OwnedQueue(capture.inputVtable), OwnedQueue(capture.inputVtable)};
     std::vector<QueueInfo> candidates;
     for (uint32_t lane = 0; lane < PCM_SOURCE_INITIAL; ++lane) candidates.push_back(sources[lane].info);
     capture.select_sources(candidates);
@@ -150,6 +154,57 @@ int main() {
     capture.select_sources(candidates);
     assert(capture.pool.slots[1].lease == previousLease + 1);
     assert(capture.pool.slots[1].key.mask == 12);
+
+    // An APPX replay can reuse its queue address, mapping and control block.
+    auto& reused = sources[1];
+    changed.streamId = {1, 2};
+    memcpy(reused.object.data() + 0x50, &changed.mapping, sizeof(changed.mapping));
+    memcpy(reused.object.data() + 0x58, &changed.control, sizeof(changed.control));
+    memcpy(reused.object.data() + 0xe0, &changed.streamId, sizeof(changed.streamId));
+    *found = changed;
+    capture.select_sources(candidates);
+    const auto firstStreamLease = capture.pool.slots[1].lease;
+    poll(1);
+    reused.append(3);
+    poll(1);
+    const auto packetsBeforeReplay = capture.transports[1].packets.load();
+    changed.streamId = {3, 4};
+    memcpy(reused.object.data() + 0xe0, &changed.streamId, sizeof(changed.streamId));
+    reused.append(4);
+    poll(1);
+    assert(capture.transports[1].packets == packetsBeforeReplay);
+    assert(!capture.pool.slots[1].active);
+    *found = changed;
+    capture.select_sources(candidates);
+    assert(capture.pool.slots[1].lease == firstStreamLease + 1);
+    poll(1);
+    reused.append(5);
+    poll(1);
+    assert(capture.transports[1].packets == packetsBeforeReplay + 1);
+
+    // The verified 8-channel APPX producer can commit more than 64 KiB at once.
+    std::vector<float> largeRing(0x4b000 / sizeof(float), 6);
+    changed.mapping = reinterpret_cast<uintptr_t>(largeRing.data());
+    changed.capacity = 0x4b000;
+    changed.align = 32;
+    changed.channels = 8;
+    changed.mask = 0x63f;
+    changed.streamId = {5, 6};
+    memcpy(reused.object.data() + 0x50, &changed.mapping, sizeof(changed.mapping));
+    memcpy(reused.object.data() + 0xe0, &changed.streamId, sizeof(changed.streamId));
+    reused.control[2] = 0;
+    *found = changed;
+    capture.select_sources(candidates);
+    poll(1);
+    const auto framesBeforeBurst = capture.transports[1].frames.load();
+    const auto firstBlock = cursors[1].index;
+    reused.control[2] = 168960;
+    for (unsigned i = 0; i < 3; ++i) poll(1);
+    assert(capture.transports[1].frames == framesBeforeBurst + 5280);
+    auto& blocks = capture.transports[1].ring->blocks;
+    assert(blocks[firstBlock % PCM_SLOTS].descriptor.frames == 2048);
+    assert(blocks[(firstBlock + 2) % PCM_SLOTS].descriptor.frames == 1184);
+    assert(blocks[(firstBlock + 2) % PCM_SLOTS].pcm[0] == 6);
 
     char stats[8192]{};
     capture.stats(stats, sizeof(stats));

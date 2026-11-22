@@ -1,4 +1,5 @@
 """Isolated Zig migration tests: never use the user's audiodg or live ports."""
+import ctypes
 import json
 import importlib.util
 import os
@@ -48,6 +49,161 @@ def cli(home, *args, **kwargs):
 
 
 class SchedulerTests(unittest.TestCase):
+    def test_endpoint_reconfirmation_requires_same_native_baseline(self):
+        helper = ROOT / 'tools/zig-scheduler/Confirm-EndpointRestore.ps1'
+        for case in ('missing', 'replaced', 'mismatch', 'verified'):
+            with self.subTest(case=case), tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='endpoint-proof-') as temp:
+                root = Path(temp)
+                observed = root / 'observed'
+                observed.mkdir()
+                session = root / 'session.json'
+                session.write_text(json.dumps(dict(outputDirectory=str(root), endpoint='fixture',
+                                                   orchestratorPid=2147483600)), encoding='utf-8')
+                (observed / 'hook-session.json').write_text(
+                    json.dumps(dict(pid=2147483601, created=11)), encoding='utf-8')
+                report = root / 'endpoint.json'
+                original = json.dumps(dict(hostPid=2147483602, hookCompleted=True, hookExitCode=0,
+                                           spatialFormat='WindowsSonic', beforeSelected='original',
+                                           beforeActive='original', restored=False)).encode()
+                report.write_bytes(original)
+                scheduler = root / 'scheduler.ps1'
+                first = dict(pid=41, created=77, baselineVerified=case != 'missing')
+                second = dict(first, created=78 if case == 'replaced' else 77)
+                scheduler.write_text(
+                    r"if($args[0] -ne 'verify-hook-baseline'){throw 'Unexpected scheduler command'}" + '\n'
+                    "if(Test-Path (Join-Path $PSScriptRoot 'readback')){'" + json.dumps(second) + "'}else{'"
+                    + json.dumps(first) + "'}\n$global:LASTEXITCODE=0\n", encoding='utf-8')
+                query = root / 'modules/pipeline-init/Spatial-Format.ps1'
+                query.parent.mkdir(parents=True)
+                actual = 'different' if case == 'mismatch' else 'original'
+                query.write_text(
+                    "param($Action,$Endpoint,$Format)\n"
+                    "New-Item -ItemType File (Join-Path ($PSScriptRoot + '/../..') 'readback') | Out-Null\n"
+                    + "'" + json.dumps(dict(selected=actual, active=actual)) + "'\n", encoding='utf-8')
+                result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                                         '-File', str(helper), '-SessionFile', str(session),
+                                         '-Scheduler', str(scheduler), '-Root', str(root)],
+                                        capture_output=True, timeout=45, **FLAGS)
+                backups = list(root.glob('endpoint.json.before-reconfirmation-*.json'))
+                if case == 'verified':
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    proof = json.loads(report.read_text())['restoreReconfirmation']
+                    self.assertEqual((proof['currentTargetPid'], proof['currentTargetCreated']), (41, 77))
+                    self.assertEqual(len(backups), 1)
+                    self.assertEqual(backups[0].read_bytes(), original)
+                else:
+                    self.assertNotEqual(result.returncode, 0, result.stdout)
+                    reason = {'missing': b'Missing native baseline evidence',
+                              'replaced': b'Audio host changed during endpoint query',
+                              'mismatch': b'Current endpoint still differs'}[case]
+                    self.assertIn(reason, result.stderr)
+                    self.assertEqual(report.read_bytes(), original)
+                    self.assertFalse(backups)
+
+    def test_absent_endpoint_retires_the_session_without_claiming_restore(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='endpoint-absent-') as temp:
+            home = Path(temp)
+            output = home / 'sessions/fault'
+            observed = output / 'observed'
+            observed.mkdir(parents=True)
+            exited = subprocess.Popen([sys.executable, '-c', 'pass'], **FLAGS)
+            exited.wait(timeout=5)
+            endpoint = '{0.0.0.00000000}.{B24B42E2-76EA-5E36-8196-F970431E5245}'
+            (home / 'session.json').write_text(json.dumps(dict(
+                id='fault', outputDirectory=str(output), endpoint=endpoint,
+                state='faulted', ownerPid=os.getpid(), orchestratorPid=exited.pid)))
+            (observed / 'hook-session.json').write_text(json.dumps(dict(
+                hookGeneration=2, pid=exited.pid, created=1)))
+            report = output / 'endpoint.json'
+            original = json.dumps(dict(hostPid=exited.pid, hookCompleted=True, hookExitCode=0,
+                                       restored=False, restoreStatus='LicenseNotValidForAudioEndpoint'))
+            report.write_text(original)
+            host = subprocess.Popen([str(EXE), 'serve', '--root', str(ROOT), '--home',
+                                     temp, '--port', '0'], **FLAGS)
+            try:
+                wait_for(lambda: (home / 'runtime.json').exists(), host)
+                self.assertEqual(cli(home, 'status').returncode, 20)
+                absence = output / 'endpoint-absence.json'
+                self.assertTrue(absence.is_file())
+                self.assertFalse((output / 'endpoint-retirement.json').is_file())
+                clock = ctypes.windll.kernel32.GetTickCount64
+                clock.restype = ctypes.c_uint64
+                now = clock()
+                absence.write_text(json.dumps(dict(first=max(0, now - 8_000), last=now)))
+                result = cli(home, 'status')
+                self.assertEqual(result.returncode, 10, result.stdout + result.stderr)
+                proof = json.loads((output / 'endpoint-retirement.json').read_text())
+                self.assertEqual(proof['endpoint'], endpoint)
+                self.assertIs(proof['endpointSnapshotRestored'], False)
+                self.assertEqual(json.loads((home / 'session.json').read_text())['state'], 'stopped')
+                self.assertEqual(report.read_text(), original)
+            finally:
+                if host.poll() is None:
+                    host.terminate()
+                    host.wait(timeout=5)
+
+    def test_backend_waits_for_session_ready_event(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='zig-ready-event-') as temp:
+            base = Path(temp)
+            home = base / 'home'
+            (home / 'sessions').mkdir(parents=True)
+            script = base / 'modules/zig-scheduler/Run-GameTelemetry.ps1'
+            script.parent.mkdir(parents=True)
+            script.write_text(r'''
+param([string]$OutputDirectory,[string]$ReadyEvent)
+$ErrorActionPreference='Stop'
+$observed=Join-Path $OutputDirectory 'observed'
+New-Item -ItemType Directory -Path $observed -Force | Out-Null
+Set-Content -LiteralPath "$observed/ready.txt" -Value 'stale file must be ignored'
+$event=[Threading.EventWaitHandle]::OpenExisting($ReadyEvent)
+try {
+    while(-not(Test-Path -LiteralPath "$OutputDirectory.stop")){
+        if(Test-Path -LiteralPath "$observed/signal"){
+            if(-not $event.Set()){throw 'Ready event failed'}
+        }
+        Start-Sleep -Milliseconds 25
+    }
+} finally {$event.Dispose()}
+@{restored=$true;hookCompleted=$true;hookExitCode=0} | ConvertTo-Json | Set-Content -LiteralPath "$OutputDirectory/endpoint.json"
+''', encoding='utf-8')
+            backend = subprocess.Popen([str(EXE), 'serve', '--root', temp, '--home', str(home),
+                                        '--port', '0', '--telemetry-port', str(free_port())], **FLAGS)
+            try:
+                runtime = wait_for(lambda: json.loads((home / 'runtime.json').read_text()), backend)
+                request = Request(runtime['url'] + '/api/backend/start-session',
+                                  data=json.dumps(dict(ownerPid=os.getpid(), endpoint='fixture')).encode(),
+                                  headers={'Authorization': 'Bearer ' + runtime['token']})
+                try:
+                    with urlopen(request, timeout=10) as response:
+                        started = json.load(response)
+                except HTTPError as error:
+                    with error:
+                        self.fail(error.read().decode())
+                output = Path(started['session']['outputDirectory']) / 'observed'
+                wait_for(lambda: (output / 'ready.txt').exists(), backend)
+
+                def state():
+                    return json.loads((home / 'session.json').read_text())['state']
+
+                self.assertEqual(state(), 'starting')
+                (output / 'signal').touch()
+                try:
+                    wait_for(lambda: state() == 'running', backend)
+                except AssertionError as error:
+                    log = output.parent.with_suffix('.log').read_bytes().decode(errors='replace')
+                    self.fail(f'{error}; state={state()}; orchestrator={log}')
+                self.assertEqual(cli(home, 'request', '--action', 'stop-session').returncode, 0)
+                wait_for(lambda: state() == 'stopped', backend)
+            finally:
+                if backend.poll() is None:
+                    cli(home, 'request', '--action', 'stop-session')
+                    cli(home, 'request', '--action', 'exit')
+                    try:
+                        backend.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        backend.kill()
+                        backend.wait(timeout=5)
+
     def test_explicit_start_recovers_retired_fault_only_after_live_stop_proof(self):
         target=subprocess.Popen([sys.executable,'-c','pass'],**FLAGS);target.wait(timeout=5)
         with tempfile.TemporaryDirectory(dir=ROOT/'build',prefix='zig-restart-fault-') as temp:
@@ -190,18 +346,25 @@ class SchedulerTests(unittest.TestCase):
     def test_default_configuration_migration_preserves_rules_and_snapshots(self):
         import configparser
         with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='zig-default-') as temp:
-            ini = Path(temp) / 'fsa.ini'
+            fixture = Path(temp)
+            ini = fixture / 'fsa.ini'
+            configure = fixture / 'modules/fsa-integration/Configure-Scheduler.ps1'
+            configure.parent.mkdir(parents=True)
+            configure.write_bytes((ROOT / 'modules/fsa-integration/Configure-Scheduler.ps1').read_bytes())
+            default_executable = fixture / 'build/nsp-product/nsp-scheduler.exe'
+            default_executable.parent.mkdir(parents=True)
+            default_executable.touch()  # Configure-Scheduler only checks existence.
             original = '[Manager]\nLanguage=zh\n[Rule:Keep]\nEnabled=1\nProfile=7.1\n[NSP]\nPython=' + sys.executable + '\nControlScript=legacy.py\n[Snapshot:Keep]\nData=untouched\n'
             ini.write_text(original, encoding='utf-16')
             command = ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
-                       str(ROOT / 'modules/fsa-integration/Configure-Scheduler.ps1'), '-Configuration', str(ini)]
+                       str(configure), '-Configuration', str(ini)]
             for mode in ('Zig', 'Zig'):
                 result = subprocess.run(command + ['-Scheduler', mode], capture_output=True, timeout=15, **FLAGS)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 config = configparser.ConfigParser(interpolation=None)
                 config.read(ini, encoding='utf-16')
                 self.assertEqual(config['NSP']['Scheduler'], mode)
-                self.assertEqual(Path(config['NSP']['ControlExecutable']), ROOT / 'build/zig-scheduler/nsp-scheduler.exe')
+                self.assertEqual(Path(config['NSP']['ControlExecutable']), default_executable)
                 self.assertEqual(config['NSP']['Python'], sys.executable)
                 self.assertNotIn('ControlScript', config['NSP'])
                 self.assertEqual(config['Rule:Keep']['Enabled'], '1')
@@ -264,8 +427,14 @@ class SchedulerTests(unittest.TestCase):
             try:
                 runtime = wait_for(lambda: json.loads((home / 'runtime.json').read_text()), host)
                 url = runtime['url']
-                with urlopen(url + '/') as response:
-                    self.assertIn(b'NSp', response.read())
+                # The dedicated web host owns the frontend. The control port
+                # serves status and authenticated commands.
+                with self.assertRaises(HTTPError) as missing:
+                    urlopen(url + '/')
+                with missing.exception as response:
+                    self.assertEqual(response.code, 404)
+                with urlopen(url + '/api/backend/status') as response:
+                    self.assertEqual(json.load(response)['pid'], host.pid)
                 result = cli(home, 'request')
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(json.loads(result.stdout)['sessionState'], 'idle')
@@ -291,6 +460,163 @@ class SchedulerTests(unittest.TestCase):
                 if host.poll() is None:
                     cli(home, 'request', '--action', 'exit')
                     host.wait(timeout=5)
+
+    def test_client_control_contract_without_dotnet(self):
+        with tempfile.TemporaryDirectory(dir=ROOT / 'build', prefix='zig-client-control-') as temp:
+            root = Path(temp)
+            home = root / 'home'
+            script = root / 'modules/zig-scheduler/Run-GameTelemetry.ps1'
+            script.parent.mkdir(parents=True)
+            script.write_text(r'''
+param([string]$OutputDirectory,[string]$SpatialFormat,[string]$PlaybackConfig,[string]$ReadyEvent)
+$ErrorActionPreference='Stop'
+New-Item -ItemType Directory -Path "$OutputDirectory/observed" -Force | Out-Null
+if($PlaybackConfig){Copy-Item -LiteralPath $PlaybackConfig "$OutputDirectory/forwarded.json"}
+$SpatialFormat | Set-Content -LiteralPath "$OutputDirectory/frontend.txt" -Encoding ascii
+$event=[Threading.EventWaitHandle]::OpenExisting($ReadyEvent)
+try {if(-not $event.Set()){throw 'Ready event failed'}} finally {$event.Dispose()}
+$fault=Join-Path $PSScriptRoot '../../fault.txt'
+$restored=$true
+if(Test-Path -LiteralPath $fault){
+    $restored=(Get-Content -Raw -LiteralPath $fault).Trim() -eq 'clean'
+}else{
+    $deadline=[DateTime]::UtcNow.AddSeconds(40)
+    while(!(Test-Path -LiteralPath "$OutputDirectory.stop")){
+        if([DateTime]::UtcNow -gt $deadline){throw 'Fixture stop timeout'}
+        Start-Sleep -Milliseconds 30
+    }
+}
+$evidence=@{restored=$restored;hookCompleted=$true;hookExitCode=0}
+if(Test-Path -LiteralPath $fault){$evidence.error='owned fixture failure'}
+$evidence | ConvertTo-Json -Compress | Set-Content -LiteralPath "$OutputDirectory/endpoint.json"
+if(Test-Path -LiteralPath $fault){exit 2}
+''', encoding='utf-8')
+            backend = subprocess.Popen([str(EXE), 'serve', '--root', str(root), '--home', str(home),
+                                        '--port', '0', '--telemetry-port', str(free_port())], **FLAGS)
+            try:
+                runtime = wait_for(lambda: json.loads((home / 'runtime.json').read_text()), backend)
+
+                def request(action, body=None):
+                    headers = {} if body is None else {'Authorization': 'Bearer ' + runtime['token']}
+                    data = None if body is None else json.dumps(body).encode()
+                    with urlopen(Request(runtime['url'] + '/api/backend/' + action, data=data,
+                                         headers=headers), timeout=8) as response:
+                        return json.load(response)
+
+                def expect_state(state):
+                    result = request('status')
+                    return result if result['sessionState'] == state else None
+
+                def conflict(action, body, reason):
+                    with self.assertRaises(HTTPError) as err:
+                        request(action, body)
+                    with err.exception as response:
+                        self.assertEqual(response.code, 409)
+                        self.assertIn(reason.encode(), response.read())
+
+                def assert_session(result, owner, session_id):
+                    self.assertIsNotNone(result)
+                    self.assertEqual(result['pid'], backend.pid)
+                    self.assertEqual((result['session']['ownerPid'], result['session']['id']),
+                                     (owner, session_id))
+
+                owner = os.getpid()
+                observed = request('status')
+                self.assertEqual(runtime['scheduler'], 'zig')
+                self.assertEqual(runtime['pid'], backend.pid)
+                self.assertEqual(observed['pid'], backend.pid)
+                self.assertEqual(Path(observed['root']).resolve(), root.resolve())
+                self.assertTrue(observed['capabilities']['desktopPlayback'])
+                self.assertTrue(observed['capabilities']['guardedStop'])
+                original = dict(bridgeDll=str(root / 'bridge.dll'), rendererDll=str(root / 'lira.dll'),
+                                asioDll=str(root / 'asio.dll'), driver='asio:test', sourceStream=2,
+                                channelOrder='dvs-speakers', sampleRate=48000, bufferFrames=128, master=.25,
+                                outputProcessing=dict(bypass=True, trim=[.5] + [1.0] * 11,
+                                                      delayFrames=[0, 7] + [0] * 10,
+                                                      limiter=dict(enabled=True, ceiling=.8, releaseMs=25,
+                                                                   lookaheadFrames=13)),
+                                routing=dict(physicalChannels=list(range(11, -1, -1))),
+                                clockSync=False, prebufferFrames=960, startupTimeoutMs=8000,
+                                rebufferTimeoutMs=1500, maxRebuffers=2, drainTimeoutMs=6000)
+                for frontend, renderer in (('DolbyAtmosForHomeTheater', 'roar'), ('DTSXForHomeTheater', 'lira')):
+                    with self.subTest(frontend=frontend):
+                        profile = dict(original, renderer=renderer)
+                        if renderer == 'roar':
+                            profile.update(mode='olr', positionMapping=dict(mode='scaled', reference=2))
+                        start = dict(ownerPid=owner, endpoint='fixture-endpoint', spatialFormat=frontend, playback=profile)
+                        session = request('start-session', start)['session']
+                        identity = dict(ownerPid=owner, sessionId=session['id'])
+                        running = wait_for(lambda: expect_state('running'), backend)
+                        assert_session(running, owner, session['id'])
+                        output = Path(session['outputDirectory'])
+                        forwarded_path = output / 'forwarded.json'
+                        original_forwarded = forwarded_path.read_bytes()
+                        forwarded = json.loads(original_forwarded.decode('utf-8-sig'))
+                        for config in (running['session']['playback'], forwarded):
+                            for field, expected in profile.items():
+                                if field in ('outputProcessing', 'routing'):
+                                    for key, value in expected.items():
+                                        self.assertEqual(config[field][key], value, key)
+                                else:
+                                    self.assertEqual(config[field], expected, field)
+                            self.assertEqual(config.get('mode'), profile.get('mode'))
+                        self.assertEqual((output / 'frontend.txt').read_text().strip(), frontend)
+                        assert_session(request('start-session', start), owner, session['id'])
+                        conflict('start-session', dict(start, ownerPid=backend.pid), 'OwnerConflict')
+                        conflict('start-session', dict(start, playback=dict(profile, master=.5)),
+                                 'ActivePlaybackConfiguration')
+                        conflict('stop-session', dict(identity, ownerPid=backend.pid), 'OwnerConflict')
+                        conflict('stop-session', dict(identity, sessionId='stale'), 'OwnerConflict')
+                        assert_session(expect_state('running'), owner, session['id'])
+                        self.assertFalse(Path(str(output) + '.stop').exists())
+                        self.assertEqual(forwarded_path.read_bytes(), original_forwarded)
+                        self.assertEqual(request('status')['session']['playback'], running['session']['playback'])
+                        request('stop-session', identity)
+                        assert_session(wait_for(lambda: expect_state('stopped'), backend), owner, session['id'])
+
+                fault = root / 'fault.txt'
+                for evidence in ('unproven', 'clean'):
+                    with self.subTest(evidence=evidence):
+                        fault.write_text(evidence, encoding='ascii')
+                        session = request('start-session', dict(ownerPid=owner, endpoint='fixture-endpoint'))['session']
+                        failed = wait_for(lambda: expect_state('faulted'), backend)
+                        identity = dict(ownerPid=owner, sessionId=session['id'])
+                        assert_session(failed, owner, session['id'])
+                        conflict('recover', dict(identity, ownerPid=backend.pid), 'OwnerConflict')
+                        conflict('recover', dict(identity, sessionId='stale'), 'OwnerConflict')
+                        assert_session(expect_state('faulted'), owner, session['id'])
+                        if evidence == 'unproven':
+                            conflict('recover', identity, 'StopEvidenceRequired')
+                            assert_session(expect_state('faulted'), owner, session['id'])
+                            (Path(session['outputDirectory']) / 'endpoint.json').write_text(
+                                json.dumps(dict(restored=True, hookCompleted=True, hookExitCode=0)))
+                        assert_session(request('recover', identity), owner, session['id'])
+                        assert_session(expect_state('stopped'), owner, session['id'])
+                fault.unlink()
+
+                legacy = request('start-session', dict(ownerPid=owner, endpoint='fixture-endpoint',
+                                                      spatialFormat='DolbyAtmosForHomeTheater'))['session']
+                self.assertIsNone(legacy['playback'])
+                assert_session(wait_for(lambda: expect_state('running'), backend), owner, legacy['id'])
+                request('stop-session', {})
+                assert_session(wait_for(lambda: expect_state('stopped'), backend), owner, legacy['id'])
+                for body in (dict(spatialFormat='unsupported'), dict(playback=dict(original, renderer='unknown'))):
+                    with self.assertRaises(HTTPError) as error:
+                        request('start-session', dict(ownerPid=owner, endpoint='fixture-endpoint', **body))
+                    error.exception.close()
+                    assert_session(expect_state('stopped'), owner, legacy['id'])
+                request('exit', {})
+                self.assertEqual(backend.wait(timeout=8), 0)
+            finally:
+                if backend.poll() is None:
+                    cli(home, 'request', '--action', 'stop-session')
+                    cli(home, 'request', '--action', 'recover')
+                    cli(home, 'request', '--action', 'exit')
+                    try:
+                        backend.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        backend.kill()
+                        backend.wait(timeout=5)
 
     def test_native_fixture_audio_telemetry_and_clean_stop(self):
         self.fixture(False)

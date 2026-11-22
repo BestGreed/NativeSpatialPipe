@@ -14,3 +14,7 @@ captures/
 *.dll
 *.exe
 *.pdb
+
+# Rebuilt from the shipped capture table by the PCM builder.
+/modules/pcm-capture/profile.generated.h
+/.zig-cache/

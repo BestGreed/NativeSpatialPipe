@@ -18,19 +18,19 @@ int wmain(int argc,wchar_t **argv) {
     puts("PASS independent Sonic endpoint and NSp feature checks, stop/start toggle, unknown state unselected");
     assert(mode_icon_ids[MODE_NSP]==IDI_FSA_APP);
     {
-        wchar_t directory[MAX_PATH],temporary[MAX_PATH],program[MAX_PATH],prefix[2*MAX_PATH];
+        wchar_t directory[MAX_PATH],temporary[MAX_PATH],program[MAX_PATH];
         GetModuleFileNameW(NULL,directory,MAX_PATH);
         wchar_t *slash=wcsrchr(directory,L'\\');assert(slash);*slash=0;
         assert(GetTempFileNameW(directory,L"nsp",0,temporary));
         wcscpy(ini,temporary);
         assert(WritePrivateProfileStringW(L"NSP",L"Python",L"python.exe",ini));
         assert(WritePrivateProfileStringW(L"NSP",L"ControlScript",L"legacy.py",ini));
-        assert(nsp_program(program,prefix,2*MAX_PATH));
-        assert(!prefix[0] && wcsstr(program,L"zig-scheduler\\nsp-scheduler.exe"));
+        assert(nsp_program(program));
+        assert(wcsstr(program,L"zig-scheduler\\nsp-scheduler.exe"));
         assert(WritePrivateProfileStringW(L"NSP",L"Scheduler",L"Invalid",ini));
-        assert(!nsp_program(program,prefix,2*MAX_PATH));
+        assert(!nsp_program(program));
         assert(WritePrivateProfileStringW(L"NSP",L"Scheduler",L"Python",ini));
-        assert(!nsp_program(program,prefix,2*MAX_PATH));
+        assert(!nsp_program(program));
         assert(DeleteFileW(temporary));ini[0]=0;
         puts("PASS native scheduler resolution and rejection of retired Python selection");
     }

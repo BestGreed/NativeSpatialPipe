@@ -1,6 +1,6 @@
 # NSP native scheduling and configuration host
 
-Updated on 2026-11-08. For the current module responsibilities and validation status, see [Active Progress](../../README.md#goals-support-and-progress). Phase N05–N12 wiring and old deployment statements have been moved to Historical Snapshot (reference outside this source tree).
+Updated on 2026-11-22. For the current module responsibilities and validation status, see [Active Progress](../../README.md#goals-support-and-progress). Phase N05–N12 wiring and old deployment statements have been moved to Historical Snapshot (reference outside this source tree).
 
 ## Responsibilities
 
@@ -10,7 +10,7 @@ Native FSA is the product entry point, and the scheduler only supports Zig. The 
 
 ## Build
 
-- Existing ASIO host: `powershell -ExecutionPolicy Bypass -File modules/zig-scheduler/Build.ps1`, output `build/nsp-product/nsp-scheduler.exe`.
+- Existing ASIO host: `powershell -ExecutionPolicy Bypass -File modules/zig-scheduler/Build.ps1`, output `build/zig-scheduler/nsp-scheduler.exe`; pass `-TargetDirectory build/nsp-product` for the product location.
 - AoIP supporting host/bridge: `powershell -File tools/Build-Product.ps1 -Python <python.exe>`.
 - Zig is fixed in 0.13.0; ABI mismatch must be rejected, host and bridge are used as a set. Inferno uses modules/inferno-windows in the warehouse, and the C header files come from modules/native-capture; ROAR and the tool chain still have local preparation dependencies, and are not released installers. Network diagnostics are in tools/network-diagnostics, not the AoIP product startup step.
 
@@ -38,3 +38,5 @@ The general user directory is `%LOCALAPPDATA%/NativeSpatialPipe`, and the defaul
 The existing configuration/routing/control/output pool test will continue to be retained. For specific commands and fixtures, see the same directory test, `tools/integration-tests` and `tools/aoip/Test-Configuration.py`. Software testing, FSA limited live network, and user confirmation are recorded separately and do not replace each other.
 
 P0 still includes fixed hash/profile cross-system compatibility, Hook stability, deterministic capture binding, Inferno dependency closure, output fault diagnosis and resident startup failure recovery; WDM, long-term SRC, configuration loaded revision and telemetry fault isolation have not yet been completed. See Repair Plan (reference outside this source tree) for the sequence. The historical "Missed N07/Only waiting for the first round of real audio" is no longer the current status.
+
+Current recovery, ownership, layout and regression contracts are maintained in the [developer guide](../../docs/development.md) and [user guide](../../docs/user-guide.md).

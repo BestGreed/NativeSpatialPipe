@@ -43,7 +43,7 @@ class Stream:
 
     def _telemetry(self):
         try:
-            sys.path.insert(0, str(ROOT / 'tools/telemetry'))
+            sys.path.insert(0, str(ROOT / 'modules/telemetry'))
             from client import TelemetryService
             self.service = TelemetryService()
             self.service.attach(self.pipeline)

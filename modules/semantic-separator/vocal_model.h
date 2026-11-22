@@ -16,6 +16,8 @@
 #include <stdexcept>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #ifdef NSP_JOINT_DIRECTML
 #include <dxgi.h>
 #endif
@@ -25,17 +27,23 @@ inline HMODULE initializeVocalOrt(){
   HMODULE module=nullptr;
   Runtime(){
    HMODULE owner=nullptr;if(!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,reinterpret_cast<LPCWSTR>(&initializeVocalOrt),&owner))throw std::runtime_error("ORT module identity");
-   wchar_t path[32768]{};DWORD count=GetModuleFileNameW(owner,path,32768);if(!count||count>=32768)throw std::runtime_error("ORT directory");std::wstring filename(path,count);filename=filename.substr(0,filename.find_last_of(L"\\/")+1)+
-#ifdef NSP_JOINT_DIRECTML
-    L"onnxruntime.dll";
+   wchar_t path[32768]{};DWORD count=GetModuleFileNameW(owner,path,32768);if(!count||count>=32768)throw std::runtime_error("ORT directory");
+   auto directory=std::filesystem::path(path).parent_path();
+   std::ifstream pointer(directory/L"runtime-path.txt");std::string external;
+   if(std::getline(pointer,external)&&!external.empty())directory=std::filesystem::u8path(external);
+   std::wstring filename=(directory/
+#if defined(NSP_JOINT_DIRECTML) || defined(NSP_JOINT_ORT_CPU)
+    L"onnxruntime.dll").wstring();
    constexpr const char* version="1.24.4";
 #else
-    L"NSP.VocalOrt126.dll";
+    L"NSP.VocalOrt126.dll").wstring();
    constexpr const char* version="1.26.0";
 #endif
    module=LoadLibraryExW(filename.c_str(),nullptr,LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR|LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);if(!module)throw std::runtime_error("Private ORT load failed");
    auto get=reinterpret_cast<const OrtApiBase*(ORT_API_CALL*)()>(GetProcAddress(module,"OrtGetApiBase"));
-   if(!get||strcmp(get()->GetVersionString(),version)){FreeLibrary(module);module=nullptr;throw std::runtime_error("Private ORT version");}
+   unsigned major=0,minor=0,patch=0,minMajor=0,minMinor=0,minPatch=0;
+   if(get){sscanf(get()->GetVersionString(),"%u.%u.%u",&major,&minor,&patch);sscanf(version,"%u.%u.%u",&minMajor,&minMinor,&minPatch);}
+   if(!get||std::array<unsigned,3>{major,minor,patch}<std::array<unsigned,3>{minMajor,minMinor,minPatch}){FreeLibrary(module);module=nullptr;throw std::runtime_error("ORT is older than the minimum version");}
    const OrtApi* api=get()->GetApi(ORT_API_VERSION);if(!api){FreeLibrary(module);module=nullptr;throw std::runtime_error("Private ORT API unavailable");}Ort::InitApi(api);
   }
   ~Runtime(){if(module)FreeLibrary(module);}
@@ -44,12 +52,13 @@ inline HMODULE initializeVocalOrt(){
 }
 
 #ifdef NSP_JOINT_DIRECTML
-inline void configureRadeon(Ort::SessionOptions& options){
+inline void configureDirectML(Ort::SessionOptions& options){
  IDXGIFactory* raw=nullptr;
  const GUID factoryId={0x7b7166ec,0x21c7,0x44ae,{0xb2,0x1a,0xc9,0xae,0x32,0x1a,0xe3,0x69}};
  if(FAILED(CreateDXGIFactory(factoryId,reinterpret_cast<void**>(&raw))))throw std::runtime_error("DXGI factory failed");
  auto release=[](auto* ptr){ptr->Release();};
  std::unique_ptr<IDXGIFactory,decltype(release)> factory(raw,release);
+ int chosen=-1, best=-1;
  for(UINT index=0;;index++){
   IDXGIAdapter* rawAdapter=nullptr;
   const HRESULT result=factory->EnumAdapters(index,&rawAdapter);
@@ -58,17 +67,21 @@ inline void configureRadeon(Ort::SessionOptions& options){
   std::unique_ptr<IDXGIAdapter,decltype(release)> adapter(rawAdapter,release);
   DXGI_ADAPTER_DESC desc{};
   if(FAILED(adapter->GetDesc(&desc)))throw std::runtime_error("DXGI adapter description failed");
-  // The local audition targets the Radeon 13c0 iGPU, even when NVIDIA is first.
-  if(desc.VendorId!=0x1002||desc.DeviceId!=0x13c0)continue;
+  if(desc.VendorId==0x1414)continue; // Software adapter; CPU EP is the fallback.
+  // Prefer an Intel/AMD UMA-like adapter over a discrete GPU. Model/session
+  // creation, rather than a device-ID allowlist, determines compatibility.
+  int score=((desc.VendorId==0x8086||desc.VendorId==0x1002)&&desc.DedicatedVideoMemory<=512ull*1024*1024)?2:1;
+  if(score>best){best=score;chosen=static_cast<int>(index);}
+ }
+ if(chosen>=0){
   using Append=OrtStatus*(ORT_API_CALL*)(OrtSessionOptions*,int);
   auto append=reinterpret_cast<Append>(GetProcAddress(initializeVocalOrt(),"OrtSessionOptionsAppendExecutionProvider_DML"));
   if(!append)throw std::runtime_error("ORT DirectML provider unavailable");
   options.DisableMemPattern();
-  options.AddConfigEntry("session.disable_cpu_ep_fallback","1");
-  Ort::ThrowOnError(append(options,static_cast<int>(index)));
+  Ort::ThrowOnError(append(options,chosen));
   return;
  }
- throw std::runtime_error("AMD Radeon 13c0 adapter not found");
+ throw std::runtime_error("No DirectML hardware adapter found");
 }
 #endif
 
@@ -79,6 +92,8 @@ class VocalModel {
  Ort::SessionOptions options;Ort::Session session{nullptr};
  Ort::MemoryInfo memory=Ort::MemoryInfo::CreateCpu(OrtArenaAllocator,OrtMemTypeDefault);
  Ort::RunOptions runOptions;
+ bool directml=false;
+ std::string accelerationError;
  std::array<std::string,5> inputNames,outputNames;
  std::array<const char*,5> in{},out{};
  std::array<std::array<std::vector<float>,4>,2> states;
@@ -87,7 +102,7 @@ class VocalModel {
 public:
  static const char* backend(){
 #ifdef NSP_JOINT_DIRECTML
-  return "DirectML-Radeon";
+  return "DirectML/CPU-ORT";
 #else
   return "CPU-ORT";
 #endif
@@ -96,9 +111,24 @@ public:
   options.SetIntraOpNumThreads(1);options.SetInterOpNumThreads(1);options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
   options.AddConfigEntry("session.intra_op.allow_spinning","0");options.AddConfigEntry("session.inter_op.allow_spinning","0");
 #ifdef NSP_JOINT_DIRECTML
-  configureRadeon(options);
+  try {
+   configureDirectML(options);
+   session=Ort::Session(env,path,options);directml=true;
+  } catch(const std::exception& error) {
+   accelerationError=error.what();
+   // A device/provider/session failure selects a pure CPU session. This is
+   // startup selection; audio-time worker fallback remains scheduler-owned.
+   options=Ort::SessionOptions{};
+   options.SetIntraOpNumThreads(1);options.SetInterOpNumThreads(1);
+   options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+   options.AddConfigEntry("session.intra_op.allow_spinning","0");
+   options.AddConfigEntry("session.inter_op.allow_spinning","0");
+   session=Ort::Session(env,path,options);
+  }
+#else
+  session=Ort::Session(env,path,options);
 #endif
-  session=Ort::Session(env,path,options);if(session.GetInputCount()!=5||session.GetOutputCount()!=5)throw std::runtime_error("Vocal partition contract");
+  if(session.GetInputCount()!=5||session.GetOutputCount()!=5)throw std::runtime_error("Vocal partition contract");
   Ort::AllocatorWithDefaultOptions allocator;
   std::array<std::vector<int64_t>,5> shapes,outputShapes;
   for(size_t i=0;i<5;i++){
@@ -115,6 +145,8 @@ public:
   }
  }
  static size_t elements(const std::vector<int64_t>& shape){size_t n=1;for(auto d:shape){if(d<1||d>1000000||n>1000000/(size_t)d)throw std::runtime_error("Vocal dimension bound");n*=d;}return n;}
+ const char* actualBackend() const {return directml?"DirectML":"CPU-ORT";}
+ const char* accelerationFailure() const {return accelerationError.c_str();}
  void reset(){for(auto& b:states)for(auto& v:b)std::fill(v.begin(),v.end(),0.f);bank=0;}
  const float* process(const float* planar128){std::copy_n(planar128,256,audio.begin());session.Run(runOptions,in.data(),inputs[bank].data(),5,out.data(),outputs[bank].data(),5);bank=1-bank;if(!std::all_of(separated.begin(),separated.end(),[](float x){return std::isfinite(x);}))throw std::runtime_error("Nonfinite vocal output");return separated.data();}
 };

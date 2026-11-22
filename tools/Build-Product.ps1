@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$Python,[switch]$MediaFoundation,[switch]$PcmCapture,[switch]$BrowserIdentity,[switch]$Wasapi,[switch]$WasapiUpmix,[switch]$SkipEnumHookBuild)
+param([Parameter(Mandatory=$true)][string]$Python,[switch]$MediaFoundation,[switch]$PcmCapture,[switch]$BrowserIdentity,[switch]$Wasapi,[switch]$WasapiUpmix)
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path "$PSScriptRoot/..").Path
 if(-not(Test-Path -LiteralPath $Python -PathType Leaf)){throw 'An explicit Python runtime is required'}
@@ -11,14 +11,11 @@ Build-Step 'modules/native-capture/Build-NativeCapture.ps1'
 Build-Step 'modules/native-capture/Build-NativeSend.ps1'
 Build-Step 'modules/native-capture/Build-CaptureScheduler.ps1'
 Build-Step 'modules/native-receiver/Build.ps1' @('-TargetDirectory','build/nsp-product/receiver')
-if($SkipEnumHookBuild){
- Write-Warning 'Reusing existing enumeration hook artifacts.'
-}else{Build-Step 'modules/pipeline-init/Build-EnumHook.ps1'}
 Build-Step 'modules/telemetry/Build-Meter.ps1'
 Build-Step 'modules/audio-backends/Build.ps1'
 if($MediaFoundation){Build-Step 'modules/media-foundation/Build.ps1' @('-Python',$Python)}
-if($PcmCapture -or $BrowserIdentity -or $WasapiUpmix){Build-Step 'modules/pcm-capture/Build.ps1'}
-if($BrowserIdentity){Build-Step 'modules/browser-identity/Build-Backend.ps1'}
+if($PcmCapture -or $BrowserIdentity -or $WasapiUpmix){Build-Step 'modules/pcm-capture/Build.ps1' @('-Python',$Python,'-Test')}
+if($BrowserIdentity){Build-Step 'modules/browser-identity/Build-Backend.ps1' @('-Python',$Python)}
 if($Wasapi -or $WasapiUpmix){Build-Step 'modules/audio-backends/Build-Wasapi.ps1'}
 if($WasapiUpmix){
  Build-Step 'modules/freesurround/Build.ps1' @('-TargetDirectory','build/freesurround-mature480','-Window','480','-HalfHop')
@@ -43,6 +40,9 @@ if($PcmCapture -or $BrowserIdentity -or $WasapiUpmix){
  Assert-DllExports 'build/pcm-capture-v1/NSP.PcmCapture.dll' @('nsp_pcm_capture_open_multi','nsp_pcm_capture_source_mask','nsp_pcm_capture_activate_source')
  Assert-DllExports 'build/pcm-capture-v1/NSP.PcmIngress.dll' @('nsp_pcm_ingress_open_leased')
 }
+$profiles=Join-Path $root 'build/nsp-product/profiles'
+New-Item -ItemType Directory -Force $profiles | Out-Null
+Copy-Item -Path "$root/modules/native-capture/profiles/*" -Destination $profiles -Recurse -Force
 Build-Step 'modules/zig-scheduler/Build.ps1' @('-TargetDirectory','build/nsp-product','-SkipTests')
 $ini=Join-Path $root 'build/fsa-integration/final-spatial-audio.ini'
 if(-not(Test-Path -LiteralPath $ini)){

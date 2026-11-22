@@ -1,5 +1,11 @@
 # NSp sound navigation / sound spectrum front end
 
+The web host takes its language from FSA at startup and defaults to English.
+Both languages share the same pages, configuration model and responsive layout.
+`i18n.js` applies the display translations in `i18n-en.js`, including dynamic
+messages; configuration values and user device names keep their original text.
+Run `node test-i18n.js` for the language contract.
+
 2026-10-24 playback location: `%LOCALAPPDATA%/NativeSpatialPipe/playback.json` is now the default. The old installation-adjacent default is copied without replacing existing user data; explicit custom paths remain supported. See [migration](../../docs/archive/core/playback-user-location-20261024.md).
 
 ## Current entry and configuration

@@ -31,7 +31,7 @@ Candidate check command (will not start endpoints, hooks or ASIO):
 
 This command checks field, range, array length, and combination constraints and prints default values and valid channel order; there is no guarantee that the DLL exists, that the export is complete, or that the driver supports a certain sample rate/buffer size. The runtime continues to check for these conditions. The file uses UTF-8 and supports UTF-8 BOM; UTF-16 is not supported. Unknown field error.
 
-Example: [Neutral ROAR/OLR configuration](../../../tools/zig-scheduler/playback.example.json). First replace the DLL path and driver CLSID. The editor can associate [JSON Schema](../../../tools/zig-scheduler/playback.schema.json); do not insert `$schema` fields into the playback file, and unknown fields are strictly rejected at runtime. Finally, it is subject to runtime verification.
+Example: [Neutral ROAR/OLR configuration](../../../modules/zig-scheduler/playback.example.json). First replace the DLL path and driver CLSID. The editor can associate [JSON Schema](../../../modules/zig-scheduler/playback.schema.json); do not insert `$schema` fields into the playback file, and unknown fields are strictly rejected at runtime. Finally, it is subject to runtime verification.
 
 ## Correspondence between functions and fields
 

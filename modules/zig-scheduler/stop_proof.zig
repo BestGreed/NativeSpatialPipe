@@ -14,8 +14,14 @@ fn baseline(root: []const u8, home: []const u8) !?Baseline {
     var actual = try hook.call("baseline");
     defer actual.deinit();
     if (!u.yes(u.field(actual.value, "baselineVerified"))) return null;
-    if ((try u.inspectProcessIdentity(pid)) != created) return null;
+    if (try u.audioPid() != pid or (try u.inspectProcessIdentity(pid)) != created) return null;
     return .{ .pid = pid, .created = created };
+}
+pub fn printBaseline(root: []const u8, home: []const u8) !void {
+    const current = (try baseline(root, home)) orelse return error.BaselineNotVerified;
+    const result = try u.json(.{ .pid = current.pid, .created = current.created, .baselineVerified = true });
+    defer u.a.free(result);
+    try std.io.getStdOut().writer().print("{s}\n", .{result});
 }
 pub fn unmarked(root: []const u8, home: []const u8, session: u.Value, output: []const u8) !bool {
     return check(root, home, session, output, baseline);

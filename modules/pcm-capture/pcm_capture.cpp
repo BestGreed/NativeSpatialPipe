@@ -2,11 +2,11 @@
 #define NOMINMAX
 #include "pcm_ring.h"
 #include "queue_probe.h"
+#include "first_party_player_identity.h"
 #include <mmdeviceapi.h>
 #include <audiopolicy.h>
 #include <mmreg.h>
 #include <tlhelp32.h>
-#include <bcrypt.h>
 #include <avrt.h>
 #include <atomic>
 #include <algorithm>
@@ -56,6 +56,7 @@ struct PcmSourceTransport {
 };
 
 struct PcmCapture : QueueProbe {
+    static constexpr uint32_t copyBufferBytes = 65536;
     HANDLE stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     std::thread discover, reader;
     std::mutex lock;
@@ -80,7 +81,7 @@ struct PcmCapture : QueueProbe {
     }
 
     static PcmSourceKey key(const QueueInfo& q, uint64_t started) {
-        return {q.base, q.mapping, q.control, started, q.pid, q.start, q.capacity, q.align, q.channels, q.mask};
+        return {q.base, q.mapping, q.control, started, q.pid, q.start, q.capacity, q.align, q.channels, q.mask, q.streamId};
     }
 
     bool prepare(uint32_t slot) {
@@ -111,7 +112,9 @@ struct PcmCapture : QueueProbe {
                 const bool replaced = binding.active && std::any_of(keys.begin(), keys.end(), [&](const auto& current) {
                     return current.base == binding.key.base && current != binding.key;
                 });
-                if (replaced) pool.retire(i, binding.lease);
+                const bool appxLost = binding.active && binding.key.streamId != PcmStreamId{} &&
+                    std::find(keys.begin(), keys.end(), binding.key) == keys.end();
+                if (replaced || appxLost) pool.retire(i, binding.lease);
                 binding.lastProgress = (std::max)(binding.lastProgress, transports[i].lastProgress.load());
                 if (binding.active && std::find(keys.begin(), keys.end(), binding.key) != keys.end())
                     binding.lastProgress = now;
@@ -146,8 +149,20 @@ struct PcmCapture : QueueProbe {
   HRESULT co=CoInitializeEx(nullptr,COINIT_MULTITHREADED);IMMDeviceEnumerator*enumerator=nullptr;
   CoCreateInstance(__uuidof(MMDeviceEnumerator),nullptr,CLSCTX_ALL,__uuidof(IMMDeviceEnumerator),(void**)&enumerator);
   std::vector<BYTE> bytes(1024*1024);
+  FirstPartyPlayerIdentity playerIdentity;
+  std::map<PcmStreamId, uint64_t> lastAppxPositions;
+  bool cacheAttempted=false;
+  auto publishProfile=[&]{
+   if(pcmFingerprint&&!cacheAttempted&&packets.load(std::memory_order_acquire)!=0){
+    remember_pcm_profile();cacheAttempted=true;
+   }
+  };
   while(WaitForSingleObject(stop,0)!=WAIT_OBJECT_0){
+   publishProfile();
    auto allowed=enumerator?eligible(enumerator):std::set<DWORD>{};eligibleCount=allowed.size();std::vector<QueueInfo> found;uint64_t scanned=0;
+   const auto players = sourceTabId ? FirstPartyPlayerIdentity::ActivePlayers{} :
+       FirstPartyPlayerIdentity::active_players(*this, allowed);
+   const bool appx = std::any_of(players.begin(), players.end(), [](DWORD pid) { return pid != 0; });
    if(!allowed.empty())for(uintptr_t at=0x10000;at<0x00007fffffff0000ULL&&scanned<256*1024*1024ULL;){
     MEMORY_BASIC_INFORMATION region{};if(!VirtualQueryEx(process,(void*)at,&region,sizeof(region)))break;
     uintptr_t next=(uintptr_t)region.BaseAddress+region.RegionSize;if(next<=at)break;at=next;
@@ -156,7 +171,7 @@ struct PcmCapture : QueueProbe {
      if(WaitForSingleObject(stop,0)==WAIT_OBJECT_0)break;
      size_t n=(std::min)(bytes.size(),region.RegionSize-offset);uintptr_t address=(uintptr_t)region.BaseAddress+offset;
      if(!read(address,bytes.data(),n))continue;scanned+=n;scanBytes+=n;
-     for(size_t p=0;p+8<=n;p+=8){uintptr_t v;memcpy(&v,bytes.data()+p,8);if(v==image+PCM_INPUT_VTABLE_RVA&&address+p>=0x1e0){vtableHits++;QueueInfo q;if(inspect(address+p-0x1e0,q,allowed)&&std::none_of(found.begin(),found.end(),[&](auto& old){return old.base==q.base;}))found.push_back(q);}}
+     for(size_t p=0;p+8<=n;p+=8){uintptr_t v;memcpy(&v,bytes.data()+p,8);if(v==inputVtable&&address+p>=0x1e0){vtableHits++;QueueInfo q;if(inspect(address+p-0x1e0,q,allowed,appx)&&std::none_of(found.begin(),found.end(),[&](auto& old){return old.base==q.base;}))found.push_back(q);}}
     }
    }
    // Queue objects can outlive playback. Distinguish live producers by cursor
@@ -164,15 +179,34 @@ struct PcmCapture : QueueProbe {
    std::vector<uint64_t> positions(found.size());std::vector<bool> valid(found.size());
    for(size_t i=0;i<found.size();i++)valid[i]=value(found[i].control+0x10,positions[i]);
    if(!found.empty()&&WaitForSingleObject(stop,30)==WAIT_OBJECT_0)break;
-   std::vector<QueueInfo> advancing;
-   for(size_t i=0;i<found.size();i++){uint64_t now=0;QueueInfo verified;
-    if(valid[i]&&value(found[i].control+0x10,now)&&now>positions[i]&&inspect(found[i].base,verified,allowed)&&verified.mapping==found[i].mapping&&verified.control==found[i].control){auto tag=browserIdentity.lookup(host,verified.pid,verified.base,verified.mapping,verified.control);if(!sourceTabId||tag.tabId==sourceTabId)advancing.push_back(verified);}
+   std::vector<QueueInfo> advancing, anonymous;
+   std::map<PcmStreamId, uint64_t> appxPositions;
+   for(size_t i=0;i<found.size();i++){
+    uint64_t now=0;QueueInfo verified;
+    if(!valid[i]||!value(found[i].control+0x10,now)||
+       !inspect(found[i].base,verified,allowed,appx)||verified.mapping!=found[i].mapping||
+       verified.control!=found[i].control||verified.streamId!=found[i].streamId)continue;
+    if(!verified.pid){
+     // These players commit in bursts that can be wider than the ordinary 30 ms probe.
+     const auto previous=lastAppxPositions.find(verified.streamId);
+     const auto before=previous==lastAppxPositions.end()?positions[i]:previous->second;
+     appxPositions[verified.streamId]=now;
+     if(now>before)anonymous.push_back(verified);
+    }else if(now>positions[i]){
+     auto tag=browserIdentity.lookup(host,verified.pid,verified.base,verified.mapping,verified.control);
+     if(!sourceTabId||tag.tabId==sourceTabId)advancing.push_back(verified);
+    }
    }
+   lastAppxPositions.swap(appxPositions);
+   playerIdentity.match(anonymous,players,bytes,stop);
+   for(const auto& queue:anonymous)if(queue.pid)advancing.push_back(queue);
    queuesFound=static_cast<uint32_t>(found.size());
    candidates=static_cast<uint32_t>(advancing.size());
    select_sources(advancing);
    discoveries++;WaitForSingleObject(stop,allowed.empty()?50:500);
-  }if(enumerator)enumerator->Release();if(SUCCEEDED(co))CoUninitialize();
+  }
+  publishProfile();
+  if(enumerator)enumerator->Release();if(SUCCEEDED(co))CoUninitialize();
  }
 
     void retire(uint32_t slot, uint64_t lease) {
@@ -202,6 +236,22 @@ struct PcmCapture : QueueProbe {
         return true;
     }
 
+    bool same_queue(const QueueInfo& q) {
+        if (q.streamId == PcmStreamId{}) {
+            uintptr_t vtable = 0;
+            return value(q.base + 0x1e0, vtable) && vtable == inputVtable;
+        }
+        constexpr size_t first = 0x40;
+        std::array<BYTE, 0x1e0 + sizeof(uintptr_t) - first> object{};
+        if (!read(q.base + first, object.data(), object.size())) return false;
+        const auto matches = [&](size_t offset, const auto& expected) {
+            return memcmp(object.data() + offset - first, &expected, sizeof(expected)) == 0;
+        };
+        return matches(0x1e0, inputVtable) && matches(0x1cc, DWORD{0}) &&
+            matches(0x40, uintptr_t{0}) && matches(0x50, q.mapping) && matches(0x58, q.control) &&
+            matches(0x60, q.stat) && matches(0xe0, q.streamId);
+    }
+
     void capture_one(uint32_t lane, const PcmSourceBinding& binding, const QueueInfo& q,
                      ReaderState& active, float* data) {
         auto& transport = transports[lane];
@@ -211,8 +261,7 @@ struct PcmCapture : QueueProbe {
         }
         const auto tag = browserIdentity.lookup(host, q.pid, q.base, q.mapping, q.control);
         if (sourceTabId && tag.tabId != sourceTabId) { active.ready = false; return; }
-        uintptr_t vtable = 0;
-        if (!value(q.base + 0x1e0, vtable) || vtable != image + PCM_INPUT_VTABLE_RVA) {
+        if (!same_queue(q)) {
             ++errors; active.ready = false; retire(lane, binding.lease); return;
         }
         uint64_t cursors[2]{};
@@ -220,7 +269,8 @@ struct PcmCapture : QueueProbe {
         if (!read(q.control + 0x10, cursors, sizeof(cursors))) {
             ++errors; active.ready = false; retire(lane, binding.lease); return;
         }
-        const uint64_t write = cursors[0];
+        const uint64_t producerWrite = cursors[0];
+        uint64_t write = producerWrite;
         const bool changedTag = active.tag.sourceKeyHi != tag.sourceKeyHi || active.tag.sourceKeyLo != tag.sourceKeyLo ||
             active.tag.browserPid != tag.browserPid || active.tag.tabId != tag.tabId || active.tag.generation != tag.generation;
         if (!active.ready || active.lease != binding.lease || write < active.local || changedTag) {
@@ -231,12 +281,17 @@ struct PcmCapture : QueueProbe {
             active.ready = true;
         }
         if (write == active.local) return;
-        const uint64_t count = write - active.local;
+        const uint64_t available = write - active.local;
         const uint64_t observed = pcm_qpc_ns();
         transport.lastProgress.store(observed);
-        if (count > q.capacity || count % q.align || count / q.align > PCM_MAX_FRAMES) {
+        const uint64_t maxBlock = (std::min)(copyBufferBytes / q.align, PCM_MAX_FRAMES) * q.align;
+        if (available > q.capacity || available % q.align ||
+            (q.streamId == PcmStreamId{} && available > maxBlock)) {
             ++dropped; active.local = write; next_generation(lane, active, binding.lease); return;
         }
+        // Drain each verified APPX burst in bounded blocks over successive reader polls.
+        const uint64_t count = (std::min)(available, maxBlock);
+        write = active.local + count;
         const uint32_t offset = static_cast<uint32_t>(active.local % q.capacity);
         const uint32_t first = (std::min)(static_cast<uint32_t>(count), q.capacity - offset);
         if (!read(q.mapping + q.start + offset, data, first) ||
@@ -244,9 +299,8 @@ struct PcmCapture : QueueProbe {
             ++errors; active.ready = false; retire(lane, binding.lease); return;
         }
         uint64_t after[2]{};
-        uintptr_t afterVtable = 0;
-        if (!read(q.control + 0x10, after, sizeof(after)) || !value(q.base + 0x1e0, afterVtable) ||
-            afterVtable != vtable || after[0] < write || after[0] - active.local > q.capacity) {
+        if (!read(q.control + 0x10, after, sizeof(after)) || !same_queue(q) ||
+            after[0] < producerWrite || after[0] - active.local > q.capacity) {
             ++dropped; active.ready = false; return;
         }
         if (transport.activeLease.load(std::memory_order_acquire) != binding.lease) {
@@ -285,7 +339,7 @@ struct PcmCapture : QueueProbe {
             return;
         }
         std::array<ReaderState, PCM_SOURCE_LIMIT> cursors{};
-        std::vector<float> data(65536 / sizeof(float));
+        std::vector<float> data(copyBufferBytes / sizeof(float));
         while (WaitForSingleObject(stop, 0) != WAIT_OBJECT_0) {
             std::array<PcmSourceBinding, PCM_SOURCE_LIMIT> bindings;
             std::array<QueueInfo, PCM_SOURCE_LIMIT> snapshot;
@@ -356,7 +410,7 @@ struct PcmCapture : QueueProbe {
     }
 };
 static void*open_capture(DWORD pid,const wchar_t*endpoint,DWORD source,const wchar_t*name,const wchar_t*event,const wchar_t*identityFile,uint32_t leaseMs,uint32_t tabId,bool multi=false){
- if(!endpoint||!name||!event||!sha_matches())return nullptr;auto*p=new PcmCapture;p->host=pid;p->source=source;p->endpoint=endpoint;
+ if(!endpoint||!name||!event)return nullptr;auto*p=new PcmCapture;p->host=pid;p->source=source;p->endpoint=endpoint;
  auto open_and_find_image=[&]() -> DWORD {
   if(p->process){CloseHandle(p->process);p->process=nullptr;}
   p->process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION|PROCESS_VM_READ,FALSE,pid);
@@ -373,7 +427,7 @@ static void*open_capture(DWORD pid,const wchar_t*endpoint,DWORD source,const wch
  };
  const DWORD status=open_and_find_image();
  if(status!=ERROR_SUCCESS&&(status!=ERROR_ACCESS_DENIED||!with_audio_read_privilege(open_and_find_image))){delete p;return nullptr;}
- BYTE prologue[32];if(!p->image||!p->read(p->image+PCM_INPUT_FUNCTION_RVA,prologue,32)||memcmp(prologue,PCM_INPUT_PROLOGUE,32)){delete p;return nullptr;}
+ if(!p->image||!p->select_pcm_profile()){delete p;return nullptr;}
 
  p->multi=multi;p->baseName=name;p->baseEvent=event;
  for(uint32_t lane=0;lane<(multi?PCM_SOURCE_INITIAL:1);++lane)if(!p->prepare(lane)){delete p;return nullptr;}

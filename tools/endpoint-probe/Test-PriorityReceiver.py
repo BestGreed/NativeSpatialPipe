@@ -17,7 +17,7 @@ def load(name,file):
     spec=importlib.util.spec_from_file_location(name,HERE/file);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);return m
 native=load('priority_native','Native-Roar.py')
 receiver=load('priority_receiver','Native-Receiver.py')
-DLL=ROOT/'build/telemetry-objects/release/nsp_roar_bridge.dll'
+DLL=ROOT/'build/telemetry-objects/release/nsp_croksor.dll'
 
 
 class Tests(unittest.TestCase):
@@ -75,7 +75,7 @@ class Tests(unittest.TestCase):
         self.reports()
 
     def test_promoted_pipeline_publishes_real_telemetry(self):
-        sys.path.insert(0,str(ROOT/'tools/telemetry'))
+        sys.path.insert(0,str(ROOT/'modules/telemetry'))
         from client import TelemetryService
         self.send(0x111,0,types=(8192,))
         self.send(0x111,1,types=(1,))

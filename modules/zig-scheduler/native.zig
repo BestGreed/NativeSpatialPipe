@@ -1,8 +1,85 @@
 const std = @import("std");
 const u = @import("common.zig");
+const profile_refresh = @import("profile_refresh.zig");
 const a = u.a;
 const c = u.c;
 pub const default_render_bridge = "build/nsp-product/runtime/release/nsp_croksor.dll";
+/// Capture layout resolved from a build profile. The runtime never derives these
+/// values itself: it consumes a profile and refuses when none is usable.
+const Profile = struct {
+    symbolKey: []const u8 = "",
+    capture: Capture = .{},
+    const Capture = struct {
+        entryRva: u32 = 0,
+        prologue: []const u8 = "",
+        vtableRva: []const u64 = &.{},
+        blockSearchStart: i32 = -1536,
+        blockSearchEnd: i32 = -1280,
+        blockSearchStep: u32 = 8,
+        maxBufferIndex: u32 = 1,
+        flagOffset: u32 = 0,
+        countOffset: u32 = 0,
+        indexOffset: u32 = 0,
+        descPtrOffset: u32 = 0,
+        descPropSizeOffset: u32 = 12,
+        descStrideOffset: u32 = 20,
+        propsBase: u32 = 0,
+        pcmBase: u32 = 0,
+        propStride: u32 = 24,
+        frameCountOffset: u32 = 4,
+    };
+};
+fn applyProfile(cfg: *c.HookConfig, path: []const u8) !void {
+    const bytes = try u.read(path);
+    defer a.free(bytes);
+    var parsed = try std.json.parseFromSlice(Profile, a, bytes, .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    const cap = parsed.value.capture;
+    if (cap.entryRva == 0 or cap.prologue.len == 0 or cap.prologue.len % 2 != 0 or cap.prologue.len > 64) return error.BadProfile;
+    const proLen = cap.prologue.len / 2;
+    _ = try std.fmt.hexToBytes(cfg.layout.prologue[0..proLen], cap.prologue);
+    if (parsed.value.symbolKey.len == 0 or parsed.value.symbolKey.len >= cfg.layout.symbolKey.len) return error.BadProfile;
+    @memset(cfg.layout.symbolKey[0..], 0);
+    @memcpy(cfg.layout.symbolKey[0..parsed.value.symbolKey.len], parsed.value.symbolKey);
+    cfg.layout.version = c.NSP_LAYOUT_VERSION;
+    cfg.layout.entryRva = cap.entryRva;
+    cfg.layout.prologueSize = @intCast(proLen);
+    cfg.layout.vtableCount = @intCast(@min(cap.vtableRva.len, c.NSP_LAYOUT_VTABLES));
+    for (cap.vtableRva[0..cfg.layout.vtableCount], 0..) |value, i| cfg.layout.vtableRva[i] = value;
+    cfg.layout.blockSearchStart = cap.blockSearchStart;
+    cfg.layout.blockSearchEnd = cap.blockSearchEnd;
+    cfg.layout.blockSearchStep = cap.blockSearchStep;
+    cfg.layout.maxBufferIndex = cap.maxBufferIndex;
+    cfg.layout.flagOffset = cap.flagOffset;
+    cfg.layout.countOffset = cap.countOffset;
+    cfg.layout.indexOffset = cap.indexOffset;
+    cfg.layout.descPtrOffset = cap.descPtrOffset;
+    cfg.layout.descPropSizeOffset = cap.descPropSizeOffset;
+    cfg.layout.descStrideOffset = cap.descStrideOffset;
+    cfg.layout.propsBase = cap.propsBase;
+    cfg.layout.pcmBase = cap.pcmBase;
+    cfg.layout.propStride = cap.propStride;
+    cfg.layout.frameCountOffset = cap.frameCountOffset;
+}
+test "the native host rejects a cached profile with an empty prologue" {
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(.{ .sub_path = "profile.json", .data =
+        \\{"symbolKey":"882DC2C4101A0C7A6008528B0BB73AED1","capture":{"entryRva":203056,"vtableRva":[652536],"prologue":""}}
+    });
+    const path = try tmp.dir.realpathAlloc(std.testing.allocator, "profile.json");
+    defer std.testing.allocator.free(path);
+    var config = std.mem.zeroes(c.HookConfig);
+    try std.testing.expectError(error.BadProfile, applyProfile(&config, path));
+    try std.testing.expectEqual(@as(u32, 0), config.layout.version);
+}
+/// Refresh the cached single-profile from the shipped table before the hook
+/// reads it. The outcome, including why nothing was refreshed, is recorded in
+/// `capture-profile-status.json`; the hook's own assertions still decide whether
+/// the cached profile may be used.
+pub fn refreshProfile(root: []const u8, python: []const u8) void {
+    profile_refresh.refresh(root, python);
+}
 pub const Hook = struct {
     root: []const u8,
     pid: u32,
@@ -20,6 +97,36 @@ pub const Hook = struct {
         self.config.owner_pid = owner;
         self.config.host_pid = c.GetCurrentProcessId();
         self.config.target_created = created;
+        if (fixture) {
+            // The owned Capture-Fixture.c has its own synthetic descriptor and
+            // vtable marker. The controller checks the fixture host and DLL.
+            const layout = &self.config.layout;
+            layout.version = c.NSP_LAYOUT_VERSION;
+            layout.vtableCount = 1;
+            layout.vtableRva[0] = 0x9f4f8;
+            layout.blockSearchStart = -0x590;
+            layout.blockSearchEnd = -0x588;
+            layout.blockSearchStep = 8;
+            layout.maxBufferIndex = 1;
+            layout.flagOffset = 0x5d8;
+            layout.countOffset = 0x5d4;
+            layout.indexOffset = 0x5d0;
+            layout.descPtrOffset = 0x510;
+            layout.descPropSizeOffset = 12;
+            layout.descStrideOffset = 20;
+            layout.propsBase = 0x28;
+            layout.pcmBase = 0x38;
+            layout.propStride = 24;
+            layout.frameCountOffset = 4;
+            return self;
+        }
+        // A missing or malformed profile leaves the zeroed layout in place, which
+        // the hook turns into a hard refusal instead of a guessed capture.
+        const profile: ?[]u8 = profile_refresh.profilePath() catch null;
+        if (profile) |path| {
+            defer a.free(path);
+            applyProfile(&self.config, path) catch {};
+        }
         return self;
     }
     pub fn text(dest: []u16, value: []const u8) !void {

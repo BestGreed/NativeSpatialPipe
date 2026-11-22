@@ -2,6 +2,8 @@ const std = @import("std");
 const u = @import("common.zig");
 const backend = @import("backend.zig");
 const n = @import("native.zig");
+const endpoint_retirement = @import("endpoint_retirement.zig");
+const endpoint_presence = @import("endpoint_presence.zig");
 const a = u.a;
 const c = u.c;
 // Anonymous .{} is an empty tuple and encodes as [], not the HTTP API's {}.
@@ -90,13 +92,29 @@ pub fn observe(root: []const u8, home: []const u8) !u8 {
     if ((u.number(u.field(v, "state")) catch 0) == 1 and u.yes(u.field(v, "hookEnabled"))) return if (std.mem.eql(u8, state, "running")) 0 else if (std.mem.eql(u8, state, "starting") or std.mem.eql(u8, state, "stopping")) 11 else 20;
     const off = u.yes(u.field(v, "targetExited")) or u.yes(u.field(v, "baselineVerified")) or ((u.number(u.field(v, "state")) catch 0) == 2 and u.yes(u.field(v, "hookBytesRestored")));
     if (off) {
-        if (std.mem.eql(u8, state, "faulted") or std.mem.eql(u8, state, "recovery-required")) {
-            reconfirmEndpoint(root, home, session.value, output) catch {};
+        const recovering = std.mem.eql(u8, state, "faulted") or std.mem.eql(u8, state, "recovery-required");
+        if (recovering) {
+            // The serving controller owns the recovery transaction and updates
+            // its in-memory state together with session.json.
+            const recovered = backend.request(home, "recover", .{
+                .ownerPid = try u.number(u.field(session.value, "ownerPid")),
+                .sessionId = try u.string(u.field(session.value, "id")),
+            }) catch null;
+            if (recovered) |bytes| {
+                defer a.free(bytes);
+                var readback = try u.parse(bytes);
+                defer readback.deinit();
+                if (std.mem.eql(u8, u.string(u.field(readback.value, "sessionState")) catch "", "stopped")) return 10;
+            }
+            const endpoint = u.string(u.field(session.value, "endpoint")) catch "";
+            const absent = endpoint_presence.absent(endpoint) catch false;
+            if (!absent) reconfirmEndpoint(root, home, session.value, output) catch {};
+            _ = endpoint_retirement.observe(output, session.value, c.GetTickCount64(), absent, endpoint_presence.absent) catch false;
         }
         // Session validation failure is not the same as a live Hook. Release
         // UI/mode interlocks only with current Hook-off AND completed teardown.
-        if (try teardownComplete(session.value, output)) {
-            if (std.mem.eql(u8, state, "faulted") or std.mem.eql(u8, state, "recovery-required")) {
+        if (try teardownComplete(session.value, output) or (recovering and endpoint_retirement.proven(output, session.value))) {
+            if (recovering) {
                 const recovered = try backend.request(home, "recover", empty_request);
                 a.free(recovered);
             }
@@ -146,7 +164,7 @@ fn reconfirmEndpoint(root: []const u8, home: []const u8, session: u.Value, outpu
     defer a.free(session_path);
     const executable = try std.fs.selfExePathAlloc(a);
     defer a.free(executable);
-    const result = try u.run(&.{ "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", helper, "-SessionFile", session_path, "-Scheduler", executable });
+    const result = try u.run(&.{ "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", helper, "-SessionFile", session_path, "-Scheduler", executable, "-Root", root });
     a.free(result);
 }
 fn teardownComplete(session: u.Value, output: []const u8) !bool {
@@ -159,103 +177,24 @@ fn teardownComplete(session: u.Value, output: []const u8) !bool {
     defer report.deinit();
     return u.yes(u.field(report.value, "restored")) and u.yes(u.field(report.value, "hookCompleted"));
 }
-// A crashed manager/host cannot produce endpoint.json after its target exits.
-// This is retirement of an orphan, not a claim that its snapshot was restored.
-fn orphanRetirable(home: []const u8, session: u.Value, output: []const u8) !bool {
-    const owner = std.math.cast(u32, u.number(u.field(session, "orchestratorPid")) catch return false) orelse return false;
-    if (owner == 0 or try u.inspectProcessIdentity(owner) != null) return false;
-    const runtime_path = try u.join(&.{ home, "runtime.json" });
-    defer a.free(runtime_path);
-    if (u.exists(runtime_path)) {
-        var runtime = try u.load(runtime_path);
-        defer runtime.deinit();
-        const pid = std.math.cast(u32, try u.number(u.field(runtime.value, "pid"))) orelse return false;
-        if (pid == 0 or try u.inspectProcessIdentity(pid) != null) return false;
-    }
-    const observed = try u.join(&.{ output, "observed" });
-    defer a.free(observed);
-    const marker_path = try u.join(&.{ observed, "hook-session.json" });
-    defer a.free(marker_path);
-    var marker = try u.load(marker_path);
-    defer marker.deinit();
-    if (try u.number(u.field(marker.value, "hookGeneration")) != 2) return false;
-    const target = std.math.cast(u32, try u.number(u.field(marker.value, "pid"))) orelse return false;
-    const created = try u.number(u.field(marker.value, "created"));
-    if (target == 0 or (try u.inspectProcessIdentity(target)) == created) return false;
-    const telemetry_path = try u.join(&.{ observed, "telemetry-service.json" });
-    defer a.free(telemetry_path);
-    if (u.exists(telemetry_path)) {
-        var telemetry = try u.load(telemetry_path);
-        defer telemetry.deinit();
-        const pid = std.math.cast(u32, try u.number(u.field(telemetry.value, "pid"))) orelse return false;
-        if (pid == 0 or try u.inspectProcessIdentity(pid) != null) return false;
-    }
-    var dir = try std.fs.cwd().openDir(observed, .{ .iterate = true });
-    defer dir.close();
-    var entries = dir.iterate();
-    var host_proof = false;
-    while (try entries.next()) |entry| {
-        if (entry.kind != .file or !std.mem.startsWith(u8, entry.name, "hook-config-") or !std.mem.endsWith(u8, entry.name, ".bin")) continue;
-        const bytes = try dir.readFileAlloc(a, entry.name, @sizeOf(c.HookConfig));
-        defer a.free(bytes);
-        if (bytes.len != @sizeOf(c.HookConfig)) return false;
-        var config: c.HookConfig = undefined;
-        @memcpy(std.mem.asBytes(&config), bytes);
-        if (config.magic != c.NSP_HOOK_MAGIC or config.size != @sizeOf(c.HookConfig) or config.fixture != 0 or config.target_created != created or config.host_pid == 0) return false;
-        if (try u.inspectProcessIdentity(config.host_pid) != null) return false;
-        host_proof = true;
-    }
-    return host_proof;
-}
+const orphan = @import("orphan_recovery.zig");
+const orphanRetirable = orphan.retirable;
 fn retireOrphan(root: []const u8, home: []const u8) !bool {
     return retireOrphanWithAudio(root, home, u.audioPid);
 }
 fn retireOrphanWithAudio(root: []const u8, home: []const u8, audio_pid: *const fn () anyerror!u32) !bool {
+    const lock_path = try u.join(&.{ home, "owner.lock" });
+    defer a.free(lock_path);
+    const wide = try u.wide(lock_path);
+    defer a.free(wide);
+    const lock = c.CreateFileW(wide.ptr, c.GENERIC_READ | c.GENERIC_WRITE, 0, null, c.OPEN_ALWAYS, c.FILE_ATTRIBUTE_NORMAL, null);
+    if (lock == c.INVALID_HANDLE_VALUE) return false;
+    defer _ = c.CloseHandle(lock);
     const path = try u.join(&.{ home, "session.json" });
     defer a.free(path);
     var session = try u.load(path);
     defer session.deinit();
-    const output = try u.string(u.field(session.value, "outputDirectory"));
-    if (!try orphanRetirable(home, session.value, output)) return false;
-    // Do not trust the old target's death alone: observe the current audiodg.
-    const pid = audio_pid() catch |err| switch (err) {
-        error.NoAudioHost => @as(u32, 0),
-        else => return err,
-    };
-    var created: u64 = 0;
-    if (pid != 0) {
-        created = try u.checkTarget(pid);
-        _ = try u.checkModules(pid);
-        var hook = try n.Hook.init(root, home, pid, 0, created, false);
-        defer {
-            u.remove(hook.path);
-            a.free(hook.path);
-        }
-        var baseline = try hook.call("baseline");
-        defer baseline.deinit();
-        if (!u.yes(u.field(baseline.value, "baselineVerified"))) return false;
-    }
-    // Recheck before publishing; never manufacture a clean endpoint report.
-    if (!try orphanRetirable(home, session.value, output)) return false;
-    if (pid == 0) {
-        // No host is a valid idle Windows state. Inventory errors and multiple
-        // hosts must not be mistaken for absence; recheck to catch a new host.
-        const current = audio_pid() catch |err| switch (err) {
-            error.NoAudioHost => @as(u32, 0),
-            else => return err,
-        };
-        if (current != 0) return false;
-    }
-    const proof_path = try u.join(&.{ output, "orphan-recovery.json" });
-    defer a.free(proof_path);
-    if (u.exists(proof_path) and std.mem.eql(u8, u.string(u.field(session.value, "state")) catch "", "stopped")) {
-        var proof = try u.load(proof_path);
-        defer proof.deinit();
-        if ((u.number(u.field(proof.value, "currentTargetCreated")) catch 0) == created and
-            (u.number(u.field(proof.value, "currentTargetPid")) catch 0) == pid and
-            (if (pid == 0) u.yes(u.field(proof.value, "audioHostAbsent")) else u.yes(u.field(proof.value, "baselineVerified")))) return true;
-    }
-    try u.writeJson(proof_path, .{ .checkedAt = std.time.timestamp(), .currentTargetPid = pid, .currentTargetCreated = created, .baselineVerified = pid != 0, .audioHostAbsent = pid == 0, .oldProcessesExited = true, .endpointSnapshotRestored = false, .reason = "Orphaned session retired; current endpoint preserved" });
+    if (!try orphan.proveWithAudio(root, home, session.value, audio_pid)) return false;
     try session.value.object.put("state", .{ .string = "stopped" });
     try session.value.object.put("error", .null);
     try u.writeJson(path, session.value);
@@ -265,21 +204,15 @@ fn action(args: []const []const u8, root: []const u8, home: []const u8) !u8 {
     const command = args[1];
     if (std.mem.eql(u8, command, "preflight")) {
         const pid = try u.audioPid();
-        const created = try u.checkTarget(pid);
+        _ = try u.checkTarget(pid);
         _ = try u.checkModules(pid);
         for ([_][]const u8{ "build/native-hook-managed-v2/nsp_hook_control.exe", "build/native-hook-managed-v2/nsp_managed_hook_v2.dll", "build/native-send/nsp_native_send.dll", "build/capture-scheduler-mmcss/nsp_native_capture.dll", "build/nsp-product/receiver/release/nsp_native_receiver.dll", n.default_render_bridge }) |relative| {
             const path = try u.join(&.{ root, relative });
             defer a.free(path);
             if (!u.exists(path)) return error.MissingRuntimeDependency;
         }
-        var hook = try n.Hook.init(root, home, pid, 0, created, false);
-        defer {
-            u.remove(hook.path);
-            a.free(hook.path);
-        }
-        var baseline = try hook.call("baseline");
-        defer baseline.deinit();
-        if (!u.yes(u.field(baseline.value, "baselineVerified"))) return error.BaselineNotVerified;
+        // The host resolves the current profile before proving the live Hook
+        // baseline. FSA must be able to reach that step with an empty cache.
         return 12;
     }
     if (std.mem.eql(u8, command, "start")) {
@@ -348,7 +281,7 @@ fn action(args: []const []const u8, root: []const u8, home: []const u8) !u8 {
         const result = backend.request(home, "stop-session", empty_request) catch null;
         if (result) |reply| a.free(reply);
         var code = try observe(root, home);
-        if (code == 20 and result == null and (retireOrphan(root, home) catch false)) code = 10;
+        if (code == 20 and (retireOrphan(root, home) catch false)) code = 10;
         if (code == 10 and std.mem.eql(u8, command, "shutdown")) {
             // Best-effort normal manager exit. Never force-kill an unresponsive
             // manager; verified audio teardown is sufficient to release FSA.
@@ -391,7 +324,7 @@ pub fn run(args: []const []const u8, root: []const u8, home: []const u8) !u8 {
     return code;
 }
 
-test "orphan retirement requires dead manager, orchestrator, capture host, telemetry and target" {
+test "orphan retirement ignores replacement runtime and requires dead session processes" {
     var temp = std.testing.tmpDir(.{});
     defer temp.cleanup();
     const home = try temp.dir.realpathAlloc(a, ".");
@@ -423,7 +356,7 @@ test "orphan retirement requires dead manager, orchestrator, capture host, telem
     try std.testing.expect(!try orphanRetirable(home, session.value, home));
     try session.value.object.put("orchestratorPid", .{ .integer = dead });
     try u.writeJson(runtime, .{ .pid = live });
-    try std.testing.expect(!try orphanRetirable(home, session.value, home));
+    try std.testing.expect(try orphanRetirable(home, session.value, home));
     try u.writeJson(runtime, .{ .pid = dead });
     config.host_pid = live;
     try u.write(config_path, std.mem.asBytes(&config));
@@ -442,6 +375,7 @@ test "orphan retirement requires dead manager, orchestrator, capture host, telem
     try std.testing.expect(!try orphanRetirable(home, session.value, home));
     config.target_created = 1;
     try u.write(config_path, std.mem.asBytes(&config));
+    try session.value.object.put("id", .{ .string = "orphan-test" });
     try session.value.object.put("outputDirectory", .{ .string = home });
     try session.value.object.put("state", .{ .string = "running" });
     const session_path = try u.join(&.{ home, "session.json" });

@@ -10,6 +10,16 @@ REPLAY = ROOT / 'build/wwise-visualization-replay'
 
 
 class Handler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if urlsplit(self.path).path == '/ui-language.js':
+            body=b'document.documentElement.lang="en";'
+            self.send_response(200)
+            self.send_header('Content-Type','text/javascript; charset=utf-8')
+            self.send_header('Content-Length',str(len(body)))
+            self.end_headers();self.wfile.write(body)
+            return
+        super().do_GET()
+
     def translate_path(self, path):
         name = unquote(urlsplit(path).path)
         if name.startswith('/replay/'):

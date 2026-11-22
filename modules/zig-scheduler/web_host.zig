@@ -13,7 +13,7 @@ const c = @cImport({
 const a = u.a;
 // Predefined registry handles are tagged integers, not aligned HKEY objects.
 extern "advapi32" fn RegOpenKeyExW(key: ?*anyopaque, subkey: [*:0]const u16, options: u32, access: u32, result: *c.HKEY) callconv(std.os.windows.WINAPI) c_long;
-const Context = struct { root: []const u8, home: []const u8, ini: []const u8, port: u16, token: []const u8, owner: u32 };
+const Context = struct { root: []const u8, home: []const u8, ini: []const u8, port: u16, token: []const u8, owner: u32, language: []const u8 = "en", isolated_preview: bool = false };
 
 fn send(stream: std.net.Stream, code: u16, value: anytype) !void {
     const bytes = try u.json(value);
@@ -168,6 +168,7 @@ fn putConfig(ctx: Context, id: []const u8, bytes: []const u8, stream: std.net.St
     try getConfig(ctx, id, stream);
 }
 fn fsaSnapshot(ctx: Context) ?c.FSA_WebSnapshot {
+    if (ctx.isolated_preview) return null;
     const mapping = c.OpenFileMappingW(c.FILE_MAP_READ, 0, std.unicode.utf8ToUtf16LeStringLiteral("Local\\NSP-FSA-Web-v1"));
     if (mapping != null) {
         defer _ = c.CloseHandle(mapping);
@@ -278,7 +279,8 @@ fn handle(ctx: Context, stream: std.net.Stream) !void {
     }
     if (!host_ok or !origin_ok) return send(stream, 403, .{ .@"error" = "OriginRejected" });
     if (std.mem.eql(u8, method, "GET")) {
-        if (std.mem.eql(u8, path, "/api/web/bootstrap")) return send(stream, 200, .{ .token = ctx.token, .control = false, .pid = c.GetCurrentProcessId(), .ownerPid = ctx.owner, .elevated = false, .configs = .{ "playback", "backend" } });
+        if (std.mem.eql(u8,path,"/ui-language.js")) return backend.sendResponse(stream,200,"text/javascript; charset=utf-8",if(std.mem.eql(u8,ctx.language,"zh")) "document.documentElement.lang=\"zh-CN\";" else "document.documentElement.lang=\"en\";");
+        if (std.mem.eql(u8, path, "/api/web/bootstrap")) return send(stream, 200, .{ .token = ctx.token, .language = ctx.language, .control = false, .pid = c.GetCurrentProcessId(), .ownerPid = ctx.owner, .elevated = false, .configs = .{ "playback", "backend" } });
         if (std.mem.eql(u8, path, "/api/web/status")) return status(ctx, stream);
         if (std.mem.eql(u8, path, "/api/web/drivers")) return drivers(stream);
         if (std.mem.startsWith(u8, path, "/api/web/config/")) return getConfig(ctx, path[16..], stream);
@@ -311,7 +313,9 @@ pub fn serve(args: []const []const u8, root: []const u8, home: []const u8) !void
     var nonce: [32]u8 = undefined;
     std.crypto.random.bytes(&nonce);
     const token = std.fmt.bytesToHex(nonce, .lower);
-    const ctx = Context{ .root = root, .home = home, .ini = ini, .port = port, .token = &token, .owner = owner };
+    const requested_language = u.option(args, "--ui-language") orelse "en";
+    const language: []const u8 = if (std.mem.eql(u8, requested_language, "zh")) "zh" else "en";
+    const ctx = Context{ .root = root, .home = home, .ini = ini, .port = port, .token = &token, .owner = owner, .language = language, .isolated_preview = u.flag(args,"--isolated-preview") };
     try migratePlayback(ctx);
     const process = if (owner != 0) c.OpenProcess(c.PROCESS_QUERY_LIMITED_INFORMATION, 0, owner) else null;
     if (owner != 0 and process == null) return error.OwnerUnavailable;

@@ -1,4 +1,4 @@
-﻿param([Parameter(Mandatory=$true)][string]$Zig,[string]$AppName='FinalSpatialAudio.exe')
+param([Parameter(Mandatory=$true)][string]$Zig,[string]$AppName='FinalSpatialAudio.exe')
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 New-Item -ItemType Directory -Force "$root/bin" | Out-Null
@@ -21,7 +21,7 @@ try {
     & $Zig rc /fo "$root/bin/final_spatial_audio.res" "$root/final_spatial_audio.rc"
     if ($LASTEXITCODE -ne 0) { throw 'Icon resource build failed' }
 } finally { Pop-Location }
-& $Zig cc -target x86_64-windows-gnu -std=c11 -O2 -g0 -s -Wall -Wextra -Werror "$root/final_spatial_audio.c" "$root/fluent_menu.c" "$root/bin/final_spatial_audio.res" -lole32 -luuid -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode "-Wl,--subsystem,windows" -o "$root/bin/$AppName"
+& $Zig cc -target x86_64-windows-gnu -std=c11 -O2 -g0 -s -Wall -Wextra -Werror "$root/final_spatial_audio.c" "$root/fluent_menu.c" "$root/bin/final_spatial_audio.res" -lole32 -luuid -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -lcomdlg32 -municode "-Wl,--subsystem,windows" -o "$root/bin/$AppName"
 if ($LASTEXITCODE -ne 0) { throw 'Final Spatial Audio build failed' }
 & $Zig cc -target x86_64-windows-gnu -std=c11 -O2 -g0 -s -Wall -Wextra -Werror "$root/icon_test.c" -luser32 -lgdi32 -municode -o "$root/bin/icon-test.exe"
 if ($LASTEXITCODE -ne 0) { throw 'Icon test build failed' }
@@ -29,7 +29,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Icon test build failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Icon resource tests failed' }
 & $Zig cc -target x86_64-windows-gnu -std=c11 -O2 -g0 -s -Wall -Wextra -Werror "$root/popup_test.c" "$root/fluent_menu.c" -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -o "$root/bin/popup-test.exe"
 if ($LASTEXITCODE -ne 0) { throw 'Popup test build failed' }
-& $Zig cc -target x86_64-windows-gnu -std=c11 -O2 -g0 -s -Wall -Wextra -Werror "$root/profile_test.c" "$root/fluent_menu.c" -lole32 -luuid -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$root/bin/profile-test.exe"
+& $Zig cc -target x86_64-windows-gnu -std=c11 -O2 -g0 -s -Wall -Wextra -Werror "$root/profile_test.c" "$root/fluent_menu.c" -lole32 -luuid -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -lcomdlg32 -municode -o "$root/bin/profile-test.exe"
 if ($LASTEXITCODE -ne 0) { throw 'Profile test build failed' }
 & $Zig cc -target x86_64-windows-gnu -std=c11 -O2 -g0 -s -Wall -Wextra -Werror "$root/material_test.c" "$root/fluent_menu.c" -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -o "$root/bin/material-test.exe"
 if ($LASTEXITCODE -ne 0) { throw 'Material test build failed' }

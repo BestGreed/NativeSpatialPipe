@@ -3,11 +3,17 @@
 namespace {
 thread_local char errorText[512]{};
 #ifdef NSP_JOINT_DIRECTML
-constexpr const char* inferenceBackend="DirectML-Radeon";
+constexpr const char* inferenceBackend="DirectML/CPU-ORT";
+#elif defined(NSP_JOINT_ORT_CPU)
+constexpr const char* inferenceBackend="CPU-ORT";
+#elif defined(NSP_JOINT_GPU)
+constexpr const char* inferenceBackend="GPU-OpenVINO";
 #elif defined(NSP_JOINT_CPU)
 constexpr const char* inferenceBackend="CPU-OpenVINO";
-#else
+#elif defined(NSP_VOCAL_SHARED_OUTPUT)
 constexpr const char* inferenceBackend="NPU-OpenVINO-shared-fixed";
+#else
+constexpr const char* inferenceBackend="NPU-OpenVINO";
 #endif
 struct Live {
  Joint pipeline;unsigned latency;uint64_t frame=0,epochStart=0;unsigned epoch=0;
@@ -53,11 +59,25 @@ struct Live {
 }
 extern "C" __declspec(dllexport) void*nsp_joint_open(const wchar_t*model,const wchar_t*fs,unsigned latency){try{return new Live(model,fs,latency);}catch(const std::exception&e){snprintf(errorText,sizeof(errorText),"%s",e.what());return nullptr;}}
 extern "C" __declspec(dllexport) const char*nsp_joint_error(){return errorText;}
+extern "C" __declspec(dllexport) const char*nsp_joint_backend(void*p){
+#if defined(NSP_JOINT_DIRECTML) || defined(NSP_JOINT_ORT_CPU)
+ return p?static_cast<Live*>(p)->pipeline.model.actualBackend():inferenceBackend;
+#else
+ return inferenceBackend;
+#endif
+}
+extern "C" __declspec(dllexport) const char*nsp_joint_acceleration_error(void*p){
+#if defined(NSP_JOINT_DIRECTML) || defined(NSP_JOINT_ORT_CPU)
+ return p?static_cast<Live*>(p)->pipeline.model.accelerationFailure():"";
+#else
+ return "";
+#endif
+}
 #ifdef NSP_JOINT_DIRECTML
 extern "C" __declspec(dllexport) int nsp_joint_uses_directml(){return 1;}
 #endif
 extern "C" __declspec(dllexport) int nsp_joint_uses_cpu(){
-#ifdef NSP_JOINT_CPU
+#if defined(NSP_JOINT_CPU) || defined(NSP_JOINT_ORT_CPU)
  return 1;
 #else
  return 0;
@@ -92,6 +112,9 @@ extern "C" __declspec(dllexport) int nsp_joint_set_ready_event(void*p,HANDLE eve
 extern "C" __declspec(dllexport) int nsp_joint_faulted(void*p){return p&&static_cast<Live*>(p)->pipeline.errors.load(std::memory_order_relaxed)!=0;}
 extern "C" __declspec(dllexport) void nsp_joint_close(void*p){delete (Live*)p;}
 extern "C" __declspec(dllexport) void nsp_joint_stats(void*p,char*out,unsigned size){if(!p||!out||!size)return;auto&s=*(Live*)p;auto&q=s.pipeline;auto hops=q.hops.load();
+#if defined(NSP_JOINT_DIRECTML) || defined(NSP_JOINT_ORT_CPU)
+ const char* inferenceBackend=q.model.actualBackend();
+#endif
  snprintf(out,size,"{\"pipelineId\":1,\"candidateAvailable\":true,\"latencyFrames\":%u,\"latencyMs\":%.3f,\"upmixDelayMs\":0,\"srcFilterDelayFrames\":0,\"modelHops\":%llu,\"meanInferenceUs\":%.2f,\"maxInferenceUs\":%lld,\"availableBlocks\":%llu,\"fallbackBlocks\":%llu,\"warmupBlocks\":%llu,\"inputDrops\":%llu,\"errors\":%llu,\"resets\":%llu,\"postDrops\":%llu,\"queueHighWater\":%llu,\"handoffPcmCopiedBytes\":%llu,\"inferenceBackend\":\"%s\",\"residualBackend\":\"FreeSurround 480/240 joint\",\"experimentalDirect48\":true}",
  s.latency,s.latency/48.,(unsigned long long)hops,hops?double(q.totalUs.load())/hops:0.,(long long)q.maxUs.load(),(unsigned long long)s.available.load(),(unsigned long long)s.fallback.load(),(unsigned long long)s.warmup.load(),(unsigned long long)q.drops.load(),(unsigned long long)q.errors.load(),(unsigned long long)s.resets.load(),(unsigned long long)q.postDrops.load(),(unsigned long long)q.postHighWater.load(),(unsigned long long)q.handoffCopiedBytes.load(),inferenceBackend);
  std::string error;

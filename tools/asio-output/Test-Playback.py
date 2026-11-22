@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import time
 import argparse
+import shutil
 
 ROOT=Path(__file__).absolute().parents[2]
 parser=argparse.ArgumentParser()
@@ -24,9 +25,9 @@ def run(args):
     print(r.stdout+r.stderr,end='',flush=True)
     with (OUT/'test.log').open('a',encoding='utf-8') as log:log.write(r.stdout+r.stderr)
     r.check_returncode()
-bridge=args.bridge.resolve() if args.bridge else ROOT/'build/dev16-n07-roar/release/nsp_roar_bridge.dll'
+bridge=args.bridge.resolve() if args.bridge else ROOT/'build/dev16-n07-roar/release/nsp_croksor.dll'
 if not args.bridge:
-    run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File',ROOT/'tools/roar-bridge/Build.ps1',
+    run(['powershell','-NoProfile','-ExecutionPolicy','Bypass','-File',ROOT/'modules/croksor/Build.ps1',
          '-TargetDirectory','build/dev16-n07-roar'])
 if not bridge.is_file():raise FileNotFoundError(bridge)
 dll=OUT/'NSP.AsioOutput.Fake.dll'
@@ -36,13 +37,15 @@ run([LLVM/'clang++.exe','-std=c++20','-O2','-DUNICODE','-D_UNICODE','-DNOMINMAX'
      *[ROOT/'modules/audio-backends'/p for p in ['tests/asio_playback_fixture.cpp','src/asio_output_c.cpp',
          'src/asio_backend.cpp','src/asio_format.cpp','src/diagnostics.cpp','src/sinc_resampler.cpp']],
      '-lole32','-ladvapi32','-luser32','-luuid','-lavrt','-lwinmm','-o',dll])
+for runtime in ('libc++.dll','libunwind.dll'):
+    shutil.copyfile(LLVM/runtime,OUT/runtime)
 flags=['-target','x86_64-windows-gnu','-O','ReleaseSafe','-lc','-lws2_32','-ladvapi32',
-       '-I',ROOT/'modules/audio-backends/src','-I',ROOT/'tools/endpoint-probe']
-run([ZIG,'test',ROOT/'tools/zig-scheduler/output_stream_tests.zig','-target','x86_64-windows-gnu',
+       '-I',ROOT/'modules/audio-backends/src','-I',ROOT/'modules/native-capture']
+run([ZIG,'test',ROOT/'modules/zig-scheduler/output_stream_tests.zig','-target','x86_64-windows-gnu',
      '-O','ReleaseSafe','-femit-bin='+str(OUT/'stream-tests.exe')])
 probe=OUT/'playback-probe.exe'
-run([ZIG,'build-exe',ROOT/'tools/zig-scheduler/playback_probe.zig',*flags,'-femit-bin='+str(probe)])
-run([ZIG,'build-exe',ROOT/'tools/zig-scheduler/main.zig',*flags,'-femit-bin='+str(OUT/'nsp-scheduler.exe')])
+run([ZIG,'build-exe',ROOT/'modules/zig-scheduler/playback_probe.zig',*flags,'-femit-bin='+str(probe)])
+run([ZIG,'build-exe',ROOT/'modules/zig-scheduler/main.zig',*flags,'-femit-bin='+str(OUT/'nsp-scheduler.exe')])
 results=[]
 for case in ['normal','tail','rebuffer','repeat','idle-gap','idle-start','device-fault','clock-sync','rebuffer-sync','idle-start-sync','idle-gap-sync','idle-stop','drain-stall']:
     directory=OUT/'runs'/str(time.time_ns())/case

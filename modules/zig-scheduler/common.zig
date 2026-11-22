@@ -301,24 +301,10 @@ pub fn checkTarget(pid: u32) !u64 {
     const expected = try join(&.{ sys, "audiodg.exe" });
     defer a.free(expected);
     if (!std.ascii.eqlIgnoreCase(name, expected)) return error.TargetImage;
-    const image = try read(expected);
-    defer a.free(image);
-    var hash: [32]u8 = undefined;
-    std.crypto.hash.sha2.Sha256.hash(image, &hash, .{});
-    var digest: [32]u8 = undefined;
-    // Exact image profiles only; the native controller also verifies its
-    // compiled profile, and the hook checks the live prologue before patching.
-    // LNL profile: public PDB RVA 0x31930 / primary vtable 0x9f4f8,
-    // validated by notebook-joc-live-008 (no capture faults or drops).
-    var accepted = false;
-    for ([_][]const u8{
-        "3dd24fe6faf0b56f99d5b00f24687b5f3b3e76e15b219e23f0963114a0dce9a5",
-        "4b5981cf6bdfac2f7be0c3314fb1eb12f6075083f11316c6cc15c63b697aeae7",
-    }) |profile| {
-        const approved = try std.fmt.hexToBytes(&digest, profile);
-        accepted = accepted or std.mem.eql(u8, &hash, approved);
-    }
-    if (!accepted) return error.TargetBuildMismatch;
+    // Build identity is no longer asserted here. The resolved capture profile
+    // owns the anchor (entry RVA, prologue, vtables, descriptor offsets) and the
+    // hook refuses to install without a usable layout, so an unknown build fails
+    // closed at that point instead of being admitted or rejected by a file hash.
     return (try processIdentity(pid)) orelse error.TargetExited;
 }
 pub fn symbol(comptime T: type, lib: *std.DynLib, name: [:0]const u8) !T {

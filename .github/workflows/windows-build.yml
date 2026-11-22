@@ -1,23 +1,23 @@
-name: Windows source build
+name: Public Windows candidate
 
 on:
   push:
-    branches: [main]
+    branches: [main, alpha-dev]
   pull_request:
-    branches: [main]
+    branches: [main, alpha-dev]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: windows-build-${{ github.ref }}
+  group: public-windows-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  source-and-contracts:
     runs-on: windows-2022
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         shell: powershell
@@ -26,86 +26,47 @@ jobs:
       RUSTUP_HOME: ${{ github.workspace }}/work/rust/rustup
       CARGO_TERM_COLOR: never
     steps:
-      - name: Check out public source
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Check out public candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
       - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
         with:
           python-version: '3.12'
-      - name: Prepare pinned LLVM-MinGW
-        timeout-minutes: 10
-        run: ./tools/ci/Prepare-Windows.ps1 -Stage LLVM
-      - name: Prepare pinned Zig
-        timeout-minutes: 6
-        run: ./tools/ci/Prepare-Windows.ps1 -Stage Zig
-      - name: Install pinned Rust
-        timeout-minutes: 8
-        run: ./tools/ci/Prepare-Windows.ps1 -Stage Rust
-      - name: Fetch pinned source dependencies
-        timeout-minutes: 8
-        run: ./tools/ci/Prepare-Windows.ps1 -Stage Sources
-      - name: Build core, renderers, output and scheduler
+      - name: Set up Node for isolated frontend tests
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Verify public source and documentation
+        run: |
+          python tools/ci/Verify-Candidate.py
+          if ($LASTEXITCODE) { throw 'Public boundary/manifest check failed' }
+          python tools/Check-MarkdownEncoding.py .
+          if ($LASTEXITCODE) { throw 'Markdown encoding check failed' }
+      - name: Prepare pinned build tools and public dependencies
+        run: ./tools/ci/Prepare-Windows.ps1 -Stage All
+      - name: Build current product
         run: |
           New-Item -ItemType Directory -Force build/ci-logs | Out-Null
-          Start-Transcript build/ci-logs/alpha-build.txt
-          try { ./tools/Build-Alpha.ps1 -LlvmBin $env:NSP_LLVM_BIN -Zig $env:NSP_ZIG }
-          finally { Stop-Transcript }
-      - name: Build FSA and verify native contracts
-        run: |
-          Start-Transcript build/ci-logs/fsa-build.txt
-          try { ./tools/fsa-integration/Build-Integration.ps1 -FsaOnly }
-          finally { Stop-Transcript }
-      - name: Build preparation tools and run owned-process checks
-        run: |
-          Start-Transcript build/ci-logs/preparation-tests.txt
+          Start-Transcript build/ci-logs/product-build.txt
           try {
-            ./tools/endpoint-probe/Build-EndpointProbe.ps1
-            ./tools/pipeline-init/Build-EnumHook.ps1 -LlvmBin $env:NSP_LLVM_BIN -TestFixtures
-            python -m unittest discover -s tools/pipeline-init -p 'test_*.py' -v
-            if ($LASTEXITCODE) { throw 'Preparation regression failed' }
-            python -m unittest discover -s tools/edid-probe -p 'test_*.py' -v
-            if ($LASTEXITCODE) { throw 'EDID parser regression failed' }
-            python tools/Check-MarkdownEncoding.py .
-            if ($LASTEXITCODE) { throw 'Markdown encoding check failed' }
+            ./tools/Build-Product.ps1 -Python (Get-Command python.exe).Source -MediaFoundation -PcmCapture -BrowserIdentity -Wasapi
+            if ($LASTEXITCODE) { throw 'Product build failed' }
+            ./modules/freesurround/Build.ps1 -TargetDirectory build/freesurround-mature480 -Window 480 -HalfHop
+            if ($LASTEXITCODE) { throw 'FreeSurround build failed' }
           } finally { Stop-Transcript }
-      - name: Verify expected artifacts
+      - name: Run isolated contracts
+        run: ./tools/ci/Test-Candidate.ps1 -Python (Get-Command python.exe).Source
+      - name: Verify final source manifest
         run: |
-          $expected = @(
-            'build/native-send/nsp_native_send.dll',
-            'build/native-capture/nsp_native_capture.dll',
-            'build/roar-native/release/nsp_roar_bridge.dll',
-            'build/native-receiver-routing/release/nsp_native_receiver.dll',
-            'build/spatial-renderer/NSP.SpatialRenderer.dll',
-            'build/audio-backends/NSP.AsioOutput.dll',
-            'build/enum-hook/nsp_enum_hook.dll',
-            'build/enum-hook/nsp_enum_control.exe',
-            'build/zig-scheduler/nsp-scheduler.exe',
-            'build/fsa-integration/bin/FinalSpatialAudio.exe',
-            'work/OemEndpointProbe.exe'
-          )
-          foreach ($path in $expected) {
-            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing artifact: $path" }
-          }
-          $expected | ForEach-Object { Get-FileHash -Algorithm SHA256 -LiteralPath $_ } |
-            Format-Table -AutoSize | Out-File build/ci-logs/artifact-hashes.txt -Encoding utf8
-          'Build and isolated checks passed. No real device playback, EDID write or AudioSrv injection was performed.' >> $env:GITHUB_STEP_SUMMARY
-      - name: Package development binaries and corresponding source
-        run: python tools/ci/Package-Windows.py
-      - name: Upload development bundle
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: windows-development-bundle
-          path: build/ci-bundle/
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 7
-      - name: Upload build logs
+          python tools/ci/Verify-Candidate.py
+          if ($LASTEXITCODE) { throw 'Build changed shipped source unexpectedly' }
+      - name: Preserve logs
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: windows-build-logs
+          name: public-windows-validation-logs
           path: build/ci-logs/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 14

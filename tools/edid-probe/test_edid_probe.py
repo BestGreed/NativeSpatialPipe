@@ -1,3 +1,6 @@
+from pathlib import Path as _LayoutPath
+import sys as _layout_sys
+_layout_sys.path.insert(0,str(_LayoutPath(__file__).resolve().parents[2]/'modules/pipeline-init'))
 import unittest
 from edid_probe import parse_edid
 

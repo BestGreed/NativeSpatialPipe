@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import subprocess
 import time
+import shutil
 
 ROOT = Path(__file__).absolute().parents[2]
 OUT = ROOT / 'build/dev16-n08-device'
@@ -20,6 +21,8 @@ parser.add_argument('--network-return', action='store_true', help='Test-only dup
 parser.add_argument('--output-order', choices=['olr','dvs-speakers'], default=None)
 args = parser.parse_args()
 OUT.mkdir(parents=True, exist_ok=True)
+for runtime in ('libc++.dll','libunwind.dll'):
+    shutil.copyfile(LLVM/runtime,OUT/runtime)
 run_dir = OUT / 'runs' / str(time.time_ns())
 run_dir.mkdir(parents=True)
 env = dict(os.environ, PATH=str(LLVM) + os.pathsep + os.environ['PATH'],
@@ -53,9 +56,9 @@ if args.play_silence or args.network_return or args.build_only:
                                             'asio_format.cpp','diagnostics.cpp','sinc_resampler.cpp']],
          *([ROOT/'modules/audio-backends/tests/asio_network_return.cpp'] if args.network_return else []),
          '-lole32','-ladvapi32','-luser32','-luuid','-lavrt','-lwinmm','-o',dll], 'build-device')
-    run([ZIG,'build-exe',ROOT/'tools/zig-scheduler/real_device_probe.zig',
+    run([ZIG,'build-exe',ROOT/'modules/zig-scheduler/real_device_probe.zig',
          '-target','x86_64-windows-gnu','-O','ReleaseSafe','-lc','-lws2_32','-ladvapi32','-lavrt',
-         '-I',ROOT/'modules/audio-backends/src','-I',ROOT/'tools/endpoint-probe',
+         '-I',ROOT/'modules/audio-backends/src','-I',ROOT/'modules/native-capture',
          '-femit-bin='+str(player)], 'build-player')
 if not args.build_only:
     try:
@@ -69,7 +72,7 @@ if not args.build_only:
             for case in (['network-return'] if args.network_return else ['normal','rebuffer'] if args.case == 'both' else [args.case]):
                 directory = run_dir/case
                 directory.mkdir()
-                run([player,ROOT/'build/dev16-n07-roar/release/nsp_roar_bridge.dll',
+                run([player,ROOT/'build/dev16-n07-roar/release/nsp_croksor.dll',
                      dll,args.driver,directory,str(capabilities['sampleRate']),case,str(9 if args.network_return else args.seconds),
                      args.output_order or ('dvs-speakers' if args.network_return else 'olr')],
                     case, timeout=args.seconds + 45)

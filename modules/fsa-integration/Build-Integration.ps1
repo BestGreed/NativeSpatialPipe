@@ -1,4 +1,4 @@
-param([string]$Installation='D:\Final Spatial Audio',[switch]$SkipHookBuild,[switch]$FsaOnly,[string]$LlvmBin='', [string]$TelemetryPython='',[switch]$MediaFoundation)
+param([string]$Installation='',[switch]$SkipHookBuild,[switch]$FsaOnly,[string]$LlvmBin='', [string]$TelemetryPython='',[switch]$MediaFoundation)
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path "$PSScriptRoot/../..").Path
 $llvm=if($LlvmBin){$LlvmBin}else{Join-Path $root 'work/rust-bootstrap/llvm-fast/llvm-mingw-20261006-ucrt-x86_64/bin'}
@@ -21,8 +21,6 @@ if($LASTEXITCODE){throw 'Telemetry meter build failed'}
 if(-not $SkipHookBuild){
  & powershell -NoProfile -ExecutionPolicy Bypass -File "$root/modules/native-capture/Build-NativeHook.ps1" -Managed -TestFixtures
  if($LASTEXITCODE){throw 'Managed hook build failed'}
- & powershell -NoProfile -ExecutionPolicy Bypass -File "$root/modules/pipeline-init/Build-EnumHook.ps1"
- if($LASTEXITCODE){throw 'Enumeration hook build failed'}
 }
 }
 $candidate=Join-Path $bin 'FinalSpatialAudio.exe'
@@ -34,7 +32,7 @@ try {
  & "$llvm/llvm-windres.exe" -DFSA_TEST_RESOURCES -i final_spatial_audio.rc -o "$bin/fsa-test-resource.o"
  if($LASTEXITCODE){throw 'Test resource build failed'}
 }finally{Pop-Location}
-& $clang @flags "$src/final_spatial_audio.c" "$src/fluent_menu.c" "$bin/fsa-resource.o" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode '-Wl,--subsystem,windows' -o $candidate
+& $clang @flags "$src/final_spatial_audio.c" "$src/fluent_menu.c" "$bin/fsa-resource.o" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -lcomdlg32 -municode '-Wl,--subsystem,windows' -o $candidate
 if($LASTEXITCODE){throw 'FSA build failed'}
 foreach($name in @('resolver','language','nsp-state')){
  & $clang @flags "$src/$($name)_test.c" -luser32 -lgdi32 -o "$bin/$name-test.exe"
@@ -46,7 +44,7 @@ foreach($name in @('resolver','language','nsp-state')){
 if($LASTEXITCODE){throw 'Icon test build failed'}
 & "$bin/icon-test.exe" $candidate
 if($LASTEXITCODE){throw 'Icon tests failed'}
-& $clang @flags "$src/nsp_ui_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/nsp-ui-test.exe"
+& $clang @flags "$src/nsp_ui_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -lcomdlg32 -municode -o "$bin/nsp-ui-test.exe"
 if($LASTEXITCODE){throw 'NSp UI contract build failed'}
 & "$bin/nsp-ui-test.exe"
 if($LASTEXITCODE){throw 'NSp UI contract failed'}
@@ -54,6 +52,10 @@ if($LASTEXITCODE){throw 'NSp UI contract failed'}
 if($LASTEXITCODE){throw 'Menu visibility regression build failed'}
 & "$bin/menu-visibility-test.exe"
 if($LASTEXITCODE){throw 'Menu visibility regression failed'}
+& $clang @flags "$src/capture_profile_test.c" -o "$bin/capture-profile-test.exe"
+if($LASTEXITCODE){throw 'Capture layout state test build failed'}
+& "$bin/capture-profile-test.exe"
+if($LASTEXITCODE){throw 'Capture layout state tests failed'}
 & $clang @flags "$src/web_host_test.c" -ladvapi32 -luser32 -o "$bin/web-host-test.exe"
 if($LASTEXITCODE){throw 'Web host contract build failed'}
 & "$bin/web-host-test.exe"
@@ -64,25 +66,25 @@ $locationFixture=Join-Path $bin ('playback-location-'+[Guid]::NewGuid().ToString
 New-Item -ItemType Directory -Path $locationFixture | Out-Null
 & "$bin/playback-location-test.exe" $locationFixture
 if($LASTEXITCODE){throw 'Playback location regression failed'}
-& $clang @flags "$src/nsp_lock_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/nsp-lock-test.exe"
+& $clang @flags "$src/nsp_lock_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -lcomdlg32 -municode -o "$bin/nsp-lock-test.exe"
 if($LASTEXITCODE){throw 'NSp Lock contract build failed'}
 & "$bin/nsp-lock-test.exe"
 if($LASTEXITCODE){throw 'NSp Lock contract failed'}
-& $clang @flags "$src/nsp_exit_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/nsp-exit-test.exe"
+& $clang @flags "$src/nsp_exit_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -lcomdlg32 -municode -o "$bin/nsp-exit-test.exe"
 if($LASTEXITCODE){throw 'NSp exit regression build failed'}
 1..2 | ForEach-Object {
  & "$bin/nsp-exit-test.exe"
  if($LASTEXITCODE){throw 'NSp exit/reopen regression failed'}
 }
-& $clang @flags "$src/tray_animation_test.c" "$src/fluent_menu.c" "$bin/fsa-test-resource.o" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/tray-animation-test.exe"
+& $clang @flags "$src/tray_animation_test.c" "$src/fluent_menu.c" "$bin/fsa-test-resource.o" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -lcomdlg32 -municode -o "$bin/tray-animation-test.exe"
 if($LASTEXITCODE){throw 'Tray animation test build failed'}
 & "$bin/tray-animation-test.exe"
 if($LASTEXITCODE){throw 'Tray animation tests failed'}
 & $clang @flags "$src/popup_test.c" "$src/fluent_menu.c" -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -o "$bin/popup-test.exe"
 if($LASTEXITCODE){throw 'Popup test build failed'}
-& $clang @flags "$src/profile_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/profile-test.exe"
+& $clang @flags "$src/profile_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -lcomdlg32 -municode -o "$bin/profile-test.exe"
 if($LASTEXITCODE){throw 'Profile test build failed'}
-& $clang @flags "$src/pcm_format_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -municode -o "$bin/pcm-format-test.exe"
+& $clang @flags "$src/pcm_format_test.c" "$src/fluent_menu.c" -lole32 -luuid -lksuser -lpropsys -lshell32 -luser32 -lgdi32 -ldwmapi -luxtheme -ladvapi32 -lcomdlg32 -municode -o "$bin/pcm-format-test.exe"
 if($LASTEXITCODE){throw 'PCM format test build failed'}
 $pcmFixture=Join-Path $destination ('pcm-format-test-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $pcmFixture | Out-Null

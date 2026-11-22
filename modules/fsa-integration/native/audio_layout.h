@@ -22,6 +22,8 @@ typedef struct {
 } AL_Snapshot;
 
 AL_API HRESULT al_capture(const wchar_t *endpoint_or_null, AL_Snapshot *out);
+AL_API HRESULT al_open_audio_host(const wchar_t *endpoint, void **client);
+AL_API void al_close_audio_host(void *client);
 AL_API HRESULT al_plan(const AL_Snapshot *before, uint32_t mask, AL_Snapshot *out);
 AL_API HRESULT al_supported(const AL_Snapshot *target);
 /* Verified apply. On failure, best-effort restoration of the live pre-write

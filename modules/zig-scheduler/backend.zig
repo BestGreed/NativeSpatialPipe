@@ -46,10 +46,12 @@ pub const Controller = struct {
     playback_owner: ?std.json.Parsed(Playback) = null,
     session: ?Session = null,
     process: ?u.Process = null,
+    ready_event: c.HANDLE = null,
     state: []const u8 = "idle",
     err: ?[]const u8 = null,
     deadline: u64 = 0,
     exitRequested: bool = false,
+    audioPid: *const fn () anyerror!u32 = u.audioPid,
     fn statePath(self: *Controller, name: []const u8) ![]u8 {
         return u.join(&.{ self.home, name });
     }
@@ -94,13 +96,28 @@ pub const Controller = struct {
     }
     fn reportClean(self: *Controller, recovery: bool) bool {
         const session = self.session orelse return false;
+        if (recovery) {
+            const bytes = u.json(session) catch return false;
+            defer a.free(bytes);
+            var parsed = u.parse(bytes) catch return false;
+            defer parsed.deinit();
+            if (@import("orphan_recovery.zig").proveWithAudio(self.root, self.home, parsed.value, self.audioPid) catch false) return true;
+        }
         if (session.orchestratorPid != 0 and (u.processIdentity(session.orchestratorPid) catch return false) != null) return false;
         const path = u.join(&.{ session.outputDirectory, "endpoint.json" }) catch return false;
         defer a.free(path);
         var parsed = u.load(path) catch return false;
         defer parsed.deinit();
         const v = parsed.value;
-        if (!u.yes(u.field(v, "restored")) or !u.yes(u.field(v, "hookCompleted"))) return false;
+        if (!u.yes(u.field(v, "restored"))) {
+            if (!recovery) return false;
+            const bytes = u.json(session) catch return false;
+            defer a.free(bytes);
+            var data = u.parse(bytes) catch return false;
+            defer data.deinit();
+            return @import("endpoint_retirement.zig").proven(session.outputDirectory, data.value);
+        }
+        if (!u.yes(u.field(v, "hookCompleted"))) return false;
         if ((u.number(u.field(v, "hookExitCode")) catch 255) == 0) return recovery or u.field(v, "error") == .null;
         if (!recovery) return false;
         const markerPath = u.join(&.{ session.outputDirectory, "observed/hook-session.json" }) catch return false;
@@ -140,13 +157,16 @@ pub const Controller = struct {
                 const clean = code == 0 and self.reportClean(false);
                 process.close();
                 self.process = null;
+                if (self.ready_event) |event| _ = c.CloseHandle(event);
+                self.ready_event = null;
                 self.state = if (clean) "stopped" else "faulted";
                 self.err = if (clean) null else "Session ended without confirmed clean stop and restore";
                 try self.save();
             } else if (std.mem.eql(u8, self.state, "starting")) {
-                const ready = try u.join(&.{ self.session.?.outputDirectory, "observed/ready.txt" });
-                defer a.free(ready);
-                if (u.exists(ready)) {
+                const event = self.ready_event orelse return error.ReadyEventMissing;
+                const wait = c.WaitForSingleObject(event, 0);
+                if (wait == c.WAIT_FAILED) return error.ReadyEventWait;
+                if (wait == c.WAIT_OBJECT_0) {
                     self.state = "running";
                     try self.save();
                 }
@@ -212,6 +232,14 @@ pub const Controller = struct {
                 self.err = "Launch failed; inspect session logs";
                 self.save() catch {};
             }
+            const ready_name = try u.fmt("Local\\NSP.Ready.{s}", .{ident});
+            defer a.free(ready_name);
+            const ready_wide = try u.wide(ready_name);
+            defer a.free(ready_wide);
+            c.SetLastError(0);
+            var ready_event: c.HANDLE = c.CreateEventW(null, c.TRUE, c.FALSE, ready_wide.ptr) orelse return error.ReadyEventCreate;
+            defer if (ready_event) |event| { _ = c.CloseHandle(event); };
+            if (c.GetLastError() == c.ERROR_ALREADY_EXISTS) return error.ReadyEventAlreadyExists;
             const script = try u.join(&.{ self.root, "modules/zig-scheduler/Run-GameTelemetry.ps1" });
             defer a.free(script);
             const exe = try std.fs.selfExePathAlloc(a);
@@ -226,7 +254,7 @@ pub const Controller = struct {
             defer a.free(log);
             var launchArgs = std.ArrayList([]const u8).init(a);
             defer launchArgs.deinit();
-            try launchArgs.appendSlice(&.{ "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-OutputDirectory", output, "-SpatialFormat", frontend, "-Managed", "-OwnerPid", ownerText, "-Endpoint", endpoint, "-SchedulerExecutable", exe, "-TelemetryPython", self.python, "-TelemetryPort", tport, "-FrontendOrigin", origin });
+            try launchArgs.appendSlice(&.{ "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-OutputDirectory", output, "-SpatialFormat", frontend, "-Managed", "-OwnerPid", ownerText, "-Endpoint", endpoint, "-SchedulerExecutable", exe, "-TelemetryPython", self.python, "-TelemetryPort", tport, "-FrontendOrigin", origin, "-ReadyEvent", ready_name });
             if (playback) |settings| {
                 // The existing orchestrator requires a new output directory.
                 // Keep launch settings beside it until the orchestrator creates it.
@@ -236,6 +264,8 @@ pub const Controller = struct {
             }
             if (self.config.fullTiming) try launchArgs.append("-FullTiming");
             self.process = try u.spawnLog(launchArgs.items, log);
+            self.ready_event = ready_event;
+            ready_event = null;
             self.session.?.orchestratorPid = self.process.?.pid;
             try self.save();
         } else if(std.mem.eql(u8,action,"select-output")) {
@@ -284,9 +314,19 @@ pub const Controller = struct {
                     !std.mem.eql(u8,try u.string(u.field(value,"sessionId")),session.id)) return error.OwnerConflict;
             }
             if (self.process != null or !self.reportClean(true)) return error.StopEvidenceRequired;
+            const prior_state = self.state;
+            const prior_error = self.err;
             self.state = "stopped";
             self.err = null;
-            try self.save();
+            self.save() catch |err| {
+                self.state = prior_state;
+                self.err = prior_error;
+                if (self.session) |*session| {
+                    session.state = prior_state;
+                    session.@"error" = prior_error;
+                }
+                return err;
+            };
         } else if (std.mem.eql(u8, action, "configure")) {
             if (self.process != null or (!std.mem.eql(u8, self.state, "idle") and !std.mem.eql(u8, self.state, "stopped"))) return error.SessionActive;
             var candidate = self.config;
@@ -424,6 +464,7 @@ pub fn serve(args: []const []const u8, root: []const u8, home: []const u8) !void
     var server = try (try std.net.Address.parseIp4("127.0.0.1", port)).listen(.{ .force_nonblocking = true });
     defer server.deinit();
     var controller = try Controller.init(root, home, u.option(args, "--python") orelse "python.exe", server.listen_address.getPort(), try std.fmt.parseInt(u16, u.option(args, "--telemetry-port") orelse "8766", 10));
+    defer if (controller.ready_event) |event| { _ = c.CloseHandle(event); };
     var nonce: [32]u8 = undefined;
     std.crypto.random.bytes(&nonce);
     const token = try u.fmt("{s}", .{std.fmt.fmtSliceHexLower(&nonce)});
@@ -465,4 +506,125 @@ pub fn request(home: []const u8, action: []const u8, value: anytype) ![]u8 {
     if (!std.mem.startsWith(u8, reply, "HTTP/1.1 200 ")) return error.BackendRejected;
     const start = (std.mem.indexOf(u8, reply, "\r\n\r\n") orelse return error.BadResponse) + 4;
     return a.dupe(u8, reply[start..]);
+}
+
+
+test "replacement backend retires an orphan and repeated recovery has consistent status" {
+    var temp = std.testing.tmpDir(.{});
+    defer temp.cleanup();
+    const home = try temp.dir.realpathAlloc(a, ".");
+    defer a.free(home);
+    try temp.dir.makePath("observed");
+    const dead: u32 = 0xfffffffc;
+    const session_path = try u.join(&.{home, "session.json"});
+    defer a.free(session_path);
+    try u.writeJson(session_path, .{.id="reboot", .outputDirectory=home, .ownerPid=dead, .orchestratorPid=dead, .endpoint="fixture", .state="running"});
+    const marker = try u.join(&.{home, "observed/hook-session.json"});
+    defer a.free(marker);
+    try u.writeJson(marker, .{.hookGeneration=2, .pid=dead, .created=@as(u64,1)});
+    const config_path = try u.join(&.{home, "observed/hook-config-test.bin"});
+    defer a.free(config_path);
+    var config = std.mem.zeroes(c.HookConfig);
+    config.magic = c.NSP_HOOK_MAGIC;
+    config.size = @sizeOf(c.HookConfig);
+    config.host_pid = dead;
+    config.target_created = 1;
+    try u.write(config_path, std.mem.asBytes(&config));
+    const runtime = try u.join(&.{home, "runtime.json"});
+    defer a.free(runtime);
+    try u.writeJson(runtime, .{.pid=c.GetCurrentProcessId(), .scheduler="zig"});
+    var controller = try Controller.init(home,home,"unused",0,0);
+    const Audio = struct {
+        fn absent() anyerror!u32 { return error.NoAudioHost; }
+    };
+    controller.audioPid = Audio.absent;
+    try std.testing.expectEqualStrings("recovery-required", controller.state);
+    var empty = try u.parse("{}");
+    defer empty.deinit();
+    // Stop has no owned child after a restart. Recovery must still work.
+    try std.testing.expectError(error.OwnershipUnknown, controller.command("stop-session",empty.value));
+    config.host_pid = c.GetCurrentProcessId();
+    try u.write(config_path, std.mem.asBytes(&config));
+    try std.testing.expectError(error.StopEvidenceRequired, controller.command("recover",empty.value));
+    config.host_pid = dead;
+    try u.write(config_path, std.mem.asBytes(&config));
+    var wrong = try u.parse("{\"ownerPid\":1,\"sessionId\":\"other\"}");
+    defer wrong.deinit();
+    try std.testing.expectError(error.OwnerConflict,controller.command("recover",wrong.value));
+    const started = c.GetTickCount64();
+    const recovered = try controller.command("recover",empty.value);
+    defer a.free(recovered);
+    var readback = try u.parse(recovered);
+    defer readback.deinit();
+    try std.testing.expectEqualStrings("stopped",try u.string(u.field(readback.value,"sessionState")));
+    try std.testing.expect(u.field(readback.value,"error") == .null);
+    const repeated = try controller.command("recover",empty.value);
+    defer a.free(repeated);
+    const status = try controller.command("status",empty.value);
+    defer a.free(status);
+    var observed = try u.parse(status);
+    defer observed.deinit();
+    try std.testing.expectEqualStrings("stopped",try u.string(u.field(observed.value,"sessionState")));
+    var saved = try u.load(session_path);
+    defer saved.deinit();
+    try std.testing.expectEqualStrings("stopped",try u.string(u.field(saved.value,"state")));
+    const report = try u.join(&.{home,"endpoint.json"});
+    defer a.free(report);
+    try std.testing.expect(!u.exists(report));
+    const restarted = try Controller.init(home,home,"unused",0,0);
+    try std.testing.expectEqualStrings("idle",restarted.state);
+    std.debug.print("orphan recovery and repeated state readback: {d} ms\n", .{c.GetTickCount64()-started});
+
+    // Exercise the actual control adapter against a replacement HTTP backend.
+    // The owned fixture supplies audio-host absence without touching real audio.
+    const lock_path = try u.join(&.{home,"owner.lock"});
+    defer a.free(lock_path);
+    const wide = try u.wide(lock_path);
+    defer a.free(wide);
+    const lock = c.CreateFileW(wide.ptr,c.GENERIC_READ | c.GENERIC_WRITE,0,null,c.OPEN_ALWAYS,c.FILE_ATTRIBUTE_NORMAL,null);
+    try std.testing.expect(lock != c.INVALID_HANDLE_VALUE);
+    defer _ = c.CloseHandle(lock);
+    var server = try (try std.net.Address.parseIp4("127.0.0.1",0)).listen(.{.force_nonblocking=true});
+    defer server.deinit();
+    try u.writeJson(runtime,.{.pid=c.GetCurrentProcessId(),.scheduler="zig",.port=server.listen_address.getPort(),.token="owned-test"});
+    const Server = struct {
+        fn run(listener: *std.net.Server, manager: *Controller, stop: *std.atomic.Value(bool)) void {
+            while(!stop.load(.acquire)) {
+                const connection = listener.accept() catch { c.Sleep(1); continue; };
+                defer connection.stream.close();
+                _ = handle(manager,connection.stream,"owned-test") catch {};
+            }
+        }
+    };
+    for ([_][]const u8{"status","stop","emergency-stop","start"}) |mode| {
+        controller.state="recovery-required";
+        controller.err="Previous session requires confirmed stop and endpoint restore";
+        try controller.save();
+        var stop = std.atomic.Value(bool).init(false);
+        const thread = try std.Thread.spawn(.{},Server.run,.{&server,&controller,&stop});
+        defer { stop.store(true,.release); thread.join(); }
+        const before = std.time.nanoTimestamp();
+        if (std.mem.eql(u8,mode,"start")) {
+            // An invalid new format stops before audio effects, after recovery.
+            try std.testing.expectEqual(@as(u8,20),try @import("control.zig").run(&.{"scheduler",mode,"--owner-pid","1","--endpoint","fixture","--spatial-format","InvalidFormat"},home,home));
+            const failure_path = try u.join(&.{home,"last-error.json"});
+            defer a.free(failure_path);
+            var failure = try u.load(failure_path);
+            defer failure.deinit();
+            try std.testing.expectEqualStrings("InvalidConfig",try u.string(u.field(failure.value,"error")));
+        } else {
+            try std.testing.expectEqual(@as(u8,10),try @import("control.zig").run(&.{"scheduler",mode,"--request-id","owned-recovery"},home,home));
+        }
+        for (0..3) |_| try std.testing.expectEqual(@as(u8,10),try @import("control.zig").run(&.{"scheduler","status"},home,home));
+        const latest = try request(home,"status",struct{}{});
+        defer a.free(latest);
+        var checked = try u.parse(latest);
+        defer checked.deinit();
+        try std.testing.expectEqualStrings("stopped",try u.string(u.field(checked.value,"sessionState")));
+        try std.testing.expect(u.field(checked.value,"error") == .null);
+        var disk = try u.load(session_path);
+        defer disk.deinit();
+        try std.testing.expectEqualStrings("stopped",try u.string(u.field(disk.value,"state")));
+        std.debug.print("{s} recovery + 3 adapter reads + backend read: {d} us\n", .{mode,@divTrunc(std.time.nanoTimestamp()-before,1000)});
+    }
 }

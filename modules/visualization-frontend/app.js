@@ -17,6 +17,8 @@ import {projectViewPoint,namedView,dragView} from './view-camera.js';
 import {Navigation as LegacyNavigation} from './navigation-legacy.js';
 import {scenarios,scenarioObjects,metricScenario} from './navigation-scenarios.js';
 import {FrontendDiagnostics} from './diagnostics.js';
+import {uiReady} from './i18n.js';
+await uiReady;
 import {meterOnset,selectVisibleOnsets} from './transient-visual.js';
 let diagnosticStorage=null;try{diagnosticStorage=localStorage;}catch{}
 const diagnostics=new FrontendDiagnostics({storage:diagnosticStorage});

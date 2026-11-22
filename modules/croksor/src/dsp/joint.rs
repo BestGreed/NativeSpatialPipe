@@ -64,7 +64,7 @@ impl Joint{
    Ok(joint) => joint,
    Err(error) => {
     let Some(cpu) = fallback else { return Err(error); };
-    eprintln!("Joint NPU unavailable, selecting CPU: {error}");
+    eprintln!("Joint primary unavailable, selecting CPU: {error}");
     let joint = Self::open(cpu, model, fs, 480, true, "cpu")?;
     joint.register();
     return Ok(joint);
@@ -94,9 +94,12 @@ impl Joint{
    // A temporary guard owns every loaded module until a session is constructed.
    struct Modules(Vec<*mut c_void>);impl Drop for Modules{fn drop(&mut self){while let Some(p)=self.0.pop(){unsafe{FreeLibrary(p);}}}}
    let mut libraries=Modules(Vec::new());let directory=std::path::Path::new(dll).parent().unwrap();
+   let external=std::fs::read_to_string(directory.join("runtime-path.txt")).ok().map(|s|std::path::PathBuf::from(s.trim()));
+   if external.as_ref().is_some_and(|p|!p.is_absolute()){return Err("Joint runtime directory must be absolute".into());}
+   let runtime=external.as_deref().unwrap_or(directory);
    // The DirectML build loads its private ORT runtime itself.
-   if !directory.join("onnxruntime.dll").is_file() {
-    for name in ["tbb12.dll","openvino.dll","openvino_c.dll"]{let path=directory.join(name);let h=LoadLibraryExW(wide(&path.to_string_lossy()).as_ptr(),std::ptr::null_mut(),0x1100);if h.is_null(){return Err(format!("Joint dependency {name}: {}",std::io::Error::last_os_error()));}libraries.0.push(h);}
+   if !runtime.join("onnxruntime.dll").is_file() {
+    for name in ["tbb12.dll","openvino.dll","openvino_c.dll"]{let path=runtime.join(name);let h=LoadLibraryExW(wide(&path.to_string_lossy()).as_ptr(),std::ptr::null_mut(),0x1100);if h.is_null(){return Err(format!("Joint dependency {name}: {}",std::io::Error::last_os_error()));}libraries.0.push(h);}
    }
    let module=LoadLibraryExW(wide(dll).as_ptr(),std::ptr::null_mut(),0x1100);if module.is_null(){return Err(format!("Joint DLL: {}",std::io::Error::last_os_error()));}libraries.0.push(module);
    let uses_cpu = GetProcAddress(module, c"nsp_joint_uses_cpu".as_ptr());
@@ -117,6 +120,12 @@ impl Joint{
     None
    };
    let handle=open(wide(model).as_ptr(),wide(fs).as_ptr(),960);if handle.is_null(){return Err(CStr::from_ptr(error()).to_string_lossy().into_owned());}
+   let actual=GetProcAddress(module,c"nsp_joint_backend".as_ptr());
+   let backend=if actual.is_null(){backend}else{
+    let read=std::mem::transmute::<*mut c_void,unsafe extern "C" fn(*mut c_void)->*const c_char>(actual);
+    let name=CStr::from_ptr(read(handle)).to_string_lossy();
+    if name.starts_with("CPU"){"cpu"}else if name.starts_with("GPU"){"gpu"}else if name.starts_with("DirectML"){"directml"}else{backend}
+   };
    let faulted = GetProcAddress(module, c"nsp_joint_faulted".as_ptr());
    let faulted = (!faulted.is_null()).then(|| std::mem::transmute::<*mut c_void, Faulted>(faulted));
    let ready = GetProcAddress(module, c"nsp_joint_ready".as_ptr());
@@ -170,5 +179,26 @@ impl Joint{
   let (_, read) = session.split?;
   let result = unsafe { read(session.handle, ticket, epoch & 0x00ff_ffff, self.output.as_mut_ptr(), 480) };
   (result == 1).then_some(self.output.as_slice())
+ }
+}
+
+#[cfg(test)]
+mod runtime_selection_tests {
+ use super::*;
+ #[test]
+ #[ignore = "requires Joint primary/CPU DLLs, model and FreeSurround paths; no audio device"]
+ fn external_runtime_and_initialization_fallback() {
+  let input=|name:&str|std::env::var(name).expect(name);
+  let primary=input("NSP_JOINT_TEST_PRIMARY");
+  let model=input("NSP_JOINT_TEST_MODEL");let fs=input("NSP_JOINT_TEST_FS");
+  let fallback=input("NSP_JOINT_TEST_CPU");
+  {
+   let joint=Joint::open_unified(&primary,Some(&fallback),&model,&fs).expect("primary runtime");
+   assert!(matches!(joint.session.backend,"directml"|"cpu"));
+   assert_eq!(joint.fallback.as_ref().expect("CPU standby").backend,"cpu");
+  }
+  let missing=std::path::Path::new(&primary).with_file_name("NSP.Absent.Joint.dll");
+  let joint=Joint::open_unified(&missing.to_string_lossy(),Some(&fallback),&model,&fs).expect("missing primary must select CPU");
+  assert_eq!(joint.session.backend,"cpu");
  }
 }

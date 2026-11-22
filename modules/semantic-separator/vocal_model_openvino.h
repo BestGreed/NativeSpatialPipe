@@ -15,6 +15,9 @@ class VocalModel {
 #ifdef NSP_JOINT_CPU
  static constexpr const char* device="CPU";
  static constexpr const wchar_t* cacheName=L"cpu-cache";
+#elif defined(NSP_JOINT_GPU)
+ static constexpr const char* device="GPU";
+ static constexpr const wchar_t* cacheName=L"gpu-cache";
 #else
  static constexpr const char* device="NPU";
  static constexpr const wchar_t* cacheName=L"npu-cache";
@@ -35,6 +38,8 @@ public:
  static const char* backend(){
 #ifdef NSP_JOINT_CPU
   return "CPU-OpenVINO";
+#elif defined(NSP_JOINT_GPU)
+  return "GPU-OpenVINO";
 #else
   return "NPU-OpenVINO";
 #endif
@@ -48,8 +53,7 @@ public:
   auto cache=std::filesystem::path(location).parent_path()/cacheName;std::filesystem::create_directories(cache);
   check(ov_core_compile_model(core,model,device,4,&compiled,"PERFORMANCE_HINT","LATENCY","CACHE_DIR",utf8(cache.wstring()).c_str()));
   char* devices=nullptr;check(ov_compiled_model_get_property(compiled,"EXECUTION_DEVICES",&devices));std::string actual=devices?devices:"";if(devices)ov_free(devices);
-  if(actual.find(device)==std::string::npos||actual.find("GPU")!=std::string::npos||
-     (actual.find("NPU")!=std::string::npos&&actual.find("CPU")!=std::string::npos))
+  if(actual.find(device)==std::string::npos)
    throw std::runtime_error(std::string(backend())+" execution device mismatch: "+actual);
   const std::array<const char*,5> names={"audio_chunk","vocals_audio_history","vocals_local_hidden","vocals_global_hidden","vocals_spectral_numerator_tail"};
   const std::array<std::vector<int64_t>,5> shapes={std::vector<int64_t>{1,2,128},{1,2,896},{2,20,96},{2,1,192},{1,1,2,128}};

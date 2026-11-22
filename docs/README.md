@@ -1,6 +1,10 @@
 # Native Spatial Pipe documentation
 
 - [Project goals, progress and performance](../README.md)
+- [User guide (English)](user-guide.md) / [用户手册（简体中文）](user-guide.zh-CN.md)
+- [Developer guide](development.md)
+- [Native capture compatibility](capture-compatibility.md)
+- [Release preparation](release.md)
 - [Windows product build](build.md)
 - [Architecture and validation scope](architecture.md)
 - [FSA, scheduler and playback configuration](scheduler.md)

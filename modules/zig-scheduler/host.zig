@@ -277,6 +277,23 @@ const Bridge = struct {
         }
     }
 };
+fn reportPcmUnavailable(out: []const u8, err: anyerror) !void {
+    const path = try u.join(&.{ out, "pcm-capture.json" });
+    defer a.free(path);
+    try u.writeJson(path, .{ .state = "unavailable", .errorName = @errorName(err), .spatialCaptureAction = "unchanged" });
+}
+
+fn publishReady(out: []const u8, event: c.HANDLE) !void {
+    if (event) |handle| {
+        if (c.SetEvent(handle) == 0) return error.ReadyEventSignal;
+        return;
+    }
+    // Diagnostic host invocations without an orchestrator use the file marker.
+    const path = try u.join(&.{ out, "ready.txt" });
+    defer a.free(path);
+    try u.write(path, "ready");
+}
+
 pub fn run(args: []const []const u8, root: []const u8) !void {
     const out = u.option(args, "--out") orelse return error.OutputRequired;
     const pid = try std.fmt.parseInt(u32, u.option(args, "--pid") orelse return error.PidRequired, 10);
@@ -285,6 +302,12 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     const fixture = u.flag(args, "--fixture");
     const created = if (fixture) (try u.processIdentity(pid)) orelse return error.TargetExited else try u.checkTarget(pid);
     if (try u.processIdentity(owner) == null) return error.OwnerExited;
+    const ready_event: c.HANDLE = if (u.option(args, "--ready-event")) |name| blk: {
+        const wide = try u.wide(name);
+        defer a.free(wide);
+        break :blk c.OpenEventW(c.EVENT_MODIFY_STATE, c.FALSE, wide.ptr) orelse return error.ReadyEventOpen;
+    } else null;
+    defer if (ready_event) |event| { _ = c.CloseHandle(event); };
     if (u.exists(out)) return error.OutputExists;
     try std.fs.cwd().makePath(out);
     // The scheduler owns setup only; all audio submission stays inside native DLLs.
@@ -313,6 +336,11 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     const unified = if (desktop) |settings| std.mem.eql(u8, settings.value.sourcePolicy, "unified") else false;
     var pipeline_storage: [4]n.Pipeline = undefined;
     const pipelines = pipeline_storage[0..if (unified) @as(usize, 1) else 4];
+    var initialized_pipelines: usize = 0;
+    var capture_may_have_started = false;
+    errdefer if (!capture_may_have_started) {
+        for (pipelines[0..initialized_pipelines]) |*pipeline| pipeline.close();
+    };
     const requested_renderer = if(desktop) |settings| settings.value.renderer else u.option(args,"--renderer") orelse "roar";
     const selection = try @import("desktop_playback.zig").select(
         if (std.mem.eql(u8,requested_renderer,"spatial")) "lira" else requested_renderer,
@@ -336,7 +364,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     const notebook_file=if(desktop) |settings| settings.value.filterFile() else null;
     const notebook_bass=if(desktop) |settings| settings.value.virtualBass() else null;
     pipelines[0] = if (unified) try n.Pipeline.initUnified(dll, firstPath, radius_scaled, radius_reference, desktop.?.value) else if(notebook_file) |file| try n.Pipeline.initNotebookLive(dll,firstPath,128,radius_scaled,radius_reference,file,recording.pcm,notebook_bass,lira_dll) else try n.Pipeline.initLive(dll, firstPath, 64, radius_scaled, radius_reference, lira_dll,preset.code,recording.pcm);
-    errdefer if (pipelines[0].handle != null) pipelines[0].close();
+    initialized_pipelines = 1;
     var telemetry = try Telemetry.start(root, u.option(args, "--python") orelse "python.exe", u.option(args, "--telemetry-port") orelse "8766", u.option(args, "--origin") orelse "http://127.0.0.1:8765",if (desktop) |settings| settings.value.deviceLayout() else output_layout,out);
     defer telemetry.close();
     const infoPath = try u.join(&.{ out, "telemetry-service.json" });
@@ -349,13 +377,13 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         const path = try u.join(&.{ directory, "roar-714.f32" });
         defer a.free(path);
         pipelines[i] = if(notebook_file) |file| try n.Pipeline.initNotebookLive(dll,path,32,radius_scaled,radius_reference,file,recording.pcm,notebook_bass,lira_dll) else try n.Pipeline.initLive(dll, path, 8, radius_scaled, radius_reference, lira_dll,preset.code,recording.pcm);
+        initialized_pipelines += 1;
     }
     const pcm_settings=if(desktop) |settings| settings.value.pcmCapture else null;
     var pcm:?@import("pcm_capture.zig").Session=null;
     if(pcm_settings) |settings| {if(settings.enabled) {
         if(@import("pcm_capture.zig").Session.init(settings,desktop.?.value,pid,out,radius_scaled,radius_reference,lira_dll,preset.code,if (unified) &pipelines[0] else null)) |session| {pcm=session;} else |err| {
-            const path=try u.join(&.{out,"pcm-capture.json"});defer a.free(path);
-            try u.writeJson(path,.{.state="unavailable",.errorName=@errorName(err),.spatialCaptureAction="unchanged"});
+            reportPcmUnavailable(out, err) catch {};
             if(settings.routeToOutput)return err;
         }
     }}
@@ -369,7 +397,6 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     var audio_labels:[16][]const u8=[_] []const u8{""} ** 16;
     @memcpy(audio_labels[0..output_channels],preset.labels);
     var audio_config: ?asio.Backend.Config = null;
-    var capture_may_have_started = false;
     const aoip_path=u.option(args,"--aoip-config");
     const aoip_profile=if(desktop) |settings| (if(std.mem.eql(u8,settings.value.outputBackend,"aoip")) settings.value.aoip else null) else null;
     const aoip_enabled=aoip_path!=null or aoip_profile!=null;
@@ -486,6 +513,18 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     const auto_primary = unified and (desktop.?.value.unifiedPrimaryPolicy == .objectCount or
         u.flag(args, "--experimental-auto-primary"));
     var receiver = try n.Receiver.init(root, pid, pipelines, u.flag(args, "--full-timing"), unified, auto_primary, recording.rawStreamStats);
+    errdefer if (!capture_may_have_started) {
+        // Hook has not started, so no producer can publish into this mapping.
+        // Join the receiver before releasing its borrowed pipeline handles.
+        while (receiver.finishFn(receiver.handle, null, 0) == 0) c.Sleep(5);
+        while (true) {
+            receiver.close() catch {
+                c.Sleep(5);
+                continue;
+            };
+            break;
+        }
+    };
     const snapshot = if (auto_primary) try u.symbol(
         *const fn (?*const anyopaque, u32, *u32, *u64) callconv(.C) c_int,
         &receiver.lib, "nsp_receiver_route_snapshot",
@@ -501,7 +540,15 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         .pipeline = slot, .dynamic_objects = 0, .last_progress_ms = 0, .eligible = false,
     };
     // PCM ingress begins only after every output callback has been configured.
-    if(pcm) |*session| try session.startIngress();
+    if (pcm) |*session| {
+        session.startIngress() catch |err| {
+            reportPcmUnavailable(out, err) catch {};
+            if (pcm_settings.?.routeToOutput) return err;
+            session.stopAndFinish();
+        };
+    }
+    // Resolve the current layout before checking the live Hook baseline.
+    if (!fixture) n.refreshProfile(root, u.option(args, "--python") orelse "python.exe");
     var hook = try n.Hook.init(root, out, pid, owner, created, fixture);
     defer {
         u.remove(hook.path);
@@ -533,6 +580,10 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         .audioAutomatic=aoip_automatic,
         .audioSelected=aoip_selected };
     var thread = try std.Thread.spawn(.{}, Bridge.run, .{&bridge});
+    errdefer if (!capture_may_have_started) {
+        bridge.stop.store(true, .release);
+        thread.join();
+    };
     var recorder = Recorder{ .telemetry = &telemetry, .out = out };
     var recordThread:?std.Thread = if(recording.telemetrySnapshots) try std.Thread.spawn(.{}, Recorder.run, .{&recorder}) else null;
     // Establish cleanup before the first Hook activation attempt, including timeouts.
@@ -548,9 +599,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         return err;
     };
     activation.deinit();
-    const readyPath = try u.join(&.{ out, "ready.txt" });
-    defer a.free(readyPath);
-    u.write(readyPath, "ready") catch |err| {
+    publishReady(out, ready_event) catch |err| {
         if (pcm) |*session| session.stopAndFinish();
         try shutdown(&hook, &receiver, pipelines, &bridge, &thread, &recorder, &recordThread, out);
         return err;

@@ -5,6 +5,7 @@
 #include "resource.h"
 #include "fluent_menu.h"
 #include <shellapi.h>
+#include <commdlg.h>
 #include <tlhelp32.h>
 #include <process.h>
 #include "tray_spinner.h"
@@ -88,10 +89,99 @@ static int rule_count,fallback=MODE_STEREO;
 static unsigned debounce_ms=500;
 static void log_line(const wchar_t *message,HRESULT hr);
 #include "nsp_control.h"
+#include "capture_profile.h"
 #include "pipeline_init.h"
 #include "edid_menu.h"
 #include "web_host.h"
 #include "films_tv.h"
+static LONG capture_profile_state,capture_profile_busy;
+static HANDLE capture_profile_process;
+#define CAPTURE_PROFILE_TABLES 12
+/* Candidate tables for the menu. The product build puts the table beside the
+ * scheduler (`<product>/profiles`) or under `build/nsp-product/profiles`; walk a
+ * few ancestors of both the scheduler and this executable so packaging changes
+ * do not need a new code path. */
+static int capture_profile_tables(wchar_t tables[CAPTURE_PROFILE_TABLES][MAX_PATH]) {
+    wchar_t seeds[2][MAX_PATH];
+    int seed_count=0,count=0;
+    wchar_t program[MAX_PATH];
+    if(nsp_program(program) && program[0] && wcslen(program)<MAX_PATH)wcscpy(seeds[seed_count++],program);
+    if(GetModuleFileNameW(NULL,seeds[seed_count],MAX_PATH))seed_count++;
+    for(int seed=0;seed<seed_count && count<CAPTURE_PROFILE_TABLES;seed++) {
+        wchar_t base[MAX_PATH];
+        wcscpy(base,seeds[seed]);
+        wchar_t *slash=wcsrchr(base,L'\\');
+        if(!slash)continue;
+        *slash=0;
+        for(int level=0;level<3 && base[0] && count<CAPTURE_PROFILE_TABLES;level++) {
+            swprintf(tables[count++],MAX_PATH,L"%ls\\profiles\\capture-profiles.json",base);
+            if(count<CAPTURE_PROFILE_TABLES)
+                swprintf(tables[count++],MAX_PATH,L"%ls\\nsp-product\\profiles\\capture-profiles.json",base);
+            slash=wcsrchr(base,L'\\');
+            if(!slash)break;
+            *slash=0;
+        }
+    }
+    return count;
+}
+/* Reads files only; no helper process and no startup dependency. */
+static void capture_profile_refresh_state(void) {
+    wchar_t windows[MAX_PATH]={0},image[MAX_PATH]={0},local[MAX_PATH]={0},cache[MAX_PATH]={0};
+    wchar_t tables[CAPTURE_PROFILE_TABLES][MAX_PATH];
+    const wchar_t *list[CAPTURE_PROFILE_TABLES];
+    int count=capture_profile_tables(tables);
+    for(int i=0;i<count;i++)list[i]=tables[i];
+    if(GetWindowsDirectoryW(windows,MAX_PATH))swprintf(image,MAX_PATH,L"%ls\\System32\\audiodg.exe",windows);
+    if(GetEnvironmentVariableW(L"LOCALAPPDATA",local,MAX_PATH))swprintf(cache,MAX_PATH,L"%ls\\NativeSpatialPipe\\capture-profile.json",local);
+    FSA_CaptureProfile profile;
+    fsa_cp_compute(&profile,image,cache,list,count);
+    LONG state=(LONG)(profile.state&(FSA_CP_READABLE|FSA_CP_AVAILABLE|FSA_CP_READY));
+    LONG previous=InterlockedExchange(&capture_profile_state,state);
+    if(previous!=state) {
+        wchar_t line[256];
+        swprintf(line,256,L"Capture layout state=%lu layout=%ls disk=%ls",(unsigned long)state,
+                 profile.layout[0]?profile.layout:L"-",profile.disk[0]?profile.disk:L"-");
+        log_line(line,S_OK);
+    }
+}
+static int capture_profile_pick(wchar_t *path,size_t capacity) {
+    OPENFILENAMEW file={0};
+    wchar_t selection[MAX_PATH]={0};
+    file.lStructSize=sizeof(file);
+    file.hwndOwner=window;
+    file.lpstrFilter=L"Capture profile (*.json)\0*.json\0PDB symbols (*.pdb)\0*.pdb\0All files (*.*)\0*.*\0";
+    file.lpstrFile=selection;
+    file.nMaxFile=MAX_PATH;
+    file.Flags=OFN_FILEMUSTEXIST|OFN_PATHMUSTEXIST|OFN_NOCHANGEDIR|OFN_EXPLORER;
+    if(!GetOpenFileNameW(&file))return 0;
+    if(wcslen(selection)>=capacity)return 0;
+    wcscpy(path,selection);
+    return 1;
+}
+/* Explicit user action only: the scheduler owns the selector, status file and
+ * offline modes, so FSA never rebuilds that logic. */
+static int capture_profile_launch(const wchar_t *file) {
+    if(InterlockedCompareExchange(&capture_profile_busy,0,0))return 0;
+    wchar_t program[MAX_PATH],python[MAX_PATH],command[4096];
+    if(!nsp_program(program) || !program[0])return 0;
+    GetPrivateProfileStringW(L"NSP",L"Python",L"",python,MAX_PATH,ini);
+    if(file && file[0]) {
+        if(wcslen(file)>=MAX_PATH || wcschr(file,L'"'))return 0;
+        swprintf(command,4096,L"\"%ls\" profile-import --file \"%ls\"",program,file);
+    } else swprintf(command,4096,L"\"%ls\" profile-resolve",program);
+    if(python[0]) {
+        size_t used=wcslen(command);
+        if(wcschr(python,L'"') || used+wcslen(python)+12>=4096)return 0;
+        swprintf(command+used,4096-used,L" --python \"%ls\"",python);
+    }
+    STARTUPINFOW startup={.cb=sizeof(startup)};PROCESS_INFORMATION child={0};
+    if(!CreateProcessW(program,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&startup,&child))return 0;
+    CloseHandle(child.hThread);
+    InterlockedExchange(&capture_profile_busy,1);
+    capture_profile_process=child.hProcess;
+    log_line(file&&file[0]?L"Capture layout import started":L"Capture layout resolution started",S_OK);
+    return 1;
+}
 static HANDLE web_process,web_mapping;
 static FSA_WebSnapshot *web_snapshot;
 static LONG web_nsp_code=20;
@@ -115,9 +205,8 @@ static void web_publish(void) {
 static void web_start(void) {
     if(web_process){if(WaitForSingleObject(web_process,0)==WAIT_TIMEOUT)return;CloseHandle(web_process);web_process=NULL;}
     wchar_t exe[MAX_PATH],command[2048];
-    wchar_t prefix[2*MAX_PATH];
-    if(!nsp_program(exe,prefix,2*MAX_PATH) || prefix[0])swprintf(exe,MAX_PATH,L"%ls\\..\\zig-scheduler\\nsp-scheduler.exe",root);
-    swprintf(command,2048,L"\"%ls\" web-host --fsa-config \"%ls\" --owner-pid %lu",exe,ini,GetCurrentProcessId());
+    if(!nsp_program(exe))swprintf(exe,MAX_PATH,L"%ls\\..\\zig-scheduler\\nsp-scheduler.exe",root);
+    swprintf(command,2048,L"\"%ls\" web-host --fsa-config \"%ls\" --owner-pid %lu --ui-language %ls",exe,ini,GetCurrentProcessId(),language==FSA_ZH?L"zh":L"en");
     PROCESS_INFORMATION child={0};DWORD stage=0;
     if(fsa_web_spawn(exe,command,&child,&stage)){CloseHandle(child.hThread);web_process=child.hProcess;}
     else {DWORD error=GetLastError();wchar_t detail[160];swprintf(detail,160,L"Web API Host launch failed stage=%lu (audio management remains available)",stage);log_line(detail,HRESULT_FROM_WIN32(error));}
@@ -405,6 +494,7 @@ static unsigned __stdcall worker(void *unused) {
     if(!initialize_profiles(&first)) {InterlockedExchange(&nsp_starting,0);publish(-1,UI(TXT_INIT_FAILED));if(p)p->v->release(p);CoUninitialize();return exit_only_worker();}
     int profiles_ready=1;
     route_lock_load();check_capabilities(p);
+    capture_profile_refresh_state();
     if(first && !(available_modes&24) && !quiet_start)PostMessageW(window,WM_NOTICE,1,0);
     AL_Snapshot baseline={0};SpatialSettings baseline_spatial={0};int have_baseline=0;
     ULONGLONG capability_due=GetTickCount64()+30000;
@@ -427,6 +517,18 @@ static unsigned __stdcall worker(void *unused) {
             log_line(L"Manual EDID initialization and verification",verified?S_OK:E_FAIL);
             if(!InterlockedCompareExchange(&exit_requested,0,0))PostMessageW(window,WM_NOTICE,verified?4:5,0);
             PostMessageW(window,WM_STATUS,0,0);
+        }
+        if(capture_profile_process) {
+            DWORD result=1;
+            if(WaitForSingleObject(capture_profile_process,0)!=WAIT_TIMEOUT) {
+                GetExitCodeProcess(capture_profile_process,&result);
+                CloseHandle(capture_profile_process);capture_profile_process=NULL;
+                InterlockedExchange(&capture_profile_busy,0);
+                capture_profile_refresh_state();
+                log_line(L"Capture layout update",result==0?S_OK:E_FAIL);
+                if(!InterlockedCompareExchange(&exit_requested,0,0))PostMessageW(window,WM_NOTICE,result==0?6:7,0);
+                PostMessageW(window,WM_STATUS,0,0);
+            }
         }
         if(InterlockedCompareExchange(&exit_requested,0,0)){
             if(InterlockedExchange(&edid_requested,0)){InterlockedExchange(&edid_busy,0);InterlockedAnd(&edid_menu_state,~(LONG)FSA_EDID_BUSY);}
@@ -505,7 +607,13 @@ static unsigned __stdcall worker(void *unused) {
                 nsp_locked=1;nsp_fault=0;
                 nsp_announced=0;
                 HRESULT selected=E_ACCESSDENIED;
-                if(!nsp_start_cancelled() && (InterlockedCompareExchange(&route_lock_index,0,0)<0 || route_lock_bound()) && nsp_control(L"preflight")==NSP_PREFLIGHT && !nsp_start_cancelled()){
+                void *audio_host=NULL;
+                if(!nsp_start_cancelled() && (InterlockedCompareExchange(&route_lock_index,0,0)<0 || route_lock_bound())){
+                    selected=al_open_audio_host(profiles[0].endpoint,&audio_host);
+                    log_line(L"NSp audio host initialization",selected);
+                    if(SUCCEEDED(selected))selected=E_ACCESSDENIED;
+                }
+                if(audio_host && nsp_control(L"preflight")==NSP_PREFLIGHT && !nsp_start_cancelled()){
                     int locked_front=InterlockedCompareExchange(&route_lock_index,0,0);
                     unsigned required=(unsigned)InterlockedCompareExchange(&route_lock_hook_mask,0,0);
                     int ready=locked_front<0 || route_lock_reassert(locked_front,required);
@@ -516,6 +624,7 @@ static unsigned __stdcall worker(void *unused) {
                 }
                 int cancelled=nsp_start_cancelled();
                 code=cancelled?NSP_BUSY:SUCCEEDED(selected)?nsp_control(L"start"):NSP_UNKNOWN;
+                al_close_audio_host(audio_host);
                 if(FAILED(selected) && !cancelled)nsp_fault=1;
             } else code=nsp_control(request==3?L"emergency-stop":request==2?L"stop":L"status");
             web_nsp_code=code;
@@ -716,6 +825,8 @@ static void read_menu_state(FSA_MenuState *state){
     state->nsp_locked=InterlockedCompareExchange(&nsp_ui_locked,0,0);
     AcquireSRWLockShared(&state_lock);state->selected=current;state->automatic=automatic;ReleaseSRWLockShared(&state_lock);
     state->available=(unsigned)InterlockedCompareExchange(&available_modes,0,0);state->startup=startup_enabled();
+    state->capture=(unsigned)InterlockedCompareExchange(&capture_profile_state,0,0)|
+        (InterlockedCompareExchange(&capture_profile_busy,0,0)?FSA_CP_BUSY:0u);
 }
 static void pipeline_menu_action(UINT command){
     if(InterlockedCompareExchange(&edid_busy,0,0))return;
@@ -761,6 +872,14 @@ static void menu(void) {
         pipeline_menu_action(command);return;
     }
     if(command==106){request_nsp_toggle();return;}
+    if(command==FSA_CMD_CAPTURE_LAYOUT || command==FSA_CMD_CAPTURE_IMPORT){
+        if(InterlockedCompareExchange(&nsp_ui_locked,0,0) || InterlockedCompareExchange(&capture_profile_busy,0,0))return;
+        wchar_t file[MAX_PATH]={0};
+        if(command==FSA_CMD_CAPTURE_IMPORT && !capture_profile_pick(file,MAX_PATH))return;
+        if(!capture_profile_launch(command==FSA_CMD_CAPTURE_IMPORT?file:NULL))log_line(L"Capture layout action unavailable",E_FAIL);
+        else PostMessageW(window,WM_STATUS,0,0);
+        return;
+    }
     if(command==209){
         AcquireSRWLockExclusive(&state_lock);automatic=0;manual=-1;ReleaseSRWLockExclusive(&state_lock);
         InterlockedExchange(&nsp_starting,0);update_tray();
@@ -801,6 +920,7 @@ static LRESULT CALLBACK wndproc(HWND hwnd,UINT msg,WPARAM w,LPARAM l) {
         return 0;
     }
     if(msg==WM_NOTICE) {
+        if(w==6 || w==7){MessageBoxW(hwnd,w==6?UI(TXT_CAPTURE_LAYOUT_UPDATED):UI(TXT_CAPTURE_LAYOUT_FAILED),L"Final Spatial Audio",MB_OK|(w==6?MB_ICONINFORMATION:MB_ICONWARNING));return 0;}
         if(w==4 || w==5){MessageBoxW(hwnd,w==4?(language==FSA_ZH?L"HT 能力回验通过，菜单已刷新。":L"HT capability verified. The menu has been refreshed."):(language==FSA_ZH?L"EDID 初始化未通过。请查看 FSA 日志指向的 result.json；若已写入，事务与恢复记录会保留。":L"EDID initialization did not verify. See result.json at the path in the FSA log; any applied transaction is retained."),L"Final Spatial Audio",MB_OK|(w==4?MB_ICONINFORMATION:MB_ICONWARNING));return 0;}
         const wchar_t *message=w==1?UI(TXT_NO_SPATIAL):
             w==2?UI(TXT_CAPTURE_OK):UI(TXT_CAPTURE_FAILED);

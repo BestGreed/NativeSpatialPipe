@@ -14,6 +14,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--host', required=True)
     parser.add_argument('--report', required=True)
+    parser.add_argument('--language')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     checks = []
@@ -27,6 +28,7 @@ def main():
             port = sock.getsockname()[1]
         command = [str(Path(args.host).resolve()), 'web-host', '--root', str(root),
                    '--home', str(home), '--fsa-config', str(ini), '--port', str(port)]
+        if args.language is not None:command.extend(['--ui-language',args.language])
 
         def request(method, path, body=None, headers=None):
             connection = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
@@ -56,6 +58,11 @@ def main():
                     raise RuntimeError('Web host did not start')
                 token = bootstrap['token']
                 assert bootstrap['control'] is False
+                expected='zh' if args.language=='zh' else 'en'
+                assert bootstrap['language']==expected
+                code,script,_=request('GET','/ui-language.js')
+                assert code==200 and ('"zh-CN"' if expected=='zh' else '"en"').encode() in script
+                checks.append('startup-language-and-parser-bootstrap')
                 headers = {'Content-Type': 'application/json', 'X-NSP-Token': token,
                            'Origin': f'http://127.0.0.1:{port}'}
                 status = get('/api/web/status')

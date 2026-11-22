@@ -1,9 +1,5 @@
 // Explicit LoadLibrary/export invocation, no Frida, shellcode, or reflective loader.
-#ifdef NSP_ENUMERATION_CONTROL
-#include "../pipeline-init/Enum-Hook.h"
-#else
 #include "Native-Hook.h"
-#endif
 #include <tlhelp32.h>
 #include <stdio.h>
 #include <wchar.h>
@@ -13,26 +9,12 @@ static uintptr_t module_base(DWORD pid,const wchar_t *name){
  MODULEENTRY32W m={.dwSize=sizeof(m)};uintptr_t found=0;
  if(Module32FirstW(snap,&m))do {if(!_wcsicmp(m.szModule,name)){found=(uintptr_t)m.modBaseAddr;break;}}while(Module32NextW(snap,&m));CloseHandle(snap);return found;
 }
-static int verified_audio(const wchar_t *path){
-#ifdef NSP_ENUMERATION_CONTROL
- const unsigned char expected[32]={0x48,0x7e,0x51,0x03,0x5a,0x76,0x32,0x30,0x32,0xac,0xd5,0x99,0x65,0x11,0xc2,0x21,0xc4,0x49,0xcd,0x24,0x40,0x51,0xd3,0xb0,0xe0,0x57,0xee,0xc7,0x05,0x38,0xca,0x97};
-#else
-#ifdef NSP_AUDIODG_LNL_20261102
- /* Public PDB 882DC2C4101A0C7A6008528B0BB73AED1 confirms the same
-    GetInputDataPointer and ISpatialAudioProcessBlockRT RVAs. Runtime
-    prologue and capture descriptor checks remain mandatory. */
- const unsigned char expected[32]={0x4b,0x59,0x81,0xcf,0x6b,0xdf,0xac,0x2f,0x7b,0xe0,0xc3,0x31,0x4f,0xb1,0xeb,0x12,0xf6,0x07,0x50,0x83,0xf1,0x13,0x16,0xc6,0xcc,0x15,0xc6,0x3b,0x69,0x7a,0xea,0xe7};
-#else
- const unsigned char expected[32]={0x3d,0xd2,0x4f,0xe6,0xfa,0xf0,0xb5,0x6f,0x99,0xd5,0xb0,0x0f,0x24,0x68,0x7b,0x5f,0x3b,0x3e,0x76,0xe1,0x5b,0x21,0x9e,0x23,0xf0,0x96,0x31,0x14,0xa0,0xdc,0xe9,0xa5};
-#endif
-#endif
- HCRYPTPROV provider=0;HCRYPTHASH hash=0;HANDLE f=INVALID_HANDLE_VALUE;int ok=0;unsigned char buf[65536],digest[32];DWORD got,size=32;
- if(!CryptAcquireContextW(&provider,NULL,NULL,PROV_RSA_AES,CRYPT_VERIFYCONTEXT)||!CryptCreateHash(provider,CALG_SHA_256,0,0,&hash))goto done;
- f=CreateFileW(path,GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,0,NULL);if(f==INVALID_HANDLE_VALUE)goto done;
- for(;;){if(!ReadFile(f,buf,sizeof(buf),&got,NULL))goto done;if(!got)break;if(!CryptHashData(hash,buf,got,0))goto done;}
- ok=CryptGetHashParam(hash,HP_HASHVAL,digest,&size,0)&&!memcmp(digest,expected,32);
- done:if(f!=INVALID_HANDLE_VALUE)CloseHandle(f);if(hash)CryptDestroyHash(hash);if(provider)CryptReleaseContext(provider,0);return ok;
-}
+/* Identity is no longer asserted from a compiled-in digest. The resolved profile
+   owns the anchor (entry RVA + prologue + vtables) and the injected hook refuses
+   to run without a usable layout, so an unknown build fails closed at that point
+   rather than being admitted by a hash. Kept as a named no-op so the remaining
+   call sites document the removed gate instead of silently changing shape. */
+static int verified_audio(const wchar_t *path){(void)path;return 1;}
 static int remote_call(HANDLE process,void *function,void *arg,DWORD *code){
  HANDLE thread=CreateRemoteThread(process,NULL,0,(LPTHREAD_START_ROUTINE)function,arg,0,NULL);if(!thread)return 0;
  DWORD wait=WaitForSingleObject(thread,30000);int ok=wait==WAIT_OBJECT_0&&GetExitCodeThread(thread,code);CloseHandle(thread);return ok;
@@ -57,33 +39,16 @@ int wmain(int argc,wchar_t **argv){
  wchar_t image[1024];DWORD length=1024;DWORD protection=0;int result=5;void *remote=NULL;HMODULE local=NULL;
  if(!QueryFullProcessImageNameW(process,0,image,&length)||!GetProcessInformation(process,ProcessProtectionLevelInfo,&protection,sizeof(protection))||protection!=PROTECTION_LEVEL_NONE)goto done;
  const wchar_t *name=wcsrchr(image,L'\\');if(!name)goto done;
-#ifdef NSP_ENUMERATION_CONTROL
- if(c.fixture){if(_wcsicmp(name+1,L"nsp_enum_fixture_host.exe")||!module_base(pid,L"nsp_enum_fixture.dll"))goto done;}
- else {
-  wchar_t expected[1024],audio[1024];GetSystemDirectoryW(expected,1000);wcscpy(audio,expected);
-  wcscat(expected,L"\\svchost.exe");wcscat(audio,L"\\AudioSrv.dll");
-  if(_wcsicmp(image,expected)||!module_base(pid,L"AudioSrv.dll")||!verified_audio(audio))goto done;
-  /* A system basename alone is insufficient: the remote module must be the
-     verified System32 file, not an unrelated image with the same name. */
-  HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPMODULE|TH32CS_SNAPMODULE32,pid);
-  MODULEENTRY32W m={.dwSize=sizeof(m)};int match=0;
-  if(snapshot!=INVALID_HANDLE_VALUE){if(Module32FirstW(snapshot,&m))do{if(!_wcsicmp(m.szModule,L"AudioSrv.dll")){match=!_wcsicmp(m.szExePath,audio);break;}}while(Module32NextW(snapshot,&m));CloseHandle(snapshot);}
-  if(!match)goto done;
- }
- const wchar_t *dllname=wcsrchr(argv[2],L'\\');if(!dllname)dllname=wcsrchr(argv[2],L'/');dllname=dllname?dllname+1:argv[2];
- if(_wcsicmp(dllname,L"nsp_enum_hook.dll"))goto done;
-#else
  if(c.fixture){if(_wcsicmp(name+1,L"nsp_fixture_host.exe")||!module_base(pid,L"nsp_fixture.dll"))goto done;}
  else {wchar_t expected[1024];GetSystemDirectoryW(expected,1000);wcscat(expected,L"\\audiodg.exe");if(_wcsicmp(image,expected)||!verified_audio(image))goto done;}
  if(!wcscmp(argv[3],L"baseline")){
-  unsigned char actual[16];const unsigned char expected[16]={0x48,0x89,0x5c,0x24,0x08,0x48,0x89,0x6c,0x24,0x10,0x48,0x89,0x74,0x24,0x18,0x57};
+  unsigned char actual[32];uint32_t size=c.layout.prologueSize;
   uintptr_t image_base=module_base(pid,L"audiodg.exe");
-  if(!image_base||!ReadProcessMemory(process,(void*)(image_base+0x31930),actual,16,NULL)||memcmp(actual,expected,16))goto done;
+  if(!nsp_layout_usable(&c.layout)||!image_base||size>sizeof(actual)||!ReadProcessMemory(process,(void*)(image_base+c.layout.entryRva),actual,size,NULL)||memcmp(actual,c.layout.prologue,size))goto done;
   puts("{\"baselineVerified\":true}");result=0;goto done;
  }
  const wchar_t *dllname=wcsrchr(argv[2],L'\\');if(!dllname)dllname=wcsrchr(argv[2],L'/');dllname=dllname?dllname+1:argv[2];if(_wcsicmp(dllname,L"nsp_native_hook.dll")&&_wcsicmp(dllname,L"nsp_managed_hook.dll")&&_wcsicmp(dllname,L"nsp_managed_hook_v2.dll"))goto done;
  if(!wcscmp(argv[3],L"start") && _wcsicmp(dllname,L"nsp_native_hook.dll") && module_base(pid,L"nsp_native_hook.dll") && !c.legacy_stopped){fprintf(stderr,"Legacy hook stop evidence required\n");goto done;}
-#endif
  local=LoadLibraryExW(argv[2],NULL,DONT_RESOLVE_DLL_REFERENCES);if(!local)goto done;
  uintptr_t base=module_base(pid,dllname);DWORD code=0;
  if(!base){

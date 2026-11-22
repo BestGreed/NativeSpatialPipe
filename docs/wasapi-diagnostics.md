@@ -11,7 +11,7 @@ From the public checkout root, set `NSP_LLVM_BIN` as described in the [Windows b
 ./modules/audio-backends/Build-Wasapi.ps1 -LlvmBin $env:NSP_LLVM_BIN -DiagnosticTrace -TargetDirectory build/audio-backends/wasapi-trace
 ```
 
-These commands build the standalone backend. Using it for playback requires a host that supplies the output-pool callbacks and a render endpoint. The public scheduler build does not select this backend.
+These commands build the standalone backend. Using it for playback requires a host that supplies the output-pool callbacks and a render endpoint. The product scheduler can select this backend for the stereo LSAC path when it is built and enabled in playback JSON.
 
 ## Read a trace
 

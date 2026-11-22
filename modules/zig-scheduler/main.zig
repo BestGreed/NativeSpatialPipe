@@ -39,11 +39,16 @@ fn execute() !void {
         defer u.a.free(result);try std.io.getStdOut().writer().print("{s}\n",.{result});return;
     }
     if (std.mem.eql(u8, args[1], "host")) return host.run(args, root);
+    // Capture-profile work requested by a UI action or an offline import. It
+    // never needs the session home; the cached profile path is fixed.
+    if (std.mem.eql(u8, args[1], "profile-resolve")) std.process.exit(try @import("profile_cli.zig").resolve(args, root));
+    if (std.mem.eql(u8, args[1], "profile-import")) std.process.exit(try @import("profile_cli.zig").importProfile(args, root));
     const local = try std.process.getEnvVarOwned(u.a, "LOCALAPPDATA");
     defer u.a.free(local);
     const defaultHome = try u.join(&.{ local, "NativeSpatialPipe" });
     defer u.a.free(defaultHome);
     const home = u.option(args, "--home") orelse defaultHome;
+    if (std.mem.eql(u8, args[1], "verify-hook-baseline")) return @import("stop_proof.zig").printBaseline(root, home);
     if (std.mem.eql(u8, args[1], "media-foundation")) return @import("media_foundation.zig").update(args, home);
     if(std.mem.eql(u8,args[1],"standby-start"))return @import("aoip_resident.zig").start(args,root,home);
     if(std.mem.eql(u8,args[1],"aoip-resident"))return @import("aoip_resident.zig").serve(args,root,home);

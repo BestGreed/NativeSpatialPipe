@@ -13,7 +13,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 parser = argparse.ArgumentParser()
-parser.add_argument('--dll', type=Path, default=ROOT / 'build/telemetry/release/nsp_roar_bridge.dll')
+parser.add_argument('--dll', type=Path, default=ROOT / 'build/telemetry/release/nsp_croksor.dll')
 parser.add_argument('--report', type=Path, help='Save the measured on/off equivalence report (no PCM)')
 args, remaining = parser.parse_known_args()
 DLL = C.CDLL(str(args.dll.resolve()))

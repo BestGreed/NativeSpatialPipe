@@ -1,9 +1,12 @@
 // Windows x64 capture/worker only. Existing nsp_link_send ABI remains unchanged.
+// Every struct offset and vtable identity now comes from NspCaptureLayout; this
+// file carries no build-specific constant.
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "NspCaptureLayout.h"
 #ifdef NSP_WORKER_MMCSS
 #include <avrt.h>
 #endif
@@ -18,15 +21,17 @@
 #endif
 #define OBJECTS 160
 #define BYTES (OBJECTS*(32+4096*4))
+#define BLOCK_UNRESOLVED (-2147483647-1)
 typedef int (*Send)(void*,const char*,uint32_t,const void*,uint32_t);
 typedef struct {
  uintptr_t block,pcm,props;uint64_t sequence,ordinal,capture,done,start,unix_ms;
  uint32_t bytes,count,stride,index,tid,frames[OBJECTS];uint8_t data[BYTES];
 } Packet;
 typedef struct {
- uintptr_t vt1,vt2;Send send;void *link;HANDLE event,worker;DWORD worker_id;
+ NspCaptureLayout layout;uintptr_t vt[NSP_LAYOUT_VTABLES];int32_t blockOffset;
+ Send send;void *link;HANDLE event,worker;DWORD worker_id;
  volatile LONG write_seq,read_seq,busy,stopping,concurrent,faults,send_errors;
- uint64_t hits,copies,total,budget,budget_rejected,dropped,invalid,sent,wakes;
+ uint64_t hits,copies,total,budget,budget_rejected,dropped,invalid,vt_miss,block_locate_miss,sent,wakes;
  uint32_t high,thread_count,tids[16];uintptr_t blocks[SOURCE_LIMIT];uint64_t sequences[SOURCE_LIMIT];uint32_t block_count;
 #ifdef NSP_PHASE_PROBE
  uint64_t phase_origin;
@@ -39,12 +44,31 @@ typedef struct {
 } Capture;
 static uint64_t ns(Capture *c){LARGE_INTEGER q;QueryPerformanceCounter(&q);return (q.QuadPart/c->hz.QuadPart)*1000000000ULL+(q.QuadPart%c->hz.QuadPart)*1000000000ULL/c->hz.QuadPart;}
 static LONG acquire(volatile LONG *p){return InterlockedCompareExchange(p,0,0);}
-static void capture_inner(Capture *c,uint8_t *b,uint64_t start){
- uintptr_t vt=*(uintptr_t*)b;if(vt!=c->vt1&&vt!=c->vt2)return;
- uint32_t count=*(uint32_t*)(b+0x5d4),index=*(uint32_t*)(b+0x5d0);
- if(b[0x5d8]!=1||count<1||count>OBJECTS||index>1){c->invalid++;return;}
- uint8_t *desc=*(uint8_t**)(b+0x510);uint32_t stride=*(uint32_t*)(desc+20);
- if(*(uint32_t*)(desc+12)!=32||stride<4||stride>16384||stride%4){c->invalid++;return;}
+/* Locate the vtable-bearing block once per session by scanning a bounded window
+   around the endpoint object. No build constant, no memory scanning elsewhere. */
+static int32_t locate_block(Capture *c,uint8_t *endpoint){
+ for(int32_t off=c->layout.blockSearchStart;off<=c->layout.blockSearchEnd;off+=(int32_t)c->layout.blockSearchStep){
+  uintptr_t value=*(uintptr_t*)(endpoint+off);
+  for(uint32_t i=0;i<c->layout.vtableCount;i++)if(value==c->vt[i])return off;
+ }
+ return BLOCK_UNRESOLVED;
+}
+static void capture_inner(Capture *c,uint8_t *endpoint,uint64_t start){
+ if(c->blockOffset==BLOCK_UNRESOLVED){
+  int32_t found=locate_block(c,endpoint);
+  if(found==BLOCK_UNRESOLVED){c->block_locate_miss++;return;}
+  c->blockOffset=found;
+ }
+ uint8_t *b=endpoint+c->blockOffset;
+ uintptr_t vt=*(uintptr_t*)b;uint32_t i;int matched=0;
+ for(i=0;i<c->layout.vtableCount;i++)if(vt==c->vt[i]){matched=1;break;}
+ if(!matched){c->vt_miss++;return;}
+ uint32_t count=*(uint32_t*)(b+c->layout.countOffset),index=*(uint32_t*)(b+c->layout.indexOffset);
+ if(b[c->layout.flagOffset]!=1||count<1||count>OBJECTS||index>c->layout.maxBufferIndex){c->invalid++;return;}
+ uint8_t *desc=*(uint8_t**)(b+c->layout.descPtrOffset);
+ if(!desc){c->invalid++;return;}
+ uint32_t stride=*(uint32_t*)(desc+c->layout.descStrideOffset);
+ if(*(uint32_t*)(desc+c->layout.descPropSizeOffset)!=32||stride<4||stride>16384||stride%4){c->invalid++;return;}
 #ifdef NSP_PHASE_PROBE
  if(count!=12)return;
  uint32_t lane;
@@ -60,20 +84,22 @@ static void capture_inner(Capture *c,uint8_t *b,uint64_t start){
  c->sequences[lane]++;
  return;
 #endif
- uint8_t *props=*(uint8_t**)(desc+0x28+index*24),*pcm=*(uint8_t**)(desc+0x38+index*24);
+ uint8_t *props=*(uint8_t**)(desc+c->layout.propsBase+index*c->layout.propStride);
+ uint8_t *pcm=*(uint8_t**)(desc+c->layout.pcmBase+index*c->layout.propStride);
+ if(!props||!pcm){c->invalid++;return;}
  uint32_t w=(uint32_t)acquire(&c->write_seq),r=(uint32_t)acquire(&c->read_seq);
  if(w-r>=CAP){c->dropped++;return;}
  Packet *p=&c->slots[w%CAP];p->capture=ns(c);uint32_t bytes=count*32;
- for(uint32_t i=0;i<count;i++){uint32_t f=*(uint32_t*)(props+i*32+4);if(f>4096||f*4>stride){c->invalid++;return;}p->frames[i]=f;bytes+=f*4;}
+ for(uint32_t k=0;k<count;k++){uint32_t f=*(uint32_t*)(props+k*32+c->layout.frameCountOffset);if(f>4096||f*4>stride){c->invalid++;return;}p->frames[k]=f;bytes+=f*4;}
  if(c->total+bytes>c->budget){c->budget_rejected++;return;}
  memcpy(p->data,props,count*32);uint32_t offset=count*32;
- for(uint32_t i=0;i<count;i++){memcpy(p->data+offset,pcm+i*stride,p->frames[i]*4);offset+=p->frames[i]*4;}
- if(b[0x5d8]!=1||*(uint32_t*)(b+0x5d0)!=index){c->invalid++;return;}
- uint32_t k;for(k=0;k<c->block_count;k++)if(c->blocks[k]==(uintptr_t)b)break;
- if(k==c->block_count){if(k==SOURCE_LIMIT){c->invalid++;return;}c->blocks[k]=(uintptr_t)b;c->block_count++;}
+ for(uint32_t k=0;k<count;k++){memcpy(p->data+offset,pcm+k*stride,p->frames[k]*4);offset+=p->frames[k]*4;}
+ if(b[c->layout.flagOffset]!=1||*(uint32_t*)(b+c->layout.indexOffset)!=index){c->invalid++;return;}
+ uint32_t slot;for(slot=0;slot<c->block_count;slot++)if(c->blocks[slot]==(uintptr_t)b)break;
+ if(slot==c->block_count){if(slot==SOURCE_LIMIT){c->invalid++;return;}c->blocks[slot]=(uintptr_t)b;c->block_count++;}
  p->done=ns(c);p->block=(uintptr_t)b;p->pcm=(uintptr_t)pcm;p->props=(uintptr_t)props;
  p->count=count;p->stride=stride;p->index=index;p->bytes=bytes;p->start=start;p->tid=GetCurrentThreadId();
- p->sequence=c->sequences[k]++;p->ordinal=c->copies;
+ p->sequence=c->sequences[slot]++;p->ordinal=c->copies;
  FILETIME ft;GetSystemTimeAsFileTime(&ft);ULARGE_INTEGER time;time.LowPart=ft.dwLowDateTime;time.HighPart=ft.dwHighDateTime;p->unix_ms=(time.QuadPart-116444736000000000ULL)/10000;
  uint32_t t;for(t=0;t<c->thread_count;t++)if(c->tids[t]==p->tid)break;if(t==c->thread_count&&t<16)c->tids[c->thread_count++]=p->tid;
  c->copies++;c->total+=bytes;if(w-r+1>c->high)c->high=w-r+1;
@@ -81,11 +107,11 @@ static void capture_inner(Capture *c,uint8_t *b,uint64_t start){
  // One notification per publish: no unsafe empty->nonempty wakeup race.
  if(!SetEvent(c->event))InterlockedIncrement(&c->faults);
 }
-API void nsp_capture_packet(Capture *c,void *block){
+API void nsp_capture_packet(Capture *c,void *endpoint){
  if(acquire(&c->stopping))return;
  if(InterlockedCompareExchange(&c->busy,1,0)!=0){InterlockedIncrement(&c->concurrent);return;}
  uint64_t start=ns(c);c->hits++;
- __try {capture_inner(c,block,start);} __except(EXCEPTION_EXECUTE_HANDLER){InterlockedIncrement(&c->faults);}
+ __try {capture_inner(c,(uint8_t*)endpoint,start);} __except(EXCEPTION_EXECUTE_HANDLER){InterlockedIncrement(&c->faults);}
  uint64_t elapsed=ns(c)-start;c->callback_count++;c->callback_sum+=elapsed;if(elapsed>c->callback_max)c->callback_max=elapsed;
  c->histogram[elapsed/1000>50000?50000:elapsed/1000]++;
  InterlockedExchange(&c->busy,0);
@@ -122,9 +148,12 @@ static DWORD WINAPI drain(void *arg){
  QueryThreadCycleTime(GetCurrentThread(),&c->worker_cycles);
  return 0;
 }
-API Capture *nsp_capture_create(void *vt1,void *vt2,void *send,void *link,uint64_t budget){
+API Capture *nsp_capture_create(const NspCaptureLayout *layout,void *image_base,void *send,void *link,uint64_t budget){
+ if(!nsp_layout_usable(layout))return NULL;
  Capture *c=HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,sizeof(Capture));if(!c)return NULL;
- c->vt1=(uintptr_t)vt1;c->vt2=(uintptr_t)vt2;c->send=(Send)send;c->link=link;c->budget=budget;QueryPerformanceFrequency(&c->hz);
+ memcpy(&c->layout,layout,sizeof(*layout));
+ for(uint32_t i=0;i<layout->vtableCount;i++)c->vt[i]=(uintptr_t)image_base+(uintptr_t)layout->vtableRva[i];
+ c->blockOffset=BLOCK_UNRESOLVED;c->send=(Send)send;c->link=link;c->budget=budget;QueryPerformanceFrequency(&c->hz);
  c->event=CreateEventW(NULL,FALSE,FALSE,NULL);if(c->event)c->worker=CreateThread(NULL,0,drain,c,0,&c->worker_id);
  if(!c->worker){if(c->event)CloseHandle(c->event);HeapFree(GetProcessHeap(),0,c);return NULL;}return c;
 }
@@ -144,7 +173,7 @@ API int nsp_capture_report(Capture *c,char *out,uint32_t cap){
  used+=snprintf(out+used,cap-used,"]}");
  return used;
 #else
- int n=snprintf(out,cap,"{\"hits\":%llu,\"copies\":%llu,\"sent\":%llu,\"queueDropped\":%llu,\"queueHighWater\":%u,\"queueRemaining\":%u,\"totalBytes\":%llu,\"budgetRejected\":%llu,\"invalidDescriptors\":%llu,\"concurrentRejected\":%ld,\"faults\":%ld,\"sendErrors\":%ld,\"schedulerStats\":{\"backend\":\"pure-c-worker\",\"threadId\":%lu,\"workerStopped\":true,\"notifications\":%llu},\"callbackMs\":{\"count\":%llu,\"mean\":%.9f,\"p50\":%.3f,\"p95\":%.3f,\"p99\":%.3f,\"max\":%.9f,\"overflow\":%llu},\"producerThreadIds\":[",c->hits,c->copies,c->sent,c->dropped,c->high,(uint32_t)c->write_seq-(uint32_t)c->read_seq,c->total,c->budget_rejected,c->invalid,c->concurrent,c->faults,c->send_errors,c->worker_id,c->wakes,c->callback_count,c->callback_count?(double)c->callback_sum/c->callback_count/1e6:0,percentile(c,50),percentile(c,95),percentile(c,99),c->callback_max/1e6,c->histogram[50000]);
+ int n=snprintf(out,cap,"{\"hits\":%llu,\"copies\":%llu,\"sent\":%llu,\"queueDropped\":%llu,\"queueHighWater\":%u,\"queueRemaining\":%u,\"totalBytes\":%llu,\"budgetRejected\":%llu,\"invalidDescriptors\":%llu,\"vtableMiss\":%llu,\"blockLocateMiss\":%llu,\"blockOffset\":%d,\"concurrentRejected\":%ld,\"faults\":%ld,\"sendErrors\":%ld,\"schedulerStats\":{\"backend\":\"pure-c-worker\",\"threadId\":%lu,\"workerStopped\":true,\"notifications\":%llu},\"callbackMs\":{\"count\":%llu,\"mean\":%.9f,\"p50\":%.3f,\"p95\":%.3f,\"p99\":%.3f,\"max\":%.9f,\"overflow\":%llu},\"producerThreadIds\":[",c->hits,c->copies,c->sent,c->dropped,c->high,(uint32_t)c->write_seq-(uint32_t)c->read_seq,c->total,c->budget_rejected,c->invalid,c->vt_miss,c->block_locate_miss,c->blockOffset,c->concurrent,c->faults,c->send_errors,c->worker_id,c->wakes,c->callback_count,c->callback_count?(double)c->callback_sum/c->callback_count/1e6:0,percentile(c,50),percentile(c,95),percentile(c,99),c->callback_max/1e6,c->histogram[50000]);
  for(uint32_t i=0;i<c->thread_count;i++)n+=snprintf(out+n,cap-n,"%s%u",i?",":"",c->tids[i]);
  n+=snprintf(out+n,cap-n,"],\"workerCpuSeconds\":%.8f,\"workerTimesOk\":%d,\"workerTimesError\":%lu,\"workerCycles\":%llu,\"mmcss\":{\"registered\":%d,\"prioritySet\":%d,\"reverted\":%d,\"error\":%lu},\"blocks\":{",c->worker_cpu_seconds,c->worker_times_ok,c->worker_times_error,(unsigned long long)c->worker_cycles,c->mmcss_registered,c->mmcss_priority,c->mmcss_reverted,c->mmcss_error);for(uint32_t i=0;i<c->block_count;i++)n+=snprintf(out+n,cap-n,"%s\"0x%llx\":%llu",i?",":"",(unsigned long long)c->blocks[i],c->sequences[i]);n+=snprintf(out+n,cap-n,"}}");return n;
 #endif

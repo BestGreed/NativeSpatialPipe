@@ -11,7 +11,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('multi', pathlib.Path(__file__).with_name('Multi-Stream.py'))
 multi = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(multi)
-DLL = ROOT / 'build/telemetry-objects/release/nsp_roar_bridge.dll'
+DLL = ROOT / 'build/telemetry-objects/release/nsp_croksor.dll'
 
 
 def packet(block, seq, frames=480, value=.125):

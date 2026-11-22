@@ -6,7 +6,6 @@ Use this index to look up the new location of a retired page. The [current docum
 | --- | --- |
 | `docs/control-recovery-20261019.md` | [`docs/archive/control-recovery-20261019.md`](control-recovery-20261019.md) |
 | `docs/core/current-architecture.md` | [`docs/archive/core/current-architecture.md`](core/current-architecture.md) |
-| `docs/core/native-enumeration-hook-20261024.md` | [`docs/archive/core/native-enumeration-hook-20261024.md`](core/native-enumeration-hook-20261024.md) |
 | `docs/core/output-layout-presets-20261023.md` | [`docs/archive/core/output-layout-presets-20261023.md`](core/output-layout-presets-20261023.md) |
 | `docs/core/output-pool-processing-20261022.md` | [`docs/archive/core/output-pool-processing-20261022.md`](core/output-pool-processing-20261022.md) |
 | `docs/core/playback-json-configuration-20261022.md` | [`docs/archive/core/playback-json-configuration-20261022.md`](core/playback-json-configuration-20261022.md) |

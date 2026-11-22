@@ -5,16 +5,16 @@ static HANDLE films_tv_prepare;
 static ULONGLONG films_tv_due;
 
 static void films_tv_launch(int disabling) {
-    wchar_t controller[MAX_PATH], program[MAX_PATH], prefix[128], command[4096];
+    wchar_t controller[MAX_PATH], program[MAX_PATH], command[4096];
     DWORD length=GetModuleFileNameW(NULL,controller,MAX_PATH);
     if(!length||length>=MAX_PATH)return;
     wchar_t *slash=wcsrchr(controller,L'\\');
     if(!slash||wcslen(L"NspMftRouteControl.exe")+1>MAX_PATH-(size_t)(slash+1-controller))return;
     wcscpy(slash+1,L"NspMftRouteControl.exe");
-    if(!nsp_program(program,prefix,MAX_PATH)||prefix[0])return;
+    if(!nsp_program(program))return;
     int count=swprintf(command,4096,L"\"%ls\" media-foundation --mft-controller \"%ls\"%ls",
                        program,controller,disabling?L" --disable":L"");
-    if(count<0||(!disabling&&!nsp_append_playback(command,4096,ini,0)))return;
+    if(count<0||(!disabling&&!nsp_append_playback(command,4096,ini)))return;
     STARTUPINFOW startup={.cb=sizeof(startup)};PROCESS_INFORMATION child={0};
     if(CreateProcessW(program,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&startup,&child)){
         CloseHandle(child.hThread);films_tv_prepare=child.hProcess;

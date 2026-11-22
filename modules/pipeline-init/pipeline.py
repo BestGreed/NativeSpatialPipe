@@ -6,6 +6,7 @@ from windows import ROOT,run,ps,default_endpoint,home
 def prepare(endpoint,format,persist,groups,owner_pid=None):
  from manager import status
  if endpoint.lower()!=default_endpoint().lower():raise ValueError('Preferred endpoint changed')
+ if groups:raise ValueError('Extra AudioSrv enumeration is outside public support')
  state=status()
  if groups:
   # start is idempotent for the same resident configuration; no restart per NSp.

@@ -15,12 +15,10 @@ static void nsp_queue_request(LONG request) {
 }
 /* Only the native scheduler is supported. Reject retired/unknown selections;
    a missing executable must never silently launch a legacy host. */
-static int nsp_program(wchar_t *program,wchar_t *prefix,size_t capacity) {
+static int nsp_program(wchar_t *program) {
     wchar_t script[MAX_PATH],scheduler[32];
     GetPrivateProfileStringW(L"NSP",L"Scheduler",L"Zig",scheduler,32,ini);
-    (void)capacity;
     if(_wcsicmp(scheduler,L"Zig"))return 0;
-    prefix[0]=0;
     GetPrivateProfileStringW(L"NSP",L"ControlExecutable",L"",program,MAX_PATH,ini);
     if(program[0])return !wcschr(program,L'"');
     wcscpy(script,ini);
@@ -38,23 +36,23 @@ static int nsp_emergency_dispatch(void) {
         if(WaitForSingleObject(nsp_emergency_process,0)==WAIT_TIMEOUT)return 1;
         CloseHandle(nsp_emergency_process);nsp_emergency_process=NULL;
     }
-    wchar_t python[MAX_PATH],prefix[2*MAX_PATH],command[2048];
-    if(!nsp_program(python,prefix,2*MAX_PATH))return 0;
-    swprintf(command,2048,L"\"%ls\" %lsemergency-stop",python,prefix);
+    wchar_t program[MAX_PATH],command[2048];
+    if(!nsp_program(program))return 0;
+    swprintf(command,2048,L"\"%ls\" emergency-stop",program);
     STARTUPINFOW startup={.cb=sizeof(startup)};PROCESS_INFORMATION child={0};
-    if(!CreateProcessW(python,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&startup,&child))return 0;
+    if(!CreateProcessW(program,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&startup,&child))return 0;
     CloseHandle(child.hThread);nsp_emergency_process=child.hProcess;return 1;
 }
 static int nsp_configured(void) {
-    wchar_t program[MAX_PATH],prefix[2*MAX_PATH];
-    return nsp_program(program,prefix,2*MAX_PATH) && GetFileAttributesW(program)!=INVALID_FILE_ATTRIBUTES;
+    wchar_t program[MAX_PATH];
+    return nsp_program(program) && GetFileAttributesW(program)!=INVALID_FILE_ATTRIBUTES;
 }
 /* Network service follows FSA lifetime; this does not select a format or Hook. */
 static void nsp_standby_dispatch(void) {
-    wchar_t program[MAX_PATH],prefix[2*MAX_PATH],command[4096];
-    if(!nsp_program(program,prefix,2*MAX_PATH) || prefix[0])return;
+    wchar_t program[MAX_PATH],command[4096];
+    if(!nsp_program(program))return;
     swprintf(command,4096,L"\"%ls\" standby-start --owner-pid %lu",program,GetCurrentProcessId());
-    if(!nsp_append_playback(command,4096,ini,0))return;
+    if(!nsp_append_playback(command,4096,ini))return;
     STARTUPINFOW startup={.cb=sizeof(startup)};PROCESS_INFORMATION child={0};
     if(CreateProcessW(program,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&startup,&child)){
         CloseHandle(child.hThread);CloseHandle(child.hProcess);
@@ -67,28 +65,26 @@ static int nsp_control_process(const wchar_t *action) {
         if(WaitForSingleObject(nsp_pending_control,0)==WAIT_TIMEOUT)return NSP_UNKNOWN;
         CloseHandle(nsp_pending_control);nsp_pending_control=NULL;
     }
-    wchar_t python[MAX_PATH],prefix[2*MAX_PATH],command[4096],local[MAX_PATH],marker[MAX_PATH],request_id[80],reply_id[80];
-    if(!nsp_program(python,prefix,2*MAX_PATH))return 20;
+    wchar_t program[MAX_PATH],command[4096],local[MAX_PATH],marker[MAX_PATH],request_id[80],reply_id[80];
+    if(!nsp_program(program))return 20;
     if(!GetEnvironmentVariableW(L"LOCALAPPDATA",local,MAX_PATH))return 20;
     swprintf(marker,MAX_PATH,L"%ls\\NativeSpatialPipe\\hook-status.ini",local);
     swprintf(request_id,80,L"%lu-%llu",GetCurrentProcessId(),GetTickCount64());
-    swprintf(command,4096,L"\"%ls\" %ls%ls --owner-pid %lu --endpoint \"%ls\" --request-id %ls",python,prefix,action,GetCurrentProcessId(),profiles[0].endpoint,request_id);
+    swprintf(command,4096,L"\"%ls\" %ls --owner-pid %lu --endpoint \"%ls\" --request-id %ls",program,action,GetCurrentProcessId(),profiles[0].endpoint,request_id);
     if(!wcscmp(action,L"start")){
         wchar_t format[80];GetPrivateProfileStringW(L"NSP",L"FrontendFormat",L"WindowsSonic",format,80,ini);
         if(wcschr(format,L'"') || wcschr(format,L' '))return NSP_UNKNOWN;
         size_t used=wcslen(command);swprintf(command+used,4096-used,L" --spatial-format %ls",format);
-        if(!nsp_append_playback(command,4096,ini,prefix[0]!=0))return NSP_UNKNOWN;
+        if(!nsp_append_playback(command,4096,ini))return NSP_UNKNOWN;
     }
-    if(!prefix[0]){
-        wchar_t telemetry_python[MAX_PATH];
-        GetPrivateProfileStringW(L"NSP",L"Python",L"",telemetry_python,MAX_PATH,ini);
-        if(telemetry_python[0] && !wcschr(telemetry_python,L'"')){
-            size_t used=wcslen(command);
-            swprintf(command+used,4096-used,L" --python \"%ls\"",telemetry_python);
-        }
+    wchar_t telemetry_python[MAX_PATH];
+    GetPrivateProfileStringW(L"NSP",L"Python",L"",telemetry_python,MAX_PATH,ini);
+    if(telemetry_python[0] && !wcschr(telemetry_python,L'"')){
+        size_t used=wcslen(command);
+        swprintf(command+used,4096-used,L" --python \"%ls\"",telemetry_python);
     }
     STARTUPINFOW startup={.cb=sizeof(startup)};PROCESS_INFORMATION child={0};
-    if(!CreateProcessW(python,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&startup,&child))return 20;
+    if(!CreateProcessW(program,command,NULL,NULL,FALSE,CREATE_NO_WINDOW,NULL,NULL,&startup,&child))return 20;
     DWORD wait=WaitForSingleObject(child.hProcess,45000),code=20;
     if(wait==WAIT_OBJECT_0)GetExitCodeProcess(child.hProcess,&code);
     CloseHandle(child.hThread);
@@ -110,9 +106,7 @@ static int (*nsp_control)(const wchar_t *)=nsp_control_process;
 #define nsp_control nsp_control_process
 #endif
 static int nsp_shutdown(void) {
-    wchar_t program[MAX_PATH],prefix[2*MAX_PATH];
-    if(!nsp_program(program,prefix,2*MAX_PATH))return NSP_UNKNOWN;
-    /* The explicit legacy adapter predates the shutdown action. Its stop
-       still performs the same live Hook-off verification. */
-    return nsp_control(prefix[0]?L"stop":L"shutdown");
+    wchar_t program[MAX_PATH];
+    if(!nsp_program(program))return NSP_UNKNOWN;
+    return nsp_control(L"shutdown");
 }

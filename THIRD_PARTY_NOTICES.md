@@ -5,9 +5,9 @@ The root Apache-2.0 license covers original Native Spatial Pipe code and documen
 | Component | Pinned source | Applicable notices |
 |---|---|---|
 | MinHook | [TsudaKageyu/minhook](https://github.com/TsudaKageyu/minhook), `c3fcafdc10146beb5919319d0683e44e3c30d537` | [Full upstream license](licenses/MinHook-LICENSE.txt), including its bundled disassembler notices |
-| ROAR | [AOMediaCodec/roar](https://github.com/AOMediaCodec/roar), `60c96e566c1dd2838468006b63ada716549f82b2` | [LICENSE](licenses/ROAR-LICENSE) and [PATENTS](licenses/ROAR-PATENTS) |
+| ROAR | [AOMediaCodec/roar](https://github.com/AOMediaCodec/roar), `b3051102efaab6a7c44399c9bc9f986a0f822a22` | [LICENSE](licenses/ROAR-LICENSE) and [PATENTS](licenses/ROAR-PATENTS) |
 
-The ROAR patch in `modules/croksor/patches/olr-block-mix.patch` modifies upstream object mixing to avoid a redundant accumulation for a single object while retaining the multi-object accumulation order. It was prepared for this project in October 2026. The patch and modified upstream source remain subject to the ROAR license and patent terms; no upstream copyright notice is removed.
+The current product build applies `modules/croksor/patches/roar-1.1-validated.patch` to the pinned ROAR 1.1 source. This patch contains the validated downstream rendering and workspace changes. Earlier individual patches remain as historical source material; the product patch list is maintained by `modules/croksor/Build.ps1`. The patch and modified upstream source remain subject to the ROAR license and patent terms; no upstream copyright notice is removed.
 
 ROAR's copyright license expressly excludes a patent grant; its separate PATENTS file provides the AOM Patent License 1.0 subject to its own terms and scope. Apache-2.0 for this project's contributions does not replace those terms or grant third-party patent rights.
 
@@ -21,7 +21,7 @@ Windows binaries, proprietary audio codecs, game audio and Wwise projects are no
 
 ## Final Spatial Audio integration
 
-The FSA source under `modules/fsa-integration` derives from BestGreed/Final_Spatial_Audio revision `decba9b` and retains its own Unlicense in that directory. Its icon artwork is included with the project owner's authorization and retains its separate asset notice. See `docs/scheduler.md` and that notice before reusing artwork. The root Apache license does not override these notices or grant rights in third-party marks.
+The FSA source under `modules/fsa-integration` derives from BestGreed/Final_Spatial_Audio revision `decba9b` and retains its own Unlicense in that directory. Its icon artwork is included with the project owner's authorization and retains its separate asset notice. See `modules/fsa-integration/README.md` and `modules/fsa-integration/native/assets/LICENSE.txt` before reusing artwork. The root Apache license does not override these notices or grant rights in third-party marks.
 
 ## Frontend listener model
 

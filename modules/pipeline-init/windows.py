@@ -21,7 +21,7 @@ def creation(pid):
  finally:k.CloseHandle(h)
 def run(args,timeout=15):
  p=subprocess.run([str(a) for a in args],capture_output=True,text=True,encoding='utf8',errors='replace',timeout=timeout,creationflags=0x08000000)
- if p.returncode:raise RuntimeError(f'{Path(str(args[0])).name} failed ({p.returncode}): {p.stderr[-500:]}')
+ if p.returncode:raise RuntimeError(f'{Path(str(args[0])).name} failed ({p.returncode}): {(p.stderr or p.stdout or "").strip()[-500:]}')
  return p.stdout
 def ps(script,*args,timeout=15):
  return run(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',script,*args],timeout)

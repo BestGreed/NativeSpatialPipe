@@ -1,10 +1,11 @@
 """Owned bounded native shared-memory receiver; Frida only carries control messages."""
-import ctypes as C,json,pathlib,threading,uuid
+import ctypes as C,json,pathlib,threading,time,uuid
 ROOT=pathlib.Path(__file__).resolve().parents[2]
 HEADER=8192;PAYLOAD=160*(32+4096*4)
 class Receiver:
- def __init__(self,target_pid=None):
-  self.dll_path=ROOT/'build/native-send/nsp_native_send.dll';self.lib=C.CDLL(str(self.dll_path))
+ def __init__(self,target_pid=None,dll_path=None):
+  self.dll_path=pathlib.Path(dll_path).resolve(strict=True) if dll_path else ROOT/'build/native-send/nsp_native_send.dll'
+  self.lib=C.CDLL(str(self.dll_path))
   signatures={'nsp_link_open':([C.c_wchar_p,C.c_wchar_p,C.c_int],C.c_void_p),'nsp_link_close':([C.c_void_p],None),'nsp_link_read':([C.c_void_p,C.c_void_p,C.c_uint32,C.c_void_p,C.c_uint32,C.c_void_p],C.c_int),'nsp_link_wait':([C.c_void_p,C.c_uint32],C.c_int),'nsp_link_wake':([C.c_void_p],C.c_int)}
   for n,(args,r) in signatures.items():f=getattr(self.lib,n);f.argtypes=args;f.restype=r
   prefix='Local\\'
@@ -30,7 +31,9 @@ class Receiver:
      result=self.lib.nsp_link_read(self.handle,header,HEADER,data,PAYLOAD,sizes)
      if result<0:raise RuntimeError('Native read: '+str(result))
      if result:
-      record=json.loads(C.string_at(header,sizes[0]));raw=C.string_at(data,sizes[1]);callback({'type':'send','payload':{'kind':'snapshot','record':record}},raw);self.received+=1
+      received_at=time.perf_counter_ns()
+      record=json.loads(C.string_at(header,sizes[0]));record['receiverReadQpcNs']=received_at
+      raw=C.string_at(data,sizes[1]);callback({'type':'send','payload':{'kind':'snapshot','record':record}},raw);self.received+=1
      elif self.stop.is_set():break
      elif self.lib.nsp_link_wait(self.handle,100)<0:raise RuntimeError('Native wait failed')
    except Exception as exc:self.errors.append(repr(exc))

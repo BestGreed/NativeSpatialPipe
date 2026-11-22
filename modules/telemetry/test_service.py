@@ -45,7 +45,7 @@ def TelemetryService(**kwargs):
     return _TelemetryService(**kwargs)
 spec=importlib.util.spec_from_file_location('native_control',ROOT/'tools/endpoint-probe/Native-Roar.py')
 native=importlib.util.module_from_spec(spec); spec.loader.exec_module(native)
-DLL=ROOT/'build/telemetry-objects/release/nsp_croksor.dll'
+DLL=ROOT/'build/nsp-product/runtime/release/nsp_croksor.dll'
 
 
 def audio_packet(seq):

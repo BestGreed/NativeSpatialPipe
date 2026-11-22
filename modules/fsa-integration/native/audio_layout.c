@@ -58,6 +58,24 @@ static HRESULT device_open(const wchar_t *id, IMMDevice **out) {
     }
     return hr;
 }
+HRESULT al_open_audio_host(const wchar_t *endpoint, void **out) {
+    IMMDevice *device = NULL;
+    IAudioClient *client = NULL;
+    WAVEFORMATEX *format = NULL;
+    *out = NULL;
+    HRESULT hr = device_open(endpoint, &device);
+    if (SUCCEEDED(hr)) hr = IMMDevice_Activate(device, &IID_IAudioClient, CLSCTX_INPROC_SERVER, NULL, (void**)&client);
+    if (SUCCEEDED(hr)) hr = IAudioClient_GetMixFormat(client, &format);
+    if (SUCCEEDED(hr)) hr = IAudioClient_Initialize(client, AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_NOPERSIST, 1000000, 0, format, NULL);
+    if (format) CoTaskMemFree(format);
+    if (device) IMMDevice_Release(device);
+    if (FAILED(hr)) { if (client) IAudioClient_Release(client); return hr; }
+    *out = client;
+    return S_OK;
+}
+void al_close_audio_host(void *client) {
+    if (client) IAudioClient_Release((IAudioClient*)client);
+}
 static HRESULT policy_open(Policy **out) {
     return CoCreateInstance(&policy_class, NULL, CLSCTX_INPROC_SERVER, &policy_iid, (void**)out);
 }
