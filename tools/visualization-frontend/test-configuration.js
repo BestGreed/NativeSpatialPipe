@@ -45,7 +45,7 @@ assert.equal(layoutFor('9.1.6').channels.length,16);
 console.log('PASS seven layouts, speaker-identity calibration migration and collision-free device routing');
 
 // ---- Output backend / AES67 network settings ----
-const network={destIp:'192.168.1.10',port:5004,framesPerPacket:48,ttl:32,payloadType:96,ssrc:1314082870,srcInterfaceIp:'',ptpGmid:'',ptpDomain:0,ringPackets:512,prebufferFrames:480,dll:''};
+const network={destIp:'192.168.1.10',port:5004,framesPerPacket:48,ttl:32,payloadType:96,ssrc:305419896,srcInterfaceIp:'',ptpGmid:'',ptpDomain:0,ringPackets:512,prebufferFrames:480,dll:''};
 const aes=prepare({...original,outputBackend:'aes67'},'playback');
 assert.equal(aes.outputBackend,'aes67');
 assert.equal(aes.network.destIp,'239.1.1.1');

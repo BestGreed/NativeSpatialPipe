@@ -24,7 +24,7 @@ globalThis.fetch=async(url,options={})=>{
  let body;
  if(url.endsWith('/bootstrap'))body={token:'fixture'};
  else if(url.endsWith('/drivers'))body={drivers:[{name:'Fixture driver',driver:'asio:{fixture}'}]};
- else if(url.endsWith('/network-status'))body={schema:'nsp-web-network-status/1',control:false,current:{backend:'aes67',source:'session',layout:'4.1.2',sessionState:'running'},configured:{known:true,path:'D:/fixture.json',outputBackend:'aes67',outputLayout:'4.1.2',networkIgnored:false},session:{known:true,state:'running',backend:'aes67',outputDirectory:'D:/fixture-session',layout:'4.1.2',networkIgnored:false},aes67:{status:'LIVE',source:'aes67-live.json',ageMs:1200,state:'playing',layout:'4.1.2',network:{destIp:'192.168.1.10',port:5004,ssrc:1314082870,channels:7},stats:{packetsSent:12345,silentPackets:10,bytesSent:22671360,ringDroppedFrames:0,sendErrors:0,lateTicks:0},rates:{packetsPerSecond:996.2,bitsPerSecond:13872000}},dante:{status:'NOT_AVAILABLE',detail:'placeholder'}};
+ else if(url.endsWith('/network-status'))body={schema:'nsp-web-network-status/1',control:false,current:{backend:'aes67',source:'session',layout:'4.1.2',sessionState:'running'},configured:{known:true,path:'D:/fixture.json',outputBackend:'aes67',outputLayout:'4.1.2',networkIgnored:false},session:{known:true,state:'running',backend:'aes67',outputDirectory:'D:/fixture-session',layout:'4.1.2',networkIgnored:false},aes67:{status:'LIVE',source:'aes67-live.json',ageMs:1200,state:'playing',layout:'4.1.2',network:{destIp:'192.168.1.10',port:5004,ssrc:305419896,channels:7},stats:{packetsSent:12345,silentPackets:10,bytesSent:22671360,ringDroppedFrames:0,sendErrors:0,lateTicks:0},rates:{packetsPerSecond:996.2,bitsPerSecond:13872000}},dante:{status:'NOT_AVAILABLE',detail:'placeholder'}};
  else if(url.endsWith('/status'))body={fsa:{known:true,stale:false,message:'fixture',endpoint:'fixture'},backend:null};
  else if(url.endsWith('/config/playback')){if(options.method==='PUT'){saves++;const request=JSON.parse(options.body);assert.equal(request.revision,'fixture-revision');playback=request.config;}body={id:'playback',exists:true,path:'D:/fixture.json',revision:'fixture-revision',config:structuredClone(playback)};}
  else if(url.endsWith('/config/backend'))body={id:'backend',exists:true,path:'D:/backend.json',revision:'fixture-revision',config:{version:1,spatialFormat:'WindowsSonic',fullTiming:false}};
@@ -96,13 +96,13 @@ try{
  const beforeInvalid=saves;await element('configForm').listeners.submit({preventDefault(){}});
  assert.equal(saves,beforeInvalid,'invalid IPv4 must not be saved');
  assert.equal(element('result').dataset.error,'true');
- inputPath('network.destIp').value='192.168.1.10';inputPath('network.port').value='5004';inputPath('network.ssrc').value='1314082870';
+ inputPath('network.destIp').value='192.168.1.10';inputPath('network.port').value='5004';inputPath('network.ssrc').value='305419896';
  await element('configForm').listeners.submit({preventDefault(){}});
  assert.equal(playback.outputBackend,'aes67');
  assert.equal(playback.network.destIp,'192.168.1.10');
  assert.equal(playback.network.framesPerPacket,48);
  assert.equal(playback.network.ringPackets,64);
- assert.equal(playback.network.ssrc,1314082870);
+ assert.equal(playback.network.ssrc,305419896);
  // Switching to ASIO hides AES67 inputs but keeps the block in the saved JSON.
  inputPath('outputBackend').value='asio';inputPath('outputBackend').listeners.change();
  assert.equal(inputPath('network.destIp'),undefined);
