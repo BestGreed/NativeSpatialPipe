@@ -5474,9 +5474,15 @@
     },
     {
       "path": "tools/ci/Test-Candidate.ps1",
-      "sha256": "81657ac7907876fa238112626466ce47f81de8574bb07374115cdc5157e5b7e4",
+      "sha256": "4289b611d0014138c1bb0f5db3264a7e6a237e0730b06d8ae44e86cdfca11824",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
+    },
+    {
+      "path": "tools/ci/Test-WebHostUser.ps1",
+      "origin": "public-maintained",
+      "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10",
+      "sha256": "0fc2eabf78c94b9d22a7f0e917f54ba2bb7b2a283c614556b53881606d344eac"
     },
     {
       "path": "tools/ci/Verify-Candidate.py",

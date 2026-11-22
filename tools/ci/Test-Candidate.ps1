@@ -12,12 +12,8 @@ try {
  $env:NSP_RENDER_BRIDGE_TEST_DLL=Join-Path $root 'build/nsp-product/runtime/release/nsp_croksor.dll'
  & $Python modules/zig-scheduler/Test-Scheduler.py
  if($LASTEXITCODE){throw 'Scheduler lifecycle contracts failed'}
- & $Python modules/zig-scheduler/Test-WebHost.py --host $env:NSP_SCHEDULER_TEST_EXE --report build/ci-logs/web-host.json
+ & powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/ci/Test-WebHostUser.ps1 -Python $Python -HostExecutable $env:NSP_SCHEDULER_TEST_EXE
  if($LASTEXITCODE){throw 'Web host contracts failed'}
- foreach($language in @('zh','fr')){
-  & $Python modules/zig-scheduler/Test-WebHost.py --host $env:NSP_SCHEDULER_TEST_EXE --language $language --report "build/ci-logs/web-host-$language.json"
-  if($LASTEXITCODE){throw "Web host language contracts failed: $language"}
- }
  foreach($directory in @('modules/pipeline-init','modules/telemetry')){
   & $Python -m unittest discover -s $directory -p 'test_*.py'
   if($LASTEXITCODE){throw "Python contracts failed: $directory"}
