@@ -53,13 +53,13 @@
     },
     {
       "path": "README.md",
-      "sha256": "80ade87a09296b87f61d18345fa5e3009ab7d566ffdb39eef452dc376a992191",
+      "sha256": "89da22d34ffe25575061a85a7863e697ae8c70493b4418a00848d8121c321df9",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
     {
       "path": "README.zh-CN.md",
-      "sha256": "97709fefc0905c66d99cbdbab799805a9fde81b19a9f49861aaafaf1278cbc72",
+      "sha256": "119f39c102dcc06fb4168e615e609e7b4dfd39ab6a127d35188f5ed96567fd12",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
@@ -294,6 +294,12 @@
     {
       "path": "docs/archive/receiver-startup.md",
       "sha256": "4b01a44243064634063fbfc378a540f2a01b5664f17968c1cd0d5be765a7d928",
+      "origin": "public-maintained",
+      "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
+    },
+    {
+      "path": "docs/assets/wwise-spatial-preview.gif",
+      "sha256": "5731b0c8781b50891ffb77318243cce8a996d687a671796877fa4574ca1026b6",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
