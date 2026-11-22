@@ -121,23 +121,47 @@ pub const SdpParams = struct {
     ssrc: u32,
     ptp_gmid: ?[]const u8 = null,
     ptp_domain: u16 = 0,
-    local_mac: []const u8 = "02-4E-53-50-00-01",
     layout_id: []const u8 = "",
     channel_labels: []const []const u8 = &.{},
+    /// Multi-flow session decoration: flow index and session-wide channel offset
+    /// (0-based). Only emitted by writeSdpMulti; single-flow SDP stays clean.
+    flow_index: u8 = 0,
+    channel_offset: u16 = 0,
+    multi_flow: bool = false,
+    /// Multicast TTL: when set, c= is written as "c=IN IP4 <group>/<ttl>"
+    /// (RFC 4566 requires the /ttl suffix for multicast connections). Null keeps
+    /// the plain unicast form "c=IN IP4 <addr>".
+    ttl: ?u8 = null,
+    /// Optional RFC 4570 single-source filter (multicast only). Requires
+    /// source_addr; receivers that ignore it are unaffected.
+    source_filter: bool = false,
+    source_addr: ?[]const u8 = null,
 };
 
-/// Writes a CRLF SDP session description for a unicast RTP/L24 stream.
-pub fn writeSdp(out: []u8, params: SdpParams) !usize {
-    if (params.channels == 0 or params.channels > max_channels) return error.InvalidAes67Sdp;
-    if (params.frames_per_packet == 0 or params.frames_per_packet % frames_per_packet != 0) return error.InvalidAes67Sdp;
-    if (params.dest_ip.len == 0 or params.payload_type < 96 or params.payload_type > 127) return error.InvalidAes67Sdp;
-    if (params.channel_labels.len != 0 and params.channel_labels.len != params.channels) return error.InvalidAes67Sdp;
-    var stream = std.io.fixedBufferStream(out);
-    const writer = stream.writer();
+/// AES67 payload budget check for one flow (RTP header excluded).
+pub fn payloadFits(frames: u16, channels: u16) bool {
+    return channels != 0 and channels <= max_channels and
+        @as(usize, frames) * channels * 3 <= 1440;
+}
+
+fn writeSession(writer: anytype, params: SdpParams, write_comments: bool) !void {
     writer.print("v=0\r\n", .{}) catch return error.SdpBufferTooSmall;
     writer.print("o=- {d} {d} IN IP4 {s}\r\n", .{ params.ssrc, params.ssrc, params.origin_addr }) catch return error.SdpBufferTooSmall;
-    writer.print("s={s}\r\n", .{params.session_name}) catch return error.SdpBufferTooSmall;
-    writer.print("c=IN IP4 {s}\r\n", .{params.dest_ip}) catch return error.SdpBufferTooSmall;
+    if (write_comments) {
+        writer.print("s={s} flow{d}\r\n", .{ params.session_name, params.flow_index }) catch return error.SdpBufferTooSmall;
+    } else {
+        writer.print("s={s}\r\n", .{params.session_name}) catch return error.SdpBufferTooSmall;
+    }
+    if (params.ttl) |ttl| {
+        writer.print("c=IN IP4 {s}/{d}\r\n", .{ params.dest_ip, ttl }) catch return error.SdpBufferTooSmall;
+        if (params.source_filter) {
+            if (params.source_addr) |address| {
+                writer.print("a=source-filter: incl IN IP4 {s} {s}\r\n", .{ params.dest_ip, address }) catch return error.SdpBufferTooSmall;
+            }
+        }
+    } else {
+        writer.print("c=IN IP4 {s}\r\n", .{params.dest_ip}) catch return error.SdpBufferTooSmall;
+    }
     writer.print("t=0 0\r\n", .{}) catch return error.SdpBufferTooSmall;
     writer.print("m=audio {d} RTP/AVP {d}\r\n", .{ params.port, params.payload_type }) catch return error.SdpBufferTooSmall;
     writer.print("a=rtpmap:{d} L24/48000/{d}\r\n", .{ params.payload_type, params.channels }) catch return error.SdpBufferTooSmall;
@@ -145,10 +169,14 @@ pub fn writeSdp(out: []u8, params: SdpParams) !usize {
     writer.print("a=sendonly\r\n", .{}) catch return error.SdpBufferTooSmall;
     if (params.ptp_gmid) |gmid| {
         writer.print("a=ts-refclk:ptp=IEEE1588-2008:{s}:{d}\r\n", .{ gmid, params.ptp_domain }) catch return error.SdpBufferTooSmall;
+        writer.print("a=mediaclk:direct=0\r\n", .{}) catch return error.SdpBufferTooSmall;
     } else {
-        writer.print("a=ts-refclk:localmac={s}\r\n", .{params.local_mac}) catch return error.SdpBufferTooSmall;
+        // Phase 1 (PTP not wired): RFC 7273 local clock + sender media clock.
+        // localmac is not RFC 7273 syntax and is no longer emitted; the receiver
+        // keeps it as legacy tolerance only. Reports must state ptp=not-wired.
+        writer.print("a=ts-refclk:local\r\n", .{}) catch return error.SdpBufferTooSmall;
+        writer.print("a=mediaclk:sender\r\n", .{}) catch return error.SdpBufferTooSmall;
     }
-    writer.print("a=mediaclk:direct=0\r\n", .{}) catch return error.SdpBufferTooSmall;
     if (smpteChannelOrder(params.layout_id)) |token| {
         writer.print("a=fmtp:{d} channel-order={s}\r\n", .{ params.payload_type, token }) catch return error.SdpBufferTooSmall;
     }
@@ -161,6 +189,41 @@ pub fn writeSdp(out: []u8, params: SdpParams) !usize {
             writer.print("{s}{s}", .{ if (index == 0) "" else ",", label }) catch return error.SdpBufferTooSmall;
         }
         writer.print("\r\n", .{}) catch return error.SdpBufferTooSmall;
+    }
+    if (write_comments) {
+        writer.print("a=comment:flow={d}\r\n", .{params.flow_index}) catch return error.SdpBufferTooSmall;
+        writer.print("a=comment:channel-offset={d}\r\n", .{params.channel_offset}) catch return error.SdpBufferTooSmall;
+    }
+}
+
+fn validateSdpParams(params: SdpParams) !void {
+    if (params.channels == 0 or params.channels > max_channels) return error.InvalidAes67Sdp;
+    if (params.frames_per_packet == 0 or params.frames_per_packet % frames_per_packet != 0) return error.InvalidAes67Sdp;
+    if (params.dest_ip.len == 0 or params.payload_type < 96 or params.payload_type > 127) return error.InvalidAes67Sdp;
+    if (params.ttl) |ttl| if (ttl == 0) return error.InvalidAes67Sdp;
+    if (params.channel_labels.len != 0 and params.channel_labels.len != params.channels) return error.InvalidAes67Sdp;
+}
+
+/// Writes one CRLF SDP session description for a single RTP/L24 flow.
+pub fn writeSdp(out: []u8, params: SdpParams) !usize {
+    try validateSdpParams(params);
+    var stream = std.io.fixedBufferStream(out);
+    try writeSession(stream.writer(), params, false);
+    return stream.pos;
+}
+
+/// Writes one SDP file containing one v=0 session per flow (2 sessions for
+/// 16ch = 2 x 8ch). Flow order must match channel_offset order.
+pub fn writeSdpMulti(out: []u8, params: []const SdpParams) !usize {
+    if (params.len == 0) return error.InvalidAes67Sdp;
+    var stream = std.io.fixedBufferStream(out);
+    const writer = stream.writer();
+    for (params, 0..) |flow, index| {
+        try validateSdpParams(flow);
+        var decorated = flow;
+        decorated.flow_index = @intCast(index);
+        decorated.multi_flow = true;
+        try writeSession(writer, decorated, true);
     }
     return stream.pos;
 }

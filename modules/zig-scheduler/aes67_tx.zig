@@ -3,6 +3,12 @@
 //! network: submit() copies and returns immediately, a dedicated thread paces
 //! 1 ms packets on an absolute QPC timeline and sends L24 silence on underrun.
 //! No DSP, layout or resampling happens here.
+//!
+//! Multi-flow (NSP 16ch = 2 x 8ch AES67): one sender thread, one shared
+//! timestamp timeline and one socket per flow, but every packet period sends all
+//! flows back-to-back with the same RTP timestamp. Per-flow sequence numbers and
+//! SSRCs are independent (AES67 has no bundling); the receiver aggregates by
+//! timestamp. Flows are never split into independent threads/timelines.
 const std = @import("std");
 const u = @import("common.zig");
 const c = u.c;
@@ -13,12 +19,31 @@ const CREATE_WAITABLE_TIMER_HIGH_RESOLUTION: u32 = 0x00000002;
 const SEND_BUFFER_BYTES: c_int = 4 * 1024 * 1024;
 const MAX_CATCH_UP_BURST: u32 = 64;
 
+/// Snapshot of one flow's sender counters.
+pub const FlowStats = struct {
+    index: u8 = 0,
+    channels: u16 = 0,
+    channel_offset: u16 = 0,
+    ssrc: u32 = 0,
+    multicast: bool = false,
+    ttl: u8 = 0,
+    last_seq: u16 = 0,
+    last_timestamp: u32 = 0,
+    packets_sent: u64 = 0,
+    silent_packets: u64 = 0,
+    bytes_sent: u64 = 0,
+    send_errors: u64 = 0,
+};
+
 /// Snapshot of sender counters. The owner thread only reads this struct.
+/// Aggregate fields are kept for the existing health JSON/stream metrics;
+/// per-flow detail is under flows[0..flow_count].
 pub const Stats = struct {
     last_seq: u32 = 0,
     last_timestamp: u32 = 0,
     channels: u32 = 0,
     frames_per_packet: u32 = 0,
+    ssrc: u32 = 0,
     packets_sent: u64 = 0,
     silent_packets: u64 = 0,
     frames_sent: u64 = 0,
@@ -31,6 +56,8 @@ pub const Stats = struct {
     buffered_frames: u64 = 0,
     start_ms: u64 = 0,
     stop_ms: u64 = 0,
+    flow_count: u8 = 0,
+    flows: [cfg.max_flows]FlowStats = [_]FlowStats{.{}} ** cfg.max_flows,
 };
 
 /// Bounded interleaved-f32 frame ring. Oldest frames are discarded on overflow
@@ -142,17 +169,43 @@ fn addressValue(address: [4]u8) u32 {
     return @as(u32, address[0]) | (@as(u32, address[1]) << 8) | (@as(u32, address[2]) << 16) | (@as(u32, address[3]) << 24);
 }
 
+/// Winsock multicast socket options (winsock2.h values; kept local so the
+/// module does not depend on whether the cImport exposes them).
+const IP_MULTICAST_IF: c_int = 9;
+const IP_MULTICAST_TTL: c_int = 10;
+const IP_MULTICAST_LOOP: c_int = 11;
+
+/// Applies egress selection and TTL for one multicast flow socket. The sender
+/// never joins a group; it only needs a deterministic output interface.
+fn configureMulticastSocket(sock: c.SOCKET, ttl: u8, source: ?[4]u8) !void {
+    const interface = source orelse return error.Aes67MulticastRequiresSourceInterface;
+    var ttl_value: c_int = @intCast(ttl);
+    if (c.setsockopt(sock, c.IPPROTO_IP, IP_MULTICAST_TTL, @ptrCast(&ttl_value), @intCast(@sizeOf(c_int))) != 0)
+        return error.Aes67MulticastTtl;
+    var iface = std.mem.zeroes(c.in_addr);
+    iface.S_un.S_addr = addressValue(interface);
+    if (c.setsockopt(sock, c.IPPROTO_IP, IP_MULTICAST_IF, @ptrCast(&iface), @intCast(@sizeOf(c.in_addr))) != 0)
+        return error.Aes67MulticastInterface;
+    // A sender must not receive its own stream; loopback would also duplicate
+    // packets on a co-located receiver.
+    var loop: c_int = 0;
+    _ = c.setsockopt(sock, c.IPPROTO_IP, IP_MULTICAST_LOOP, @ptrCast(&loop), @intCast(@sizeOf(c_int)));
+}
+
 pub const Tx = struct {
     allocator: std.mem.Allocator,
-    channels: u16,
+    prepared: cfg.Prepared,
     frames: u16,
-    payload_type: u8,
-    ssrc: u32,
+    total_channels: u16,
+    flow_count: u8,
     ring: FrameRing,
     pop: []f32,
+    /// Per-flow interleaved scratch (frames x flow_channels; max flow width).
+    flow_pcm: []f32,
     packet: []u8,
-    dest: c.sockaddr_in,
-    sock: c.SOCKET = c.INVALID_SOCKET,
+    sockets: [cfg.max_flows]c.SOCKET = [_]c.SOCKET{c.INVALID_SOCKET} ** cfg.max_flows,
+    dests: [cfg.max_flows]c.sockaddr_in = [_]c.sockaddr_in{std.mem.zeroes(c.sockaddr_in)} ** cfg.max_flows,
+    seqs: [cfg.max_flows]u16 = [_]u16{0} ** cfg.max_flows,
     timer: c.HANDLE = null,
     thread: ?std.Thread = null,
     started: bool = false,
@@ -165,6 +218,13 @@ pub const Tx = struct {
     pub fn create(allocator: std.mem.Allocator, prepared: cfg.Prepared) !*Tx {
         if (prepared.channels == 0 or prepared.channels > cfg.max_channels) return error.Aes67ChannelCount;
         if (prepared.frames_per_packet != rtp.frames_per_packet) return error.UnsupportedAes67PacketFrames;
+        if (prepared.flow_count == 0 or prepared.flow_count > cfg.max_flows) return error.Aes67FlowCount;
+        var max_packet: usize = 0;
+        for (prepared.flows[0..prepared.flow_count]) |flow| {
+            if (flow.channels == 0 or flow.channels > cfg.max_flow_channels) return error.Aes67ChannelCount;
+            const size = rtp.packetBytes(prepared.frames_per_packet, flow.channels);
+            if (size > max_packet) max_packet = size;
+        }
         const self = try allocator.create(Tx);
         errdefer allocator.destroy(self);
         const capacity_frames = @as(usize, prepared.ring_packets) * prepared.frames_per_packet;
@@ -172,18 +232,20 @@ pub const Tx = struct {
         errdefer ring.deinit();
         const pop = try allocator.alloc(f32, @as(usize, prepared.frames_per_packet) * prepared.channels);
         errdefer allocator.free(pop);
-        const packet = try allocator.alloc(u8, rtp.packetBytes(prepared.frames_per_packet, prepared.channels));
+        const flow_pcm = try allocator.alloc(f32, @as(usize, prepared.frames_per_packet) * cfg.max_flow_channels);
+        errdefer allocator.free(flow_pcm);
+        const packet = try allocator.alloc(u8, max_packet);
         errdefer allocator.free(packet);
         self.* = .{
             .allocator = allocator,
-            .channels = prepared.channels,
+            .prepared = prepared,
             .frames = prepared.frames_per_packet,
-            .payload_type = prepared.payload_type,
-            .ssrc = prepared.ssrc,
+            .total_channels = prepared.channels,
+            .flow_count = prepared.flow_count,
             .ring = ring,
             .pop = pop,
+            .flow_pcm = flow_pcm,
             .packet = packet,
-            .dest = std.mem.zeroes(c.sockaddr_in),
         };
         var ws: c.WSADATA = undefined;
         if (c.WSAStartup(0x0202, &ws) != 0) return error.Aes67WinsockStartup;
@@ -191,23 +253,42 @@ pub const Tx = struct {
         errdefer {
             if (self.ws_started) _ = c.WSACleanup();
         }
-        self.sock = c.socket(c.AF_INET, c.SOCK_DGRAM, c.IPPROTO_UDP);
-        if (self.sock == c.INVALID_SOCKET) return error.Aes67Socket;
-        errdefer _ = c.closesocket(self.sock);
-        var send_buffer: c_int = SEND_BUFFER_BYTES;
-        _ = c.setsockopt(self.sock, c.SOL_SOCKET, c.SO_SNDBUF, @ptrCast(&send_buffer), @intCast(@sizeOf(@TypeOf(send_buffer))));
-        if (prepared.src_interface_ip) |source| {
-            var local = std.mem.zeroes(c.sockaddr_in);
-            local.sin_family = @intCast(c.AF_INET);
-            local.sin_port = 0;
-            local.sin_addr.S_un.S_addr = addressValue(source);
-            if (c.bind(self.sock, @ptrCast(&local), @sizeOf(c.sockaddr_in)) != 0) return error.Aes67Bind;
+        for (prepared.flows[0..prepared.flow_count], 0..) |flow, index| {
+            const sock = c.socket(c.AF_INET, c.SOCK_DGRAM, c.IPPROTO_UDP);
+            if (sock == c.INVALID_SOCKET) return error.Aes67Socket;
+            self.sockets[index] = sock;
+            var send_buffer: c_int = SEND_BUFFER_BYTES;
+            _ = c.setsockopt(sock, c.SOL_SOCKET, c.SO_SNDBUF, @ptrCast(&send_buffer), @intCast(@sizeOf(@TypeOf(send_buffer))));
+            // Egress is per flow: an explicit flow-level srcInterfaceIp wins
+            // over the session-level one (resolved once in prepare()).
+            if (flow.source_ip) |source| {
+                var local = std.mem.zeroes(c.sockaddr_in);
+                local.sin_family = @intCast(c.AF_INET);
+                local.sin_port = 0;
+                local.sin_addr.S_un.S_addr = addressValue(source);
+                if (c.bind(sock, @ptrCast(&local), @sizeOf(c.sockaddr_in)) != 0) return error.Aes67Bind;
+            }
+            if (flow.multicast) {
+                try configureMulticastSocket(sock, flow.ttl, flow.source_ip);
+            }
+            var dest = std.mem.zeroes(c.sockaddr_in);
+            dest.sin_family = @intCast(c.AF_INET);
+            dest.sin_port = c.htons(flow.port);
+            dest.sin_addr.S_un.S_addr = addressValue(flow.dest_ip);
+            self.dests[index] = dest;
+            self.stats.flows[index] = .{
+                .index = @intCast(index),
+                .channels = flow.channels,
+                .channel_offset = flow.channel_offset,
+                .ssrc = flow.ssrc,
+                .multicast = flow.multicast,
+                .ttl = flow.ttl,
+            };
         }
-        self.dest.sin_family = @intCast(c.AF_INET);
-        self.dest.sin_port = c.htons(prepared.port);
-        self.dest.sin_addr.S_un.S_addr = addressValue(prepared.dest_ip);
         self.stats.channels = prepared.channels;
         self.stats.frames_per_packet = prepared.frames_per_packet;
+        self.stats.ssrc = prepared.flows[0].ssrc;
+        self.stats.flow_count = prepared.flow_count;
         return self;
     }
 
@@ -228,7 +309,7 @@ pub const Tx = struct {
 
     pub fn submit(self: *Tx, pcm: []const f32, frames: u32, source_channels: u16, channel_map: []const u16) !void {
         if (frames == 0) return;
-        if (source_channels != self.channels) return error.Aes67ChannelMap;
+        if (source_channels != self.total_channels) return error.Aes67ChannelMap;
         if (pcm.len < @as(usize, frames) * source_channels) return error.InvalidAes67Input;
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -264,43 +345,70 @@ pub const Tx = struct {
 
     pub fn destroy(self: *Tx) void {
         self.stop();
-        if (self.sock != c.INVALID_SOCKET) {
-            _ = c.closesocket(self.sock);
-            self.sock = c.INVALID_SOCKET;
+        for (self.sockets) |sock| {
+            if (sock != c.INVALID_SOCKET) _ = c.closesocket(sock);
         }
         if (self.ws_started) _ = c.WSACleanup();
         self.ring.deinit();
         const allocator = self.allocator;
         allocator.free(self.pop);
+        allocator.free(self.flow_pcm);
         allocator.free(self.packet);
         allocator.destroy(self);
     }
 
-    fn updateStats(self: *Tx, silent: bool, sent_bytes: isize, expected: usize) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
-        self.stats.packets_sent += 1;
-        self.stats.frames_sent += self.frames;
-        if (silent) self.stats.silent_packets += 1;
-        if (sent_bytes == @as(isize, @intCast(expected))) {
-            self.stats.bytes_sent += expected;
-        } else {
-            self.stats.send_errors += 1;
-        }
-        self.stats.last_seq = self.timeline.seq;
-        self.stats.last_timestamp = self.timeline.timestamp;
-    }
-
+    /// Builds and sends one packet for every flow with a shared RTP timestamp.
     fn sendOne(self: *Tx) void {
         self.mutex.lock();
         const have = self.ring.popInto(self.pop, self.frames);
         self.mutex.unlock();
-        const size = if (have)
-            rtp.buildPacket(self.packet, self.pop, self.frames, self.channels, self.timeline.seq, self.timeline.timestamp, self.ssrc, self.payload_type) catch return
-        else
-            rtp.buildSilentPacket(self.packet, self.frames, self.channels, self.timeline.seq, self.timeline.timestamp, self.ssrc, self.payload_type) catch return;
-        const sent = c.sendto(self.sock, self.packet.ptr, @intCast(size), 0, @ptrCast(&self.dest), @sizeOf(c.sockaddr_in));
-        self.updateStats(!have, sent, size);
+        const timestamp = self.timeline.timestamp;
+        const silent = !have;
+        var send_errors: u64 = 0;
+        var bytes: u64 = 0;
+        for (self.prepared.flows[0..self.flow_count], 0..) |flow, index| {
+            const samples = @as(usize, self.frames) * flow.channels;
+            if (have) {
+                // Gather this flow's wire channels from the interleaved total block.
+                var frame: usize = 0;
+                while (frame < self.frames) : (frame += 1) {
+                    const source = self.pop[frame * self.total_channels + flow.channel_offset ..][0..flow.channels];
+                    @memcpy(self.flow_pcm[frame * flow.channels ..][0..flow.channels], source);
+                }
+            }
+            const size = if (have)
+                rtp.buildPacket(self.packet, self.flow_pcm[0..samples], self.frames, flow.channels, self.seqs[index], timestamp, flow.ssrc, flow.payload_type) catch return
+            else
+                rtp.buildSilentPacket(self.packet, self.frames, flow.channels, self.seqs[index], timestamp, flow.ssrc, flow.payload_type) catch return;
+            const sent = c.sendto(self.sockets[index], self.packet.ptr, @intCast(size), 0, @ptrCast(&self.dests[index]), @sizeOf(c.sockaddr_in));
+            self.mutex.lock();
+            const flow_stats = &self.stats.flows[index];
+            flow_stats.packets_sent += 1;
+            if (silent) flow_stats.silent_packets += 1;
+            if (sent == @as(isize, @intCast(size))) {
+                flow_stats.bytes_sent += size;
+                bytes += size;
+            } else {
+                flow_stats.send_errors += 1;
+                send_errors += 1;
+            }
+            self.mutex.unlock();
+            self.mutex.lock();
+            // Snapshot the sequence that was just sent (never the next one).
+            self.stats.flows[index].last_seq = self.seqs[index];
+            self.stats.flows[index].last_timestamp = timestamp;
+            self.mutex.unlock();
+            self.seqs[index] +%= 1;
+        }
+        self.mutex.lock();
+        self.stats.packets_sent += 1;
+        self.stats.frames_sent += self.frames;
+        if (silent) self.stats.silent_packets += 1;
+        self.stats.bytes_sent += bytes;
+        self.stats.send_errors += send_errors;
+        self.stats.last_seq = self.stats.flows[0].last_seq;
+        self.stats.last_timestamp = timestamp;
+        self.mutex.unlock();
         self.timeline.advance(self.frames);
     }
 

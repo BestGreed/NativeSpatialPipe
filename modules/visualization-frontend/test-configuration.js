@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {prepare,numeric,finish,setPath,orders,updateSourceSelection} from './configuration-model.js';
+import {prepare,numeric,finish,setPath,orders,updateSourceSelection,aes67Defaults,validateAes67,deviceChannels,isIpv4,isPtpGmid,deriveAes67Flows,aes67StandardChannelMap916,effectiveAes67FlowSsrc,proposeAes67Flows,materializeAes67Destinations,parseAes67Ssrc,formatAes67Ssrc} from './configuration-model.js';
 const original={renderer:'roar',bridgeDll:'C:/bridge.dll',asioDll:'C:/asio.dll',driver:'asio:{test}',startupTimeoutMs:120000};
 const prepared=prepare(original,'playback');
 assert.equal(original.outputProcessing,undefined);
@@ -78,3 +78,132 @@ assert.equal(followsSession.pcmCapture.inputEndpointId,undefined);
 const independent=finish({renderer:'roar',sourcePolicy:'fixed',pcmCapture:{...pcm,enabled:true}});
 assert.equal(independent.pcmCapture.inputEndpointId,pcm.inputEndpointId);
 console.log('PASS backend source selection, PCM disable, session endpoint following and dependent settings');
+
+
+// ---- AES67 fourth output backend ----
+// E16 flows-only: destinations live in aes67.flows; the top-level destIp/port
+// mirror is gone from the model and from saved files.
+const aes67={framesPerPacket:48,payloadType:96,ssrc:1314082870,srcInterfaceIp:'',ptpGmid:'',ptpDomain:0,ringPackets:512,prebufferFrames:480,ttl:32,flows:[{destIp:'192.0.2.222',port:5004,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:0}]};
+const asioBase={renderer:'roar',bridgeDll:'C:/bridge.dll',asioDll:'C:/asio.dll',driver:'asio:{test}',outputBackend:'asio',outputLayout:'5.1.2'};
+const aesPrepared=prepare({...asioBase,outputBackend:'aes67'},'playback');
+assert.equal(aesPrepared.aes67.destIp,undefined);
+assert.equal(aesPrepared.aes67.port,undefined);
+assert.equal(aesPrepared.aes67.flows.length,1,'a fresh block seeds one empty flow-1 row');
+assert.equal(aesPrepared.aes67.flows[0].destIp,'');
+assert.equal(aesPrepared.aes67.flows[0].port,undefined);
+for(const [key,value] of Object.entries(aes67Defaults))assert.equal(aesPrepared.aes67[key],value,'scalar default '+key);
+assert.equal(deviceChannels({outputBackend:'aes67',outputLayout:'5.1.2'}).length,8);
+assert.equal(deviceChannels({outputBackend:'aes67',outputLayout:'7.1.4'}).length,12);
+// Legacy mirror keys are preserved for explicit repair and rejected on save.
+const legacy={...aes67Defaults,destIp:'192.0.2.20',port:5006,ringPackets:256};
+const kept=prepare({...asioBase,aes67:legacy},'playback');
+assert.deepEqual(kept.aes67,legacy);
+assert.deepEqual(finish(kept).aes67,legacy);
+assert.ok(validateAes67(kept).some(problem=>problem.path==='aes67.destIp'));
+assert.ok(validateAes67(kept).some(problem=>problem.path==='aes67.port'));
+// Switching back to ASIO keeps a real AES67 block; only the empty flow-1
+// placeholder the user never filled in is dropped.
+assert.equal(finish({...asioBase,aes67:{...aes67}}).aes67.flows[0].destIp,'192.0.2.222');
+assert.equal(finish({...asioBase,aes67:{...aes67Defaults,flows:[{destIp:'',port:5004,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:0}]}}).aes67,undefined);
+// A valid AES67 backend configuration passes client validation.
+assert.deepEqual(validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}),[]);
+assert.deepEqual(validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'unified',sampleRate:48000}),[]);
+// Field-level problems mirror aes67_config.zig. Flow destinations validate
+// per flow; scalar transport fields validate at the top of the block.
+const invalidFlow=modifier=>validateAes67({...aesPrepared,aes67:{...aes67,flows:[{...aes67.flows[0],...modifier}]},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.flows.0.'+Object.keys(modifier)[0]);
+assert.ok(!invalidFlow({destIp:'239.1.1.1'}));
+assert.ok(invalidFlow({destIp:'240.1.1.1'}));
+assert.ok(invalidFlow({destIp:'255.1.1.1'}));
+assert.ok(invalidFlow({destIp:'0.0.0.0'}));
+assert.ok(invalidFlow({destIp:'192.0.2'}));
+assert.ok(!invalidFlow({destIp:'127.0.0.1'}));
+assert.ok(invalidFlow({port:0}));
+assert.ok(invalidFlow({port:70000}));
+assert.ok(invalidFlow({channels:0}));
+assert.ok(invalidFlow({channels:9}));
+const invalidScalar=modifier=>validateAes67({...aesPrepared,aes67:{...aes67,...modifier},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.'+Object.keys(modifier)[0]);
+assert.ok(invalidScalar({framesPerPacket:96}));
+assert.ok(invalidScalar({payloadType:95}));
+assert.ok(invalidScalar({payloadType:128}));
+assert.ok(invalidScalar({ssrc:-1}));
+assert.ok(invalidScalar({srcInterfaceIp:'224.0.0.1'}));
+assert.ok(!invalidScalar({srcInterfaceIp:'192.0.2.10'}));
+assert.ok(invalidScalar({ptpGmid:'00-11-22'}));
+assert.ok(invalidScalar({ptpGmid:'00-11-22-FF-FE-33-44-55'}),'Phase 1 rejects any configured PTP GMID');
+assert.ok(invalidScalar({ptpDomain:128}));
+assert.ok(invalidScalar({ringPackets:7}));
+assert.ok(invalidScalar({ringPackets:1025}));
+assert.ok(invalidScalar({prebufferFrames:0}));
+assert.ok(invalidScalar({prebufferFrames:48001}));
+assert.ok(invalidScalar({prebufferFrames:512*48+1}));
+assert.ok(!invalidScalar({prebufferFrames:512*48}));
+assert.ok(invalidScalar({ttl:0}));
+// A block without any flow row is incomplete.
+assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,flows:[]},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.flows.0.destIp'));
+assert.ok(validateAes67({...asioBase,outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.flows.0.destIp'));
+const backendRule=validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'active',sampleRate:44100}).map(problem=>problem.path);
+assert.ok(backendRule.includes('sampleRate'));
+assert.ok(backendRule.includes('sourcePolicy'));
+assert.ok(validateAes67({...asioBase,aes67,sourcePolicy:'fixed',sampleRate:48000}).length===0);
+assert.equal(isIpv4('192.0.2.10'),true);
+assert.equal(isIpv4('192.0.2.256'),false);
+assert.equal(isIpv4('1.2.3'),false);
+assert.equal(isPtpGmid(''),true);
+assert.equal(isPtpGmid('00-11-22-FF-FE-33-44-55'),true);
+assert.equal(isPtpGmid('00-11-22-FF-FE-33-44'),false);
+// Saved incomplete flow plans stay intact and fail validation.
+const first={destIp:'239.1.0.1',port:5010,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:0};
+const aes916={...aes67,srcInterfaceIp:'192.0.2.63',flows:[first]};
+const prepared916=prepare({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',aes67:aes916},'playback');
+assert.deepEqual(prepared916.aes67.flows,[first]);
+assert.ok(validateAes67(prepared916).some(problem=>problem.path==='aes67.flows'));
+const derived=(destIp,port)=>deriveAes67Flows({...aes916,flows:[{...first,destIp,port}]},16);
+assert.equal(derived('192.0.2.222',5004)[1].port,5006);
+assert.equal(derived('192.0.2.222',5004)[1].destIp,'192.0.2.222');
+assert.equal(derived('239.1.0.255',5010)[1].destIp,'239.1.1.0');
+assert.equal(derived('239.1.0.255',5010)[1].port,5004);
+assert.equal(derived('239.255.255.255',5010),null);
+assert.equal(derived('192.0.2',5010),null);
+// Explicitly saved flow rows survive a reload verbatim (no silent rewrite).
+const explicitFlows=[{destIp:'239.1.0.1',port:5010,channels:8,channelOffset:0,payloadType:96,ssrc:1314082870,ttl:0},{destIp:'239.1.0.3',port:5100,channels:8,channelOffset:8,payloadType:96,ssrc:1314082871,ttl:0}];
+const explicit916=prepare({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',aes67:{...aes916,flows:structuredClone(explicitFlows)}},'playback');
+assert.deepEqual(explicit916.aes67.flows,explicitFlows);
+// Flow-level validation mirrors aes67_config.zig: bad address, duplicate
+// (address,port) and multicast without a bound source interface.
+const flowCase=flows=>validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sourcePolicy:'fixed',sampleRate:48000,aes67:{...aes916,flows}}).map(problem=>problem.path);
+assert.ok(flowCase([{destIp:'239.1.0.1',port:5010,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:32},{destIp:'240.1.1.1',port:5012,channels:8,channelOffset:8,payloadType:96,ssrc:0,ttl:32}]).includes('aes67.flows.1.destIp'));
+assert.ok(flowCase([{destIp:'239.1.0.1',port:5010,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:32},{destIp:'239.1.0.1',port:5010,channels:8,channelOffset:8,payloadType:96,ssrc:0,ttl:32}]).includes('aes67.flows.1.port'));
+assert.ok(flowCase([{destIp:'239.1.0.1',port:5010,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:32},{destIp:'239.1.0.2',port:5012,channels:8,channelOffset:8,payloadType:96,ssrc:0,ttl:32}]).length===0);
+assert.ok(validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sourcePolicy:'fixed',sampleRate:48000,aes67:{...aes916,srcInterfaceIp:''}}).map(problem=>problem.path).includes('aes67.srcInterfaceIp'));
+assert.ok(validateAes67({...asioBase,outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000,aes67:{...aes67,ttl:0}}).map(problem=>problem.path).includes('aes67.ttl'));
+// Per-flow SSRC: hex display/input, base-derivation default, and the
+// cross-flow uniqueness rule reported in hexadecimal.
+assert.equal(formatAes67Ssrc(1314082870),'0x4E535036');
+assert.equal(formatAes67Ssrc(0),'0x0');
+assert.equal(parseAes67Ssrc('0x4E535036'),1314082870);
+assert.equal(parseAes67Ssrc('4E535036'),1314082870);
+assert.equal(parseAes67Ssrc('1314082870'),1314082870);
+assert.ok(Number.isNaN(parseAes67Ssrc('0xZZ')));
+const defaultBased=prepare({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',aes67:{...aes67,ssrc:0,srcInterfaceIp:'192.0.2.63'}},'playback');
+assert.equal(effectiveAes67FlowSsrc(defaultBased.aes67,0),0x4E535036);
+assert.equal(effectiveAes67FlowSsrc(defaultBased.aes67,1),0x4E535037);
+assert.equal(defaultBased.aes67.flows[0].ssrc,0);
+const ssrcConflict=validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sourcePolicy:'fixed',sampleRate:48000,aes67:{...aes916,flows:[{destIp:'239.1.0.1',port:5010,channels:8,channelOffset:0,payloadType:96,ssrc:0x12345678,ttl:0},{destIp:'239.1.0.2',port:5012,channels:8,channelOffset:8,payloadType:96,ssrc:0x12345678,ttl:0}]}});
+assert.ok(ssrcConflict.some(problem=>problem.path==='aes67.flows.1.ssrc'&&problem.message.includes('0x12345678')&&problem.message.includes('流 1 与流 2')));
+assert.ok(validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sourcePolicy:'fixed',sampleRate:48000,aes67:{...aes916,flows:[{destIp:'239.1.0.1',port:5010,channels:8,channelOffset:0,payloadType:96,ssrc:-1,ttl:0},{destIp:'239.1.0.2',port:5012,channels:8,channelOffset:8,payloadType:96,ssrc:0,ttl:0}]}}).some(problem=>problem.path==='aes67.flows.0.ssrc'));
+// Proposed minimum splits are separate from saved, user-defined packing.
+assert.deepEqual(proposeAes67Flows(8).map(flow=>flow.channels),[8]);
+assert.deepEqual(proposeAes67Flows(10).map(flow=>flow.channels),[8,2]);
+const custom={...aes916,flows:[{...first,channels:6},{...first,destIp:'239.1.0.2',channels:6,channelOffset:6},{...first,destIp:'239.1.0.3',channels:4,channelOffset:12}],channelMap:aes67StandardChannelMap916};
+const saved=prepare({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',aes67:custom},'playback');
+assert.deepEqual(saved.aes67,custom);
+assert.deepEqual(validateAes67(saved),[]);
+const draft={...aes916,flows:proposeAes67Flows(16,first)};
+materializeAes67Destinations(draft);
+assert.equal(draft.flows[1].destIp,'239.1.0.2');
+assert.equal(draft.flows[1].port,5004);
+assert.equal(draft.flows[1].srcInterfaceIp,'192.0.2.63');
+assert.ok(flowCase([{...first},{...first,port:5008,channelOffset:8}]).includes('aes67.flows.1.destIp'));
+assert.ok(flowCase([{...first},{...first,destIp:'239.1.0.2',channelOffset:7}]).includes('aes67.flows.1.channelOffset'));
+assert.ok(parseAes67Ssrc('0x100000000')>0xFFFFFFFF);
+console.log('PASS AES67 backend defaults, multicast destinations, flows-only universal per-flow rows for every layout, hex SSRC, config preservation, channel count and contract validation');

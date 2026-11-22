@@ -133,11 +133,10 @@ test "loopback sender emits contiguous RTP/L24 packets with the mapped channels 
     const receiver = try bindLoopbackReceiver();
     defer _ = c.closesocket(receiver.sock);
     const prepared = try cfg.prepare(.{
-        .destIp = "127.0.0.1",
-        .port = receiver.port,
         .srcInterfaceIp = "127.0.0.1",
         .prebufferFrames = 480,
         .ringPackets = 64,
+        .flows = &.{.{ .destIp = "127.0.0.1", .port = receiver.port, .channels = 2 }},
     }, 2);
     const sender = try tx.Tx.create(std.testing.allocator, prepared);
     defer sender.destroy();
@@ -202,4 +201,175 @@ test "loopback sender emits contiguous RTP/L24 packets with the mapped channels 
     try std.testing.expect(stats.send_errors == 0);
     try std.testing.expect(stats.last_seq == @as(u32, last_seq.?));
     try std.testing.expect(stats.buffered_frames == 0);
+}
+
+
+/// Receive one RTP packet from a loopback receiver and decode the header fields.
+const LoopbackPacket = struct {
+    size: usize,
+    sequence: u16,
+    timestamp: u32,
+    ssrc: u32,
+    payload_type: u8,
+    payload_first_sample: [3]u8,
+    payload_all_zero: bool,
+};
+
+fn recvLoopbackPacket(sock: c.SOCKET) !LoopbackPacket {
+    var buffer: [2048]u8 = undefined;
+    var from = std.mem.zeroes(c.sockaddr_in);
+    var from_length: c_int = @sizeOf(c.sockaddr_in);
+    const received = c.recvfrom(sock, &buffer, @intCast(buffer.len), 0, @ptrCast(&from), &from_length);
+    if (received <= 0) return error.Aes67LoopbackTimeout;
+    const size: usize = @intCast(received);
+    if (size < 15) return error.Aes67LoopbackSize;
+    var all_zero = true;
+    for (buffer[12..size]) |byte| {
+        if (byte != 0) {
+            all_zero = false;
+            break;
+        }
+    }
+    return .{
+        .size = size,
+        .sequence = (@as(u16, buffer[2]) << 8) | buffer[3],
+        .timestamp = (@as(u32, buffer[4]) << 24) | (@as(u32, buffer[5]) << 16) | (@as(u32, buffer[6]) << 8) | buffer[7],
+        .ssrc = (@as(u32, buffer[8]) << 24) | (@as(u32, buffer[9]) << 16) | (@as(u32, buffer[10]) << 8) | buffer[11],
+        .payload_type = buffer[1],
+        .payload_first_sample = .{ buffer[12], buffer[13], buffer[14] },
+        .payload_all_zero = all_zero,
+    };
+}
+
+test "multi-flow loopback sends 2 x 8ch with one shared timestamp timeline and per-flow seq/ssrc" {
+    if (std.process.getEnvVarOwned(std.testing.allocator, "NSP_AES67_LOOPBACK_TEST")) |value| {
+        std.testing.allocator.free(value);
+    } else |_| return error.SkipZigTest;
+    var ws: c.WSADATA = undefined;
+    if (c.WSAStartup(0x0202, &ws) != 0) return error.Aes67LoopbackWinsock;
+    defer _ = c.WSACleanup();
+    const receiver0 = try bindLoopbackReceiver();
+    defer _ = c.closesocket(receiver0.sock);
+    const receiver1 = try bindLoopbackReceiver();
+    defer _ = c.closesocket(receiver1.sock);
+    const prepared = try cfg.prepare(.{
+        .srcInterfaceIp = "127.0.0.1",
+        .prebufferFrames = 480,
+        .ringPackets = 64,
+        .flows = &.{
+            .{ .destIp = "127.0.0.1", .port = receiver0.port, .channels = 8, .channelOffset = 0 },
+            .{ .destIp = "127.0.0.1", .port = receiver1.port, .channels = 8, .channelOffset = 8 },
+        },
+    }, 16);
+    try std.testing.expectEqual(@as(u8, 2), prepared.flow_count);
+    const sender = try tx.Tx.create(std.testing.allocator, prepared);
+    defer sender.destroy();
+    // One 10 ms block: wire channel k = 0.01 * (k+1); identity channel map.
+    var input = [_]f32{0} ** (480 * 16);
+    for (0..480) |frame| {
+        for (0..16) |channel| input[frame * 16 + channel] = @as(f32, @floatFromInt(channel + 1)) * 0.01;
+    }
+    const identity = [_]u16{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 };
+    try sender.submit(&input, 480, 16, &identity);
+    try sender.start();
+
+    var packets0: [24]LoopbackPacket = undefined;
+    var packets1: [24]LoopbackPacket = undefined;
+    for (0..24) |index| {
+        packets0[index] = try recvLoopbackPacket(receiver0.sock);
+        packets1[index] = try recvLoopbackPacket(receiver1.sock);
+    }
+    // Each flow carries exactly 48 frames x 8ch x 3 B + 12 B RTP header.
+    for (packets0) |packet| try std.testing.expectEqual(@as(usize, 12 + 1152), packet.size);
+    for (packets1) |packet| try std.testing.expectEqual(@as(usize, 12 + 1152), packet.size);
+    // Same mediaTime packet from both flows must carry the SAME RTP timestamp.
+    for (0..24) |index| {
+        try std.testing.expectEqual(packets0[index].timestamp, packets1[index].timestamp);
+        try std.testing.expectEqual(@as(u8, 96), packets0[index].payload_type);
+        try std.testing.expectEqual(@as(u8, 96), packets1[index].payload_type);
+    }
+    // Flows have independent sequence numbers that are each contiguous.
+    for (1..24) |index| {
+        try std.testing.expectEqual(packets0[index - 1].sequence +% 1, packets0[index].sequence);
+        try std.testing.expectEqual(packets1[index - 1].sequence +% 1, packets1[index].sequence);
+    }
+    // Independent SSRCs ("NSP6" and "NSP6"+1 by default).
+    try std.testing.expectEqual(cfg.default_ssrc, packets0[0].ssrc);
+    try std.testing.expectEqual(cfg.default_ssrc + 1, packets1[0].ssrc);
+    // Wire channel mapping: flow0 ch0..7 = source 0..7, flow1 ch0..7 = source 8..15.
+    var expected: [3]u8 = undefined;
+    rtp.encodeL24(0.01, &expected);
+    try std.testing.expectEqualSlices(u8, &expected, &packets0[0].payload_first_sample);
+    rtp.encodeL24(0.09, &expected);
+    try std.testing.expectEqualSlices(u8, &expected, &packets1[0].payload_first_sample);
+    // Only the first 10 packets carry submitted audio; the rest is L24 silence
+    // (per flow, never a half block).
+    for (10..24) |index| {
+        try std.testing.expect(packets0[index].payload_all_zero);
+        try std.testing.expect(packets1[index].payload_all_zero);
+    }
+    sender.stop();
+    const stats = sender.snapshot();
+    try std.testing.expectEqual(@as(u8, 2), stats.flow_count);
+    try std.testing.expectEqual(@as(u32, 16), stats.channels);
+    try std.testing.expect(stats.flows[0].packets_sent >= 12);
+    try std.testing.expect(stats.flows[1].packets_sent >= 12);
+    try std.testing.expectEqual(@as(u64, 0), stats.send_errors);
+    try std.testing.expectEqual(@as(u32, packets0[23].sequence), stats.flows[0].last_seq);
+    try std.testing.expectEqual(packets0[23].timestamp, stats.flows[1].last_timestamp);
+}
+test "multicast flow applies TTL/egress options and requires an explicit source" {
+    const prepared = try cfg.prepare(.{
+        .payloadType = 96,
+        .srcInterfaceIp = "127.0.0.1",
+        .ringPackets = 64,
+        .prebufferFrames = 480,
+        .ttl = 32,
+        .flows = &.{.{ .destIp = "239.1.0.7", .port = 5008, .channels = 7 }},
+    }, 7);
+    try std.testing.expect(prepared.multicast);
+    const sender = try tx.Tx.create(std.testing.allocator, prepared);
+    defer sender.destroy();
+    const stats = sender.snapshot();
+    try std.testing.expect(stats.flows[0].multicast);
+    try std.testing.expectEqual(@as(u8, 32), stats.flows[0].ttl);
+    // A multicast flow without a resolved egress interface must fail closed
+    // before any media is sent (the desktop can have several NICs). Egress is
+    // resolved per flow, so both the session mirror and the flow's own value
+    // must be cleared to hit the check.
+    var missing = prepared;
+    missing.src_interface_ip = null;
+    missing.flows[0].source_ip = null;
+    try std.testing.expectError(error.Aes67MulticastRequiresSourceInterface, tx.Tx.create(std.testing.allocator, missing));
+}
+
+test "per-flow egress resolves each flow socket from its own source interface" {
+    // Plan A shape: two multicast groups share the default port; flow 0
+    // inherits the session egress, flow 1 carries its own per-flow override.
+    const prepared = try cfg.prepare(.{
+        .srcInterfaceIp = "127.0.0.1",
+        .ringPackets = 64,
+        .prebufferFrames = 480,
+        .ttl = 32,
+        .flows = &.{
+            .{ .destIp = "239.1.0.1", .channels = 8, .channelOffset = 0 },
+            .{ .destIp = "239.1.0.2", .channels = 8, .channelOffset = 8, .srcInterfaceIp = "127.0.0.1" },
+        },
+    }, 16);
+    try std.testing.expectEqual(@as(u8, 2), prepared.flow_count);
+    try std.testing.expectEqual(@as(u16, 5004), prepared.flows[0].port);
+    try std.testing.expectEqual(@as(u16, 5004), prepared.flows[1].port);
+    try std.testing.expectEqual(@as(?[4]u8, .{ 127, 0, 0, 1 }), prepared.flows[0].source_ip);
+    try std.testing.expectEqual(@as(?[4]u8, .{ 127, 0, 0, 1 }), prepared.flows[1].source_ip);
+    const sender = try tx.Tx.create(std.testing.allocator, prepared);
+    defer sender.destroy();
+    const stats = sender.snapshot();
+    try std.testing.expectEqual(@as(u8, 2), stats.flow_count);
+    try std.testing.expect(stats.flows[0].multicast and stats.flows[1].multicast);
+    try std.testing.expectEqual(@as(u8, 32), stats.flows[0].ttl);
+    try std.testing.expectEqual(@as(u8, 32), stats.flows[1].ttl);
+    // Clearing only one flow's resolved egress still fails the whole plan.
+    var missing = prepared;
+    missing.flows[1].source_ip = null;
+    try std.testing.expectError(error.Aes67MulticastRequiresSourceInterface, tx.Tx.create(std.testing.allocator, missing));
 }

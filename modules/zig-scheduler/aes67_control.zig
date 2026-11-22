@@ -13,21 +13,9 @@ const tx_mod = @import("aes67_tx.zig");
 
 pub const Backend = struct {
     pub const Config = struct {
-        // Owned copies: the generic worker keeps this across owner-thread calls.
-        dest_ip: [4]u8,
-        dest_text: [15]u8,
-        port: u16,
-        frames_per_packet: u16,
-        payload_type: u8,
-        ssrc: u32,
-        src_interface_ip: ?[4]u8,
-        ptp_gmid: ?[23]u8,
-        ptp_domain: u16,
-        ring_packets: u16,
-        prebuffer_frames: u32,
-        channels: u16,
-        channel_map: [16]u16 = [_]u16{0} ** 16,
-        map_len: u8 = 0,
+        // Owned copy of the validated transport plan (flows/labels/map are fixed
+        // size so the generic worker can keep this across owner-thread calls).
+        prepared: cfg.Prepared,
         sdp_path: [1024]u8 = [_]u8{0} ** 1024,
         layout_id: [16]u8 = [_]u8{0} ** 16,
         labels: [16][24]u8 = [_][24]u8{[_]u8{0} ** 24} ** 16,
@@ -39,37 +27,31 @@ pub const Backend = struct {
 
         /// Builds the transport config from an already validated playback
         /// document. Channel count/order/labels come from outputLayout and the
-        /// configured routing, never from a layout baked into AES67.
+        /// configured routing (or an explicit aes67.channelMap), never from a
+        /// layout baked into AES67.
         pub fn fromPlayback(settings: playback_config.Config, out: []const u8, channels: u16) !Config {
             const file = settings.aes67 orelse return error.Aes67ConfigRequired;
             if (channels == 0 or channels > cfg.max_channels) return error.Aes67ChannelCount;
-            const prepared = try cfg.prepare(file, channels);
+            var prepared = try cfg.prepare(file, channels);
+            // Wire channel k <- source channel k of the renderer output. The
+            // explicit aes67.channelMap wins; otherwise the existing routing
+            // sources() order is used (layouts without channelMap keep it).
+            if (file.channelMap == null) {
+                const sources = try settings.sources();
+                for (0..channels) |index| prepared.channel_map[index] = @intCast(sources[index]);
+            }
             var result = Config{
-                .dest_ip = prepared.dest_ip,
-                .dest_text = cfg.formatIpv4(prepared.dest_ip),
-                .port = prepared.port,
-                .frames_per_packet = prepared.frames_per_packet,
-                .payload_type = prepared.payload_type,
-                .ssrc = prepared.ssrc,
-                .src_interface_ip = prepared.src_interface_ip,
-                .ptp_gmid = prepared.ptp_gmid,
-                .ptp_domain = prepared.ptp_domain,
-                .ring_packets = prepared.ring_packets,
-                .prebuffer_frames = prepared.prebuffer_frames,
-                .channels = prepared.channels,
-                .map_len = @intCast(channels),
+                .prepared = prepared,
                 .processing = settings.processingConfig(),
                 .drain_timeout_ms = settings.drainTimeoutMs,
             };
-            const labels = try settings.labels();
-            for (0..channels) |channel| result.labels[channel] = copyLabel(labels[channel]);
-            result.label_count = @intCast(channels);
-            const sources = try settings.sources();
-            for (0..channels) |channel| {
-                if (sources[channel] >= channels) return error.InvalidSourceChannel;
-                result.channel_map[channel] = @intCast(sources[channel]);
-            }
             const preset = try settings.preset();
+            for (0..channels) |channel| {
+                const source = prepared.channel_map[channel];
+                if (source >= channels) return error.InvalidSourceChannel;
+                result.labels[channel] = copyLabel(preset.labels[source]);
+            }
+            result.label_count = @intCast(channels);
             copyBytes(&result.layout_id, preset.id);
             const sdp_path = try u.join(&.{ out, "aes67.sdp" });
             defer u.a.free(sdp_path);
@@ -101,25 +83,14 @@ pub const Backend = struct {
     }
     pub fn open(self: *Backend, config: Config) !void {
         if (self.tx != null) return error.Aes67AlreadyOpen;
-        if (config.channels == 0 or config.channels > cfg.max_channels or config.map_len != config.channels)
-            return error.InvalidAes67Config;
-        if (config.label_count != 0 and config.label_count != config.channels) return error.InvalidAes67Config;
+        const plan = config.prepared;
+        if (plan.channels == 0 or plan.channels > cfg.max_channels or
+            plan.flow_count == 0 or plan.flow_count > cfg.max_flows) return error.InvalidAes67Config;
+        if (config.label_count != 0 and config.label_count != plan.channels) return error.InvalidAes67Config;
         // SDP is written before the socket exists, so bad SDP parameters fail
         // closed with no network side effect.
         try self.writeSdp(&config);
-        self.tx = tx_mod.Tx.create(std.heap.page_allocator, .{
-            .dest_ip = config.dest_ip,
-            .port = config.port,
-            .frames_per_packet = config.frames_per_packet,
-            .payload_type = config.payload_type,
-            .ssrc = config.ssrc,
-            .src_interface_ip = config.src_interface_ip,
-            .ptp_gmid = config.ptp_gmid,
-            .ptp_domain = config.ptp_domain,
-            .ring_packets = config.ring_packets,
-            .prebuffer_frames = config.prebuffer_frames,
-            .channels = config.channels,
-        }) catch |err| {
+        self.tx = tx_mod.Tx.create(std.heap.page_allocator, plan) catch |err| {
             self.setError(@errorName(err));
             return error.Aes67CreateFailed;
         };
@@ -162,6 +133,7 @@ pub const Backend = struct {
         };
     }
     fn publish(self: *Backend, stream: *Stream, stats: tx_mod.Stats) void {
+        _ = self;
         stream.updateNet(.{
             .packets_sent = stats.packets_sent,
             .silent_packets = stats.silent_packets,
@@ -172,7 +144,7 @@ pub const Backend = struct {
             .last_timestamp = stats.last_timestamp,
             .frames_per_packet = stats.frames_per_packet,
             .channels = stats.channels,
-            .ssrc = self.limits.ssrc,
+            .ssrc = stats.ssrc,
             .ring_dropped_frames = stats.ring_dropped_frames,
             .send_errors = stats.send_errors,
             .late_ticks = stats.late_ticks,
@@ -189,8 +161,9 @@ pub const Backend = struct {
         // owner and the network. submit() copies, so the lease returns at once.
         for (0..4) |_| {
             const lease = stream.popLease() orelse break;
-            const lease_pcm = lease.pcm[0..@as(usize, lease.frames) * self.limits.channels];
-            const result = tx.submit(lease_pcm, lease.frames, @intCast(self.limits.channels), self.limits.channel_map[0..self.limits.map_len]);
+            const channels = self.limits.prepared.channels;
+            const lease_pcm = lease.pcm[0..@as(usize, lease.frames) * channels];
+            const result = tx.submit(lease_pcm, lease.frames, @intCast(channels), self.limits.prepared.channel_map[0..channels]);
             stream.releaseLease(lease);
             try result;
             self.next_frame += lease.frames;
@@ -204,7 +177,7 @@ pub const Backend = struct {
                 if (ended) {
                     self.state = .draining;
                     self.drain_started = now;
-                } else if (stats.frames_submitted >= self.limits.prebuffer_frames) {
+                } else if (stats.frames_submitted >= self.limits.prepared.prebuffer_frames) {
                     self.state = .playing;
                 }
             },
@@ -224,7 +197,8 @@ pub const Backend = struct {
             else => {},
         }
         stream.update(self.state, stats.frames_sent, stats.packets_sent, stats.silent_packets, 0);
-        stream.metrics(rtp.sample_rate, stats.frames_per_packet, @intCast(stats.buffered_frames), 0, 0, 0, @intCast(self.limits.prebuffer_frames), 0);
+        const prebuffer: u32 = @intCast(self.limits.prepared.prebuffer_frames);
+        stream.metrics(rtp.sample_rate, stats.frames_per_packet, @intCast(stats.buffered_frames), 0, 0, 0, prebuffer, 0);
     }
     fn writeSdp(self: *Backend, config: *const Config) !void {
         _ = self;
@@ -232,21 +206,44 @@ pub const Backend = struct {
         const count: usize = config.label_count;
         for (0..count) |index| labels[index] = std.mem.sliceTo(&config.labels[index], 0);
         const layout = std.mem.sliceTo(&config.layout_id, 0);
-        const gmid: ?[]const u8 = if (config.ptp_gmid) |*value| value[0..] else null;
+        const gmid: ?[]const u8 = if (config.prepared.ptp_gmid) |*value| value[0..] else null;
+        var params: [cfg.max_flows]rtp.SdpParams = undefined;
+        // Per-flow scratch must outlive the loop: iterate by pointer so
+        // &flow.dest_text points into the stable prepared array. A by-value
+        // capture dangled every session's c=/source-filter onto the LAST
+        // flow's values (the SDP dump bug caught in real-network
+        // verification; the same pattern is fixed in the offline tools).
+        var source_buffers: [cfg.max_flows][15]u8 = undefined;
+        for (config.prepared.flows[0..config.prepared.flow_count], 0..) |*flow, index| {
+            const offset: usize = flow.channel_offset;
+            // RFC 4570 source-filter address follows the flow's own effective
+            // egress interface (flow-level override or the session-level one).
+            const source_text: ?[]const u8 = if (flow.source_ip) |source| blk: {
+                source_buffers[index] = cfg.formatIpv4(source);
+                break :blk std.mem.sliceTo(&source_buffers[index], 0);
+            } else null;
+            params[index] = .{
+                .session_name = std.mem.sliceTo(&config.session_name, 0),
+                .dest_ip = std.mem.sliceTo(&flow.dest_text, 0),
+                .port = flow.port,
+                .channels = flow.channels,
+                .frames_per_packet = config.prepared.frames_per_packet,
+                .payload_type = flow.payload_type,
+                .ssrc = flow.ssrc,
+                .ptp_gmid = gmid,
+                .ptp_domain = config.prepared.ptp_domain,
+                .layout_id = layout,
+                .channel_labels = labels[offset .. offset + flow.channels],
+                .flow_index = @intCast(index),
+                .channel_offset = flow.channel_offset,
+                // RFC 4566: multicast connections carry the TTL suffix in c=.
+                .ttl = if (flow.multicast) flow.ttl else null,
+                .source_filter = config.prepared.source_filter,
+                .source_addr = source_text,
+            };
+        }
         var buffer: [rtp.sdp_max_bytes]u8 = undefined;
-        const size = rtp.writeSdp(&buffer, .{
-            .session_name = std.mem.sliceTo(&config.session_name, 0),
-            .dest_ip = std.mem.sliceTo(&config.dest_text, 0),
-            .port = config.port,
-            .channels = config.channels,
-            .frames_per_packet = config.frames_per_packet,
-            .payload_type = config.payload_type,
-            .ssrc = config.ssrc,
-            .ptp_gmid = gmid,
-            .ptp_domain = config.ptp_domain,
-            .layout_id = layout,
-            .channel_labels = labels[0..count],
-        }) catch return error.Aes67SdpGeneration;
+        const size = rtp.writeSdpMulti(&buffer, params[0..config.prepared.flow_count]) catch return error.Aes67SdpGeneration;
         const path = std.mem.sliceTo(&config.sdp_path, 0);
         if (std.fs.path.dirname(path)) |parent| std.fs.cwd().makePath(parent) catch {};
         var file = std.fs.cwd().createFile(path, .{}) catch return error.Aes67SdpWrite;

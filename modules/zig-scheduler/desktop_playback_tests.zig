@@ -66,7 +66,7 @@ test "FSA JSON selects explicit shared WASAPI endpoint without ASIO driver" {
 }
 
 test "FSA playback profile selects native AoIP without ASIO paths" {
-    var value=Config{.bridgeDll="C:\\fixture\\bridge.dll",.outputBackend="aoip",.aoip=.{.interfaceIp="192.168.50.1",.masterIp="192.168.50.2",.mac="f0d7afd04b1d"}};
+    var value=Config{.bridgeDll="C:\\fixture\\bridge.dll",.outputBackend="aoip",.aoip=.{.interfaceIp="192.0.2.1",.masterIp="192.168.50.2",.mac="f0d7afd04b1d"}};
     try value.validate();
     try std.testing.expect(value.asioDll.len==0 and value.driver.len==0);
     value.sourcePolicy="active";try value.validate();
@@ -253,7 +253,7 @@ test "unified spatial and ordinary PCM can feed AoIP and ASIO" {
         .ingressDll = "C:/ingress.dll",
         .inputEndpointId = "{0.0.0.00000000}.{aae198db-ab16-4130-aa7d-095c64105833}",
     };
-    value.aoip = .{ .interfaceIp = "192.168.50.1", .mac = "f0d7afd04b1d" };
+    value.aoip = .{ .interfaceIp = "192.0.2.1", .mac = "f0d7afd04b1d" };
     for ([_][]const u8{"asio", "aoip"}) |backend| {
         value.outputBackend = backend;
         try value.validate();
@@ -303,4 +303,33 @@ test "Unified PCM follows the current session and validates the resolved sink" {
     try std.testing.expectEqualStrings(endpoint, value.pcmCapture.?.inputEndpointId);
     try std.testing.expectError(error.PcmInputEqualsOutput, value.resolvePcmInput(arena.allocator(), value.wasapi.?.endpointId));
     try std.testing.expectError(error.InvalidPcmInputEndpoint, value.resolvePcmInput(arena.allocator(), "bad"));
+}
+
+test "legacy mirror-format documents fail loudly; flows-only documents validate" {
+    const playback = @import("desktop_playback.zig");
+    const cfg = @import("aes67_config.zig");
+    const allocator = std.testing.allocator;
+    // The aes67 block an earlier build saved: the top-level
+    // destIp/port pair predates the flows-only contract and is rejected
+    // with the dedicated legacy error - the user regenerates the config
+    // through the UI, nothing is migrated silently.
+    const legacy = "{\"renderer\":\"roar\",\"mode\":\"olr\",\"outputBackend\":\"aes67\",\"outputLayout\":\"9.1.6\",\"sourcePolicy\":\"fixed\",\"channelOrder\":\"olr\",\"sampleRate\":48000,\"clockSync\":true,\"drainTimeoutMs\":5000,\"bridgeDll\":\"C:/fixture/bridge.dll\",\"aes67\":{\"destIp\":\"239.1.0.1\",\"port\":5010,\"framesPerPacket\":48,\"payloadType\":96,\"ssrc\":1314082870,\"srcInterfaceIp\":\"192.0.2.63\",\"ptpDomain\":0,\"ringPackets\":512,\"prebufferFrames\":480,\"ttl\":32,\"flows\":[{\"destIp\":\"239.1.0.1\",\"port\":5010,\"channels\":8,\"channelOffset\":0,\"payloadType\":96,\"ssrc\":1314082870,\"ttl\":32},{\"destIp\":\"239.1.0.2\",\"port\":5012,\"channels\":8,\"channelOffset\":8,\"payloadType\":96,\"ssrc\":1314082871,\"ttl\":32}],\"channelMap\":[6,7,2,3,8,9,4,5,0,1,10,11,14,15,12,13]}}";
+    try std.testing.expectError(error.Aes67LegacyMirrorFormat, playback.parse(allocator, legacy));
+    // The same document without the legacy pair validates; the flow rows are
+    // the surviving, explicit multi-flow shape.
+    const modern = "{\"renderer\":\"roar\",\"mode\":\"olr\",\"outputBackend\":\"aes67\",\"outputLayout\":\"9.1.6\",\"sourcePolicy\":\"fixed\",\"channelOrder\":\"olr\",\"sampleRate\":48000,\"clockSync\":true,\"drainTimeoutMs\":5000,\"bridgeDll\":\"C:/fixture/bridge.dll\",\"aes67\":{\"framesPerPacket\":48,\"payloadType\":96,\"ssrc\":1314082870,\"srcInterfaceIp\":\"192.0.2.63\",\"ptpDomain\":0,\"ringPackets\":512,\"prebufferFrames\":480,\"ttl\":32,\"flows\":[{\"destIp\":\"239.1.0.1\",\"port\":5010,\"channels\":8,\"channelOffset\":0,\"payloadType\":96,\"ssrc\":1314082870,\"ttl\":32,\"srcInterfaceIp\":\"192.0.2.63\"},{\"destIp\":\"239.1.0.2\",\"port\":5012,\"channels\":8,\"channelOffset\":8,\"payloadType\":96,\"ssrc\":1314082871,\"ttl\":32,\"srcInterfaceIp\":\"192.0.2.63\"}],\"channelMap\":[6,7,2,3,8,9,4,5,0,1,10,11,14,15,12,13]}}";
+    var parsed = try playback.parse(allocator, modern);
+    defer parsed.deinit();
+    try parsed.value.validate();
+    const prepared = try cfg.prepare(parsed.value.aes67.?, parsed.value.channelCount());
+    try std.testing.expectEqual(@as(u8, 2), prepared.flow_count);
+    try std.testing.expectEqualStrings("239.1.0.1", std.mem.sliceTo(&prepared.flows[0].dest_text, 0));
+    try std.testing.expectEqualStrings("239.1.0.2", std.mem.sliceTo(&prepared.flows[1].dest_text, 0));
+    try std.testing.expectEqual(@as(u16, 5010), prepared.flows[0].port);
+    try std.testing.expectEqual(@as(u16, 5012), prepared.flows[1].port);
+    // SSRCs (integer machine format here; 0x4E535036 / 0x4E535037 = the
+    // default NSP6 pair) stay unique per flow.
+    try std.testing.expectEqual(@as(u32, 1314082870), prepared.flows[0].ssrc);
+    try std.testing.expectEqual(@as(u32, 1314082871), prepared.flows[1].ssrc);
+    try std.testing.expectEqual(@as(?[4]u8, .{ 192, 0, 2, 63 }), prepared.flows[1].source_ip);
 }

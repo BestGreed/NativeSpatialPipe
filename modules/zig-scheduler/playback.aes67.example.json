@@ -9,16 +9,19 @@
   "asioDll": "",
   "driver": "",
   "aes67": {
-    "destIp": "192.168.50.20",
-    "port": 5004,
     "framesPerPacket": 48,
     "payloadType": 96,
     "ssrc": 0,
-    "srcInterfaceIp": "192.168.50.1",
-    "ptpGmid": "00-11-22-FF-FE-33-44-55",
+    "srcInterfaceIp": "192.0.2.1",
     "ptpDomain": 0,
+    "ttl": 32,
+    "sourceFilter": false,
     "ringPackets": 64,
-    "prebufferFrames": 480
+    "prebufferFrames": 480,
+    "flows": [
+      {"destIp": "192.0.2.20", "port": 5004, "channels": 8, "channelOffset": 0, "payloadType": 96, "ssrc": 0, "ttl": 32, "srcInterfaceIp": "192.0.2.1"},
+      {"destIp": "192.0.2.20", "port": 5006, "channels": 4, "channelOffset": 8, "payloadType": 96, "ssrc": 0, "ttl": 32, "srcInterfaceIp": "192.0.2.1"}
+    ]
   },
   "outputLayout": "7.1.4",
   "outputProcessing": {

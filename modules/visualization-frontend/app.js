@@ -645,19 +645,94 @@ $('replaySeek').onchange=e=>{const resume=replayScrubbing?replayResumeAfterScrub
 document.addEventListener('visibilitychange',()=>{if(!replay)return;if(document.hidden){hiddenReplayPlaying=replay.playing;replay.pause();}else if(hiddenReplayPlaying){hiddenReplayPlaying=false;replay.play();}});
 let reconnectTimer=null,liveWanted=false;
 let signalPathTimer;
+const aes67Count=value=>value==null?'—':Number(value).toLocaleString();
+const aes67Multicast=text=>{const match=/^(\d{1,3})\./.exec(String(text??''));return match?Number(match[1])>=224&&Number(match[1])<=239:false;};
+// SSRC is human-facing hexadecimal on every surface (stored as integers).
+const aes67SsrcHex=value=>Number.isInteger(Number(value))&&Number(value)>=0?'0x'+(Number(value)>>>0).toString(16).toUpperCase():null;
+// AES67 sender status is served by the supported web status endpoint:
+// /api/web/status -> backend.aes67 is the current session's bounded projection
+// of observed/aes67-output.json plus a host-measured ageMs. Per-flow
+// destinations prefer that validated report (network.flows); the session
+// playback block is only a fallback, and network.destIp/port describe flow 1.
+function aes67FlowText(flow,network){
+ const dest=(flow?.destIp??'?')+':'+(flow?.port??'?');
+ const channels=flow?.channels??'?';
+ const ssrc=aes67SsrcHex(flow?.ssrc)??aes67SsrcHex(network?.ssrc);
+ const ssrcText=ssrc?' · SSRC '+ssrc:'';
+ if(aes67Multicast(flow?.destIp))return dest+' · '+channels+' ch · 组播 TTL '+(Number(flow?.ttl)>0?flow.ttl:(network?.ttl??'?'))+ssrcText;
+ return dest+' · '+channels+' ch · 单播'+ssrcText;
+}
+function aes67StatusRows(observation,backend){
+ const payload=observation?.report;
+ const active=backend?.outputBackend==='aes67';
+ if(backend&&!active)return [];
+ if(!payload){
+  if(!active)return [];
+  return [['AES67 状态',backend?.state==='running'?'会话正在使用 AES67，但尚未收到实时统计（状态数据未发布）':'AES67 已配置，当前没有实时统计']];
+ }
+ const health=payload.health??{},stats=payload.stats??{},network=payload.network??{};
+ const failure=health.failure??(health.errorDetail||null);
+ const labels=Array.isArray(payload.outputChannelLabels)?payload.outputChannelLabels.join(' '):'—';
+ // Per-flow rows prefer the validated sender report (network.flows, which
+ // already carries inherited TTL/source per flow); the session playback block
+ // and the flow-1 mirror are fallbacks only.
+ const reportFlows=Array.isArray(network.flows)&&network.flows.length?network.flows:null;
+ const flows=reportFlows??(Array.isArray(backend?.flows)&&backend.flows.length
+  ?backend.flows
+  :[{destIp:network.destIp??'?',port:network.port??'?',channels:payload.outputChannels??network.channels??'?',ttl:network.ttl,ssrc:network.ssrc}]);
+ const flowItems=flows.map((flow,index)=>['AES67 流 '+(index+1)+' 目标',aes67FlowText(flow,network)]);
+ let statusText='数据已过期 · 上次发送报告';
+ if(observation.state==='live'){
+  if(failure)statusText='发送异常 · '+failure;
+  else if(backend?.state!=='running')statusText='已停止 · 上次会话报告';
+  else statusText=health.active?'LIVE · 正在发送':'等待发送 · 未激活';
+ }
+ const items=[
+  ['AES67 状态',statusText],
+  ...flowItems,
+  ['AES67 布局 / 声道',(payload.outputLayout??'—')+' · '+labels],
+  ['AES67 发送 / 静音包',aes67Count(stats.packetsSent)+' / '+aes67Count(stats.silentPackets)],
+  ['AES67 丢帧 / 发送错误',aes67Count(stats.ringDroppedFrames)+' / '+aes67Count(stats.sendErrors)],
+  ['AES67 迟到节拍 / 缓冲帧',aes67Count(stats.lateTicks)+' / '+aes67Count(stats.bufferedFrames)],
+  ['AES67 已发帧 / 已提交帧',aes67Count(stats.framesSent)+' / '+aes67Count(stats.framesSubmitted)],
+ ];
+ if(failure&&health.errorDetail)items.push(['AES67 失败详情',String(health.errorDetail)]);
+ const ageMs=Number(observation?.ageMs);
+ if(Number.isFinite(ageMs)){
+  const detail=Math.max(0,ageMs/1000).toFixed(1)+' s 前';
+  items.push(['AES67 数据更新',observation?.state==='stale'?detail+' · 数据已过期':detail]);
+ }
+ return items;
+}
 function watchSignalPath(http, generation) {
   upmixAvailable=false;upmixActivity='';updateUpmixPanel();
   const url = new URL('/v1/routes/native-route/signal-path', http);
   let previous, pending = false;
+  let backendInfo=null, backendAt=0;
+  async function readBackend(){
+   if(performance.now()-backendAt<4000)return backendInfo;
+   backendAt=performance.now();
+   try{
+    const response=await fetch('/api/web/status',{signal:AbortSignal.timeout(1800),cache:'no-store'});
+    if(!response.ok){backendInfo=null;return backendInfo;}
+    const value=await response.json();
+    backendInfo={state:value?.backend?.sessionState??null,outputBackend:value?.backend?.session?.playback?.outputBackend??null,flows:value?.backend?.session?.playback?.aes67?.flows??null,aes67:value?.backend?.aes67??null};
+   }catch{backendInfo=null;}
+   return backendInfo;
+  }
   async function update() {
     if (pending || document.hidden || generation !== socketGeneration) return;
     pending = true;
     try {
-      const response = await fetch(url, {signal:AbortSignal.timeout(1800), cache:'no-store'});
-      const status = response.ok ? await response.json() : null;
+      const [response, backend] = await Promise.all([
+        fetch(url, {signal:AbortSignal.timeout(1800), cache:'no-store'}).catch(()=>null),
+        readBackend()
+      ]);
+      const status = response?.ok ? await response.json() : null;
+      const liveAes67=backend?.aes67??null;
       if (generation !== socketGeneration) return;
       const input = status?.input;
-      $('signalPath').hidden = !status;
+      $('signalPath').hidden = !(status || liveAes67);
       const output = status?.output?.stats;
       const spatial = input?.spatialBlocks.reduce((total, value) => total + value, 0) ?? 0;
       const activity = (count, prior) => `${prior === undefined ? '等待采样' : count > prior ? '活动' : '空闲'} · ${count.toLocaleString()} 块`;
@@ -724,6 +799,7 @@ function watchSignalPath(http, generation) {
           ['等响增益 315 Hz／8 kHz', meter?.loudnessGainDb ? meter.loudnessGainDb.map(db=>`+${db.toFixed(1)} dB`).join(' / ') : '等待电平'],
         ] : []),
         ['限幅后峰值', meter ? `${meter.postPeakDbfs.toFixed(1)} dBFS` : '—'],
+        ...aes67StatusRows(liveAes67, backend),
       ]);
       upmixAvailable=Boolean(input?.pcmUpmixLoaded);
       if (!input) { previous = undefined; upmixActivity=''; updateUpmixPanel(); return; }

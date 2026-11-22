@@ -91,7 +91,7 @@ test "SDP declares a unicast L24/1ms sendonly stream with PTP clock" {
     const labels = [_][]const u8{ "L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs", "Ltf", "Rtf", "Ltr", "Rtr" };
     var text: [rtp.sdp_max_bytes]u8 = undefined;
     const size = try rtp.writeSdp(&text, .{
-        .dest_ip = "192.168.50.20",
+        .dest_ip = "192.0.2.20",
         .port = 5004,
         .channels = 12,
         .frames_per_packet = 48,
@@ -106,7 +106,7 @@ test "SDP declares a unicast L24/1ms sendonly stream with PTP clock" {
         "v=0\r\n" ++
         "o=- 1314082870 1314082870 IN IP4 0.0.0.0\r\n" ++
         "s=NativeSpatialPipe AES67 output\r\n" ++
-        "c=IN IP4 192.168.50.20\r\n" ++
+        "c=IN IP4 192.0.2.20\r\n" ++
         "t=0 0\r\n" ++
         "m=audio 5004 RTP/AVP 96\r\n" ++
         "a=rtpmap:96 L24/48000/12\r\n" ++
@@ -120,7 +120,7 @@ test "SDP declares a unicast L24/1ms sendonly stream with PTP clock" {
     try std.testing.expectEqualStrings(expected, text[0..size]);
 }
 
-test "SDP localmac fallback and 2.0 layout omit normative-looking extras" {
+test "SDP local clock fallback is RFC 7273 local + sender (never localmac) and 2.0 omits extras" {
     var text: [rtp.sdp_max_bytes]u8 = undefined;
     const size = try rtp.writeSdp(&text, .{
         .dest_ip = "127.0.0.1",
@@ -130,28 +130,76 @@ test "SDP localmac fallback and 2.0 layout omit normative-looking extras" {
         .channel_labels = &.{ "L", "R" },
     });
     const sdp = text[0..size];
-    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=ts-refclk:localmac=02-4E-53-50-00-01\r\n") != null);
+    // Phase 1 (PTP not wired): RFC 7273 local clock + sender media clock.
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=ts-refclk:local\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=mediaclk:sender\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "localmac") == null);
     try std.testing.expect(std.mem.indexOf(u8, sdp, "a=fmtp:") == null);
     try std.testing.expect(std.mem.indexOf(u8, sdp, "a=rtpmap:96 L24/48000/2\r\n") != null);
     try std.testing.expect(std.mem.indexOf(u8, sdp, "c=IN IP4 127.0.0.1\r\n") != null);
 }
 
+test "multi-flow SDP writes one v=0 session per flow with shared clock and labels" {
+    var text: [rtp.sdp_max_bytes]u8 = undefined;
+    const labels0 = [_][]const u8{ "L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs" };
+    const labels1 = [_][]const u8{ "Lw", "Rw", "Ltf", "Rtf", "Aux12", "Aux13", "Ltr", "Rtr" };
+    const params = [_]rtp.SdpParams{
+        .{
+            .dest_ip = "192.0.2.222",
+            .port = 5010,
+            .channels = 8,
+            .ssrc = 0x4E535036,
+            .layout_id = "16ch-container",
+            .channel_labels = &labels0,
+            .flow_index = 0,
+            .channel_offset = 0,
+        },
+        .{
+            .dest_ip = "192.0.2.222",
+            .port = 5012,
+            .channels = 8,
+            .ssrc = 0x4E535037,
+            .layout_id = "16ch-container",
+            .channel_labels = &labels1,
+            .flow_index = 1,
+            .channel_offset = 8,
+        },
+    };
+    const size = try rtp.writeSdpMulti(&text, &params);
+    const sdp = text[0..size];
+    // Two sessions = two v=0 / t=0 0 / m=audio lines.
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, sdp, "v=0\r\n"));
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, sdp, "t=0 0\r\n"));
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, sdp, "a=ptime:1\r\n"));
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "s=NativeSpatialPipe AES67 output flow0\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "s=NativeSpatialPipe AES67 output flow1\r\n") != null);
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, sdp, "a=rtpmap:96 L24/48000/8\r\n"));
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, sdp, "a=ts-refclk:local\r\n"));
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, sdp, "a=mediaclk:sender\r\n"));
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "c=IN IP4 192.0.2.222\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=comment:flow=0\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=comment:flow=1\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=comment:channel-offset=0\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=comment:channel-offset=8\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=comment:channel-labels=Lw,Rw,Ltf,Rtf,Aux12,Aux13,Ltr,Rtr\r\n") != null);
+}
+
 test "SDP rejects inconsistent channel and label counts" {
     var text: [rtp.sdp_max_bytes]u8 = undefined;
     try std.testing.expectError(error.InvalidAes67Sdp, rtp.writeSdp(&text, .{
-        .dest_ip = "192.168.50.20",
+        .dest_ip = "192.0.2.20",
         .channels = 2,
         .ssrc = 1,
         .channel_labels = &.{ "L", "R", "C" },
     }));
     try std.testing.expectError(error.InvalidAes67Sdp, rtp.writeSdp(&text, .{
-        .dest_ip = "192.168.50.20",
+        .dest_ip = "192.0.2.20",
         .channels = 17,
         .ssrc = 1,
     }));
     var tiny: [32]u8 = undefined;
     try std.testing.expectError(error.SdpBufferTooSmall, rtp.writeSdp(&tiny, .{
-        .dest_ip = "192.168.50.20",
+        .dest_ip = "192.0.2.20",
         .channels = 12,
         .ssrc = 1,
     }));
@@ -163,5 +211,111 @@ test "public layout ids map to informative SMPTE channel-order tokens" {
     try std.testing.expectEqualStrings("SMPTE2110.(71,6)", rtp.smpteChannelOrder("7.1.6").?);
     try std.testing.expectEqualStrings("SMPTE2110.(91,6)", rtp.smpteChannelOrder("9.1.6").?);
     try std.testing.expect(rtp.smpteChannelOrder("2.0") == null);
+    // 4.1.2 is not a public layout and gets no informative token.
     try std.testing.expect(rtp.smpteChannelOrder("4.1.2") == null);
+}
+
+test "multicast SDP carries the c= TTL suffix and optional source-filter" {
+    var text: [rtp.sdp_max_bytes]u8 = undefined;
+    const labels8 = [_][]const u8{ "L", "R", "C", "LFE", "Ls", "Rs", "Ltf", "Rtf" };
+    const size = try rtp.writeSdp(&text, .{
+        .dest_ip = "239.1.0.7",
+        .port = 5008,
+        .channels = 8,
+        .ssrc = 0x4E535036,
+        .layout_id = "5.1.2",
+        .channel_labels = &labels8,
+        .ttl = 32,
+        .source_filter = true,
+        .source_addr = "192.0.2.94",
+    });
+    const sdp = text[0..size];
+    // RFC 4566: multicast c= MUST carry the TTL suffix.
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "c=IN IP4 239.1.0.7/32\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=source-filter: incl IN IP4 239.1.0.7 192.0.2.94\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "m=audio 5008 RTP/AVP 96\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=rtpmap:96 L24/48000/8\r\n") != null);
+    // Unicast SDP stays exactly as before (no /ttl).
+    const unicast_size = try rtp.writeSdp(&text, .{
+        .dest_ip = "192.0.2.222",
+        .port = 5004,
+        .channels = 8,
+        .ssrc = 0x4E535036,
+        .layout_id = "5.1.2",
+        .channel_labels = &labels8,
+    });
+    try std.testing.expect(std.mem.indexOf(u8, text[0..unicast_size], "c=IN IP4 192.0.2.222\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, text[0..unicast_size], "/32") == null);
+    // ttl 0 is never a valid multicast TTL.
+    try std.testing.expectError(error.InvalidAes67Sdp, rtp.writeSdp(&text, .{
+        .dest_ip = "239.1.0.7",
+        .channels = 2,
+        .ssrc = 1,
+        .ttl = 0,
+    }));
+}
+
+test "multicast multi-flow SDP writes one group/TTL session per flow" {
+    var text: [rtp.sdp_max_bytes]u8 = undefined;
+    const labels0 = [_][]const u8{ "L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs" };
+    const labels1 = labels0;
+    const params = [_]rtp.SdpParams{
+        .{ .dest_ip = "239.1.0.10", .port = 5010, .channels = 8, .ssrc = 0x4E535036, .layout_id = "16ch-container", .channel_labels = &labels0, .ttl = 32, .flow_index = 0, .channel_offset = 0 },
+        .{ .dest_ip = "239.1.0.11", .port = 5012, .channels = 8, .ssrc = 0x4E535037, .layout_id = "16ch-container", .channel_labels = &labels1, .ttl = 8, .flow_index = 1, .channel_offset = 8 },
+    };
+    const size = try rtp.writeSdpMulti(&text, &params);
+    const sdp = text[0..size];
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, sdp, "c=IN IP4 239.1.0.10/32\r\n"));
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, sdp, "c=IN IP4 239.1.0.11/8\r\n"));
+}
+
+test "Plan A multi-flow SDP: one shared default port, one c= group per flow" {
+    var text: [rtp.sdp_max_bytes]u8 = undefined;
+    const labels0 = [_][]const u8{ "L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs" };
+    const labels1 = [_][]const u8{ "Lw", "Rw", "Ltf", "Rtf", "Aux12", "Aux13", "Ltr", "Rtr" };
+    const params = [_]rtp.SdpParams{
+        .{ .dest_ip = "239.1.0.1", .port = 5004, .channels = 8, .ssrc = 1314082870, .layout_id = "16ch-container", .channel_labels = &labels0, .ttl = 32, .flow_index = 0, .channel_offset = 0 },
+        .{ .dest_ip = "239.1.0.2", .port = 5004, .channels = 8, .ssrc = 1314082871, .layout_id = "16ch-container", .channel_labels = &labels1, .ttl = 32, .flow_index = 1, .channel_offset = 8 },
+    };
+    const size = try rtp.writeSdpMulti(&text, &params);
+    const sdp = text[0..size];
+    // Two sessions, each with its own group in c= and the shared default port.
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, sdp, "v=0\r\n"));
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, sdp, "c=IN IP4 239.1.0.1/32\r\n"));
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, sdp, "c=IN IP4 239.1.0.2/32\r\n"));
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, sdp, "m=audio 5004 RTP/AVP 96\r\n"));
+    // Independent SSRCs in o= (the default NSP6 SSRC pair) and unchanged
+    // ptime/L24 payload shape per session.
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "o=- 1314082870 1314082870 IN IP4 0.0.0.0\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "o=- 1314082871 1314082871 IN IP4 0.0.0.0\r\n") != null);
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, sdp, "a=ptime:1\r\n"));
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, sdp, "a=rtpmap:96 L24/48000/8\r\n"));
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, sdp, "a=sendonly\r\n"));
+}
+
+test "SDP generation holds for any flow count: three flows with distinct groups" {
+    var text: [rtp.sdp_max_bytes]u8 = undefined;
+    const labels0 = [_][]const u8{ "L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs" };
+    const labels1 = [_][]const u8{ "Lw", "Rw" };
+    const labels2 = [_][]const u8{ "Ltf", "Rtf", "Aux12", "Aux13", "Ltr", "Rtr" };
+    const params = [_]rtp.SdpParams{
+        .{ .dest_ip = "239.1.0.1", .port = 5004, .channels = 8, .ssrc = 1314082870, .layout_id = "16ch", .channel_labels = &labels0, .ttl = 32, .flow_index = 0, .channel_offset = 0 },
+        .{ .dest_ip = "239.1.0.2", .port = 5004, .channels = 2, .ssrc = 1314082871, .layout_id = "16ch", .channel_labels = &labels1, .ttl = 32, .flow_index = 1, .channel_offset = 8 },
+        .{ .dest_ip = "239.1.0.3", .port = 5004, .channels = 6, .ssrc = 1314082872, .layout_id = "16ch", .channel_labels = &labels2, .ttl = 32, .flow_index = 2, .channel_offset = 10 },
+    };
+    const size = try rtp.writeSdpMulti(&text, &params);
+    const sdp = text[0..size];
+    // Three sessions: one v=0/o=/c= per group, all on the shared default port.
+    try std.testing.expectEqual(@as(usize, 3), std.mem.count(u8, sdp, "v=0\r\n"));
+    try std.testing.expectEqual(@as(usize, 3), std.mem.count(u8, sdp, "m=audio 5004 RTP/AVP 96\r\n"));
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, sdp, "c=IN IP4 239.1.0.1/32\r\n"));
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, sdp, "c=IN IP4 239.1.0.2/32\r\n"));
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, sdp, "c=IN IP4 239.1.0.3/32\r\n"));
+    // Per-flow channel widths land in their own rtpmap lines.
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, sdp, "a=rtpmap:96 L24/48000/8\r\n"));
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, sdp, "a=rtpmap:96 L24/48000/2\r\n"));
+    try std.testing.expectEqual(@as(usize, 1), std.mem.count(u8, sdp, "a=rtpmap:96 L24/48000/6\r\n"));
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=comment:flow=2\r\n") != null);
+    try std.testing.expect(std.mem.indexOf(u8, sdp, "a=comment:channel-offset=10\r\n") != null);
+    try std.testing.expectEqual(@as(usize, 3), std.mem.count(u8, sdp, "a=ptime:1\r\n"));
 }

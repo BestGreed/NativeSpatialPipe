@@ -301,14 +301,54 @@ fn writeAes67Report(out: []const u8, session: *aes67_playback.Session, settings:
     const channels = settings.channelCount();
     var gmid: []const u8 = "";
     if (prepared.ptp_gmid) |*value| gmid = value[0..];
+    // Per-flow destinations are reported explicitly so the control surface
+    // (WebUI status card) can show every group/port the session actually sends
+    // to, instead of only the flow-0 mirror in the legacy single-IP field.
+    const FlowDestination = struct {
+        index: u8,
+        destIp: []const u8,
+        port: u16,
+        channels: u16,
+        channelOffset: u16,
+        ssrc: u32,
+        multicast: bool,
+        ttl: u8,
+        srcInterfaceIp: []const u8,
+    };
+    var destinations: [aes67_config.max_flows]FlowDestination = undefined;
+    var source_buffers: [aes67_config.max_flows][15]u8 = undefined;
+    // Iterate by pointer so &flow.dest_text points into the stable prepared
+    // array (a by-value capture would alias every row's destIp onto the last
+    // flow - same bug class as the SDP dump fix).
+    for (prepared.flows[0..prepared.flow_count], 0..) |*flow, index| {
+        var source_text: []const u8 = "";
+        if (flow.source_ip) |source| {
+            source_buffers[index] = aes67_config.formatIpv4(source);
+            source_text = std.mem.sliceTo(&source_buffers[index], 0);
+        }
+        destinations[index] = .{
+            .index = @intCast(index),
+            .destIp = std.mem.sliceTo(&flow.dest_text, 0),
+            .port = flow.port,
+            .channels = flow.channels,
+            .channelOffset = flow.channel_offset,
+            .ssrc = flow.ssrc,
+            .multicast = flow.multicast,
+            .ttl = flow.ttl,
+            .srcInterfaceIp = source_text,
+        };
+    }
     u.writeJson(path, .{
         .scheduler = "zig", .outputBackend = "aes67", .state = @tagName(status.state),
         .outputLayout = (settings.preset() catch return).id, .outputChannels = channels,
         .sourceStream = settings.sourceStream, .outputOrder = settings.channelOrder,
         .outputChannelLabels = labels[0..channels], .sourceChannelIndices = sources[0..channels],
-        .network = .{ .destIp = net.destIp, .port = prepared.port, .payloadType = prepared.payload_type,
+        .network = .{ .destIp = std.mem.sliceTo(&prepared.flows[0].dest_text, 0), .port = prepared.port, .payloadType = prepared.payload_type,
             .framesPerPacket = prepared.frames_per_packet, .ssrc = status.net_ssrc,
-            .ptpGmid = gmid, .ptpDomain = prepared.ptp_domain, .channels = channels, .sdp = sdp },
+            .ptpGmid = gmid, .ptpDomain = prepared.ptp_domain, .channels = channels, .sdp = sdp,
+            .multicast = prepared.multicast, .ttl = prepared.ttl,
+            .flowCount = prepared.flow_count,
+            .flows = destinations[0..prepared.flow_count] },
         .health = .{ .active = status.net_active,
             .failure = if (status.failure) |err| @errorName(err) else @as(?[]const u8, null),
             .errorDetail = std.mem.sliceTo(&session.detail, 0) },

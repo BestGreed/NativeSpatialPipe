@@ -514,18 +514,20 @@
       ],
       "additionalProperties": false,
       "required": [
-        "destIp"
+        "flows"
       ],
       "properties": {
-        "destIp": {
-          "type": "string",
-          "description": "Unicast IPv4 destination address. Multicast/broadcast/unspecified destinations are rejected in this step."
-        },
-        "port": {
+        "ttl": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 65535,
-          "default": 5004
+          "maximum": 255,
+          "default": 32,
+          "description": "IPv4 multicast TTL. Emitted in SDP as c=IN IP4 <group>/<ttl> and applied with IP_MULTICAST_TTL. Ignored for unicast destinations."
+        },
+        "sourceFilter": {
+          "type": "boolean",
+          "default": false,
+          "description": "Emit an RFC 4570 single-source a=source-filter line for multicast flows (informational for receivers that ignore it)."
         },
         "framesPerPacket": {
           "const": 48,
@@ -548,13 +550,13 @@
         "srcInterfaceIp": {
           "type": "string",
           "default": "",
-          "description": "Optional local IPv4 address used to bind the sending socket (egress interface selection)."
+          "description": "Session-level local IPv4 address used for egress selection: binds the sending sockets and drives IP_MULTICAST_IF. Required when any flow destination is a multicast group and that flow does not carry its own srcInterfaceIp; optional for unicast."
         },
         "ptpGmid": {
           "type": "string",
           "pattern": "^([0-9a-fA-F]{2}-){7}[0-9a-fA-F]{2}$",
           "default": "",
-          "description": "Optional IEEE 1588 grandmaster ID advertised in SDP as ts-refclk; empty advertises localmac instead."
+          "description": "Reserved for the PTP-disciplined build. The Phase 1 sender has no PTP lock source and rejects any configured value (Aes67PtpGmidRequiresLock): the SDP advertises a=ts-refclk:local + a=mediaclk:sender (RFC 7273) and never claims ptp= without a real lock. Leave empty."
         },
         "ptpDomain": {
           "type": "integer",
@@ -575,6 +577,34 @@
           "maximum": 48000,
           "default": 480,
           "description": "Frames buffered before the session leaves the waiting state; must fit inside ringPackets."
+        },
+        "flows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "description": "Mandatory multi-flow split, layout-agnostic: 1-8 explicit flows, each carrying 1-8 channels. channelOffset values must be contiguous from 0 and sum(channels) must equal the outputLayout channel count; ceil(channels/8) is only the minimal split and the web UI default proposal, not an enforced flow count. The legacy single-flow mirror format (top-level destIp/port, flows omitted) was removed and is rejected as Aes67LegacyMirrorFormat - regenerate such configs through the UI, they are not migrated. Per-flow destinations are EXPLICIT: every flow carries its own destIp and the sender never derives an address at runtime. The web save path fills a missing flow destIp with the documented rule (multicast: flow-0 group + flow index, one group per stream per AES67 6.1.3; unicast: the same host), defaults missing multicast ports to 5004 (Plan A) and continues unique even ports for unicast, materializing the result into the saved file so it stays visible. Plan A = one group per flow, all on the default port 5004; Plan B = one group per flow with per-flow unique ports. Two multicast flows may never share a group (rejected as Aes67DuplicateFlowGroup).",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["destIp", "channels"],
+            "properties": {
+              "destIp": {"type": "string", "description": "Explicit IPv4 unicast destination or class-D multicast group (224/4) of this flow. Required per flow: the sender rejects a flow without it; the web save path materializes the documented base+index allocation into the file before validation, so a saved config always shows every per-flow address."},
+              "ttl": {"type": "integer", "minimum": 1, "maximum": 255, "default": 0, "description": "Per-flow multicast TTL override (0 = inherit the session-level ttl; ignored for unicast). The save path materializes the inherited value into each multicast flow so the saved file is self-describing."},
+              "port": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 5004, "description": "UDP port of this flow. Defaults to the AES67 default 5004, so Plan A (distinct groups, one shared port) needs no port entries at all."},
+              "channels": {"type": "integer", "minimum": 1, "maximum": 8, "description": "Wire channels in this flow (AES67 media profile limit 8)."},
+              "channelOffset": {"type": "integer", "minimum": 0, "maximum": 15, "description": "First wire channel of this flow in the session-wide interleaved input (flow0=0, flow1=8 for 16ch)."},
+              "payloadType": {"type": "integer", "minimum": 96, "maximum": 127, "description": "Omitted inherits the session-level payloadType."},
+              "ssrc": {"type": "integer", "minimum": 0, "maximum": 4294967295, "default": 0, "description": "0 derives a unique per-flow SSRC from the base default."},
+              "srcInterfaceIp": {"type": "string", "default": "", "description": "Per-flow egress interface override (unicast IPv4). Empty inherits the session-level srcInterfaceIp; the save path materializes the inherited value so each flow's full destination tuple (group + port + TTL + source interface) is persisted per flow."}
+            }
+          }
+        },
+        "channelMap": {
+          "type": ["array", "null"],
+          "minItems": 2,
+          "maxItems": 16,
+          "description": "Optional explicit wire-order permutation: transmitted channel k is renderer source channel channelMap[k]; omitted keeps the renderer source order. A reference example maps the 9.1.6 renderer order onto the 16ch container order (indices 6,7,2,3,8,9,4,5,0,1,10,11,14,15,12,13); that is an example, not a fixed layout policy. When present it must be a permutation of 0..channels-1.",
+          "items": {"type": "integer", "minimum": 0, "maximum": 15}
         }
       },
       "description": "AES67 RTP/L24 transport only. Channel count, channel order and labels come from outputLayout and routing; no downmix happens here."

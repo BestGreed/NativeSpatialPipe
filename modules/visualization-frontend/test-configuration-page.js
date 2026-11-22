@@ -140,6 +140,103 @@ try{
  input('lsac.virtualBass.enabled').checked=true;input('lsac.virtualBass.amount').value='0.2';
  await element('configForm').listeners.submit({preventDefault(){}});
  assert.equal(playback.lsac.virtualBass.enabled,true);assert.equal(playback.lsac.virtualBass.amount,0.2);assert.equal(playback.lsac.virtualBass.highpassHz,130);
+ // ---- AES67 output backend panel ----
+ assert.equal(input('outputBackend').children.some(o=>o.value==='aes67'),true);
+ input('outputBackend').value='aes67';input('outputBackend').listeners.change();
+ assert.ok(input('aes67.flows.0.destIp'));assert.ok(input('aes67.flows.0.port'));assert.ok(input('aes67.framesPerPacket'));
+ assert.equal(input('aes67.framesPerPacket').value,'48');assert.equal(input('aes67.payloadType').value,'96');
+ assert.equal(input('aes67.ringPackets').value,'64');assert.equal(input('aes67.prebufferFrames').value,'480');
+ assert.equal(input('sampleRate').value,'48000');
+ const blocked=saves;await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(saves,blocked,'invalid empty AES67 destination must not be saved');
+ assert.match(element('result').textContent,/(校验未通过|validation failed)/i);
+ input('aes67.flows.0.destIp').value='192.0.2.222';input('aes67.ssrc').value='1314082870';
+ input('aes67.ringPackets').value='512';input('aes67.framesPerPacket').value='48';
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(saves,blocked+1);
+ assert.equal(playback.outputBackend,'aes67');
+ assert.equal(playback.aes67.destIp,undefined,'E16: no top-level mirror in saved files');
+ assert.equal(playback.aes67.port,undefined);
+ assert.equal(playback.aes67.ssrc,1314082870);
+ assert.equal(playback.aes67.ringPackets,512);
+ assert.equal(playback.sampleRate,48000);
+ assert.equal(playback.aes67.flows.length,2,'a 12ch save persists the universal 8+4 packing');
+ assert.equal(playback.aes67.flows[1].destIp,'192.0.2.222');
+ assert.equal(playback.aes67.flows[1].port,5006);
+ assert.equal(playback.aes67.flows[1].channels,4);
+ assert.equal(playback.aes67.flows[1].ssrc,0,'zero preserves SSRC derivation');
+ // Destinations are always shown per flow: every layout binds the explicit
+ // aes67.flows rows (E16 flows-only).
+ assert.ok(element('fields').querySelectorAll('th').some(item=>item.textContent==='流 1'),'every layout renders the flow-1 row');
+ assert.match(element('fields').querySelectorAll('p').find(item=>item.className==='aes67-flow-note').textContent,/2 条流/,'a 12ch layout announces the universal 2-flow packing');
+ // Multi-flow destinations become explicit on a >8ch layout: the panel
+ // derives ceil(channels/8) rows, stores them, and allows per-flow overrides.
+ input('outputLayout').value='9.1.6';input('outputLayout').listeners.change();
+ assert.ok(input('aes67.flows.0.destIp'));assert.ok(input('aes67.flows.1.destIp'));
+ assert.equal(input('aes67.flows.0.destIp').value,'192.0.2.222');
+ assert.equal(input('aes67.flows.0.port').value,'5004');
+ assert.equal(input('aes67.flows.1.destIp').value,'192.0.2.222');
+ assert.equal(input('aes67.flows.1.port').value,'5006');
+ assert.equal(input('aes67.flows.0.ssrc').title,'0x4E535036','effective SSRC is shown in hexadecimal');
+ assert.equal(input('aes67.flows.1.ssrc').title,'0x4E535037');
+ const flowNote=()=>element('fields').querySelectorAll('p').find(item=>item.className==='aes67-flow-note');
+ assert.ok(element('fields').querySelectorAll('p').some(item=>item.className==='aes67-flow-note'&&/自动分配/.test(item.textContent)),'multi-flow note explains the auto allocation rule');
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(playback.aes67.flows.length,2);
+ assert.equal(playback.aes67.flows[1].port,5006);
+ assert.equal(playback.aes67.channelMap,undefined);
+ // A per-flow override beats the auto rule and is saved verbatim (SSRC
+ // input accepts 0x hexadecimal and stores the integer).
+ input('aes67.flows.1.destIp').value='192.0.2.223';
+ input('aes67.flows.1.ssrc').value='0x1234ABCD';
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(playback.aes67.flows[1].destIp,'192.0.2.223');
+ assert.equal(playback.aes67.flows[0].destIp,'192.0.2.222');
+ assert.equal(playback.aes67.flows[1].ssrc,0x1234ABCD);
+ // Multicast auto allocation increments the group and defaults blank ports to 5004.
+ input('aes67.flows.0.destIp').value='239.1.0.1';input('aes67.flows.0.port').value='5010';
+ input('aes67.srcInterfaceIp').value='192.0.2.63';
+ element('fields').querySelectorAll('button').find(item=>item.textContent==='重新自动分配').listeners.click();
+ assert.equal(input('aes67.flows.0.destIp').value,'239.1.0.1');
+ assert.equal(input('aes67.flows.0.port').value,'5010');
+ assert.equal(input('aes67.flows.1.destIp').value,'239.1.0.2');
+ assert.equal(input('aes67.flows.1.port').value,'5004');
+ assert.equal(input('aes67.flows.0.ssrc').title,'0x4E535036','effective SSRC preview is preserved');
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(playback.aes67.flows[1].destIp,'239.1.0.2');
+ assert.equal(playback.aes67.flows[1].port,5004);
+ assert.equal(playback.aes67.destIp,undefined,'E16: saved files carry flows only');
+ assert.equal(playback.aes67.port,undefined);
+ assert.equal(playback.aes67.ttl,32);
+ // Leaving the 16ch layout reshapes the stale split down to its base row
+ // while the channel map that no longer fits is dropped.
+ input('outputLayout').value='5.1.2';input('outputLayout').listeners.change();
+ assert.equal(input('aes67.flows.0.destIp').value,'239.1.0.1','the base row carries over');
+ assert.equal(input('aes67.flows.1.destIp'),undefined);
+ assert.match(element('fields').querySelectorAll('p').find(item=>item.className==='aes67-flow-note'&&/显式保存/.test(item.textContent)).textContent,/显式保存/,'a <=8ch layout shows the explicit single-flow note');
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(playback.aes67.flows.length,1);assert.equal(playback.aes67.channelMap,undefined);
+ assert.equal(playback.aes67.flows[0].destIp,'239.1.0.1','multicast base destination survives the layout change');
+ assert.equal(playback.aes67.flows[0].channels,8);
+ // Universal packing on other layouts: 8ch stays one flow row, 10ch derives 8+2.
+ input('outputLayout').value='5.1.2';input('outputLayout').listeners.change();
+ assert.ok(input('aes67.flows.0.destIp'));
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(playback.outputLayout,'5.1.2');assert.equal(playback.aes67.flows.length,1);
+ assert.equal(playback.aes67.flows[0].channels,8);
+ input('outputLayout').value='5.1.4';input('outputLayout').listeners.change();
+ assert.ok(input('aes67.flows.0.destIp'));assert.ok(input('aes67.flows.1.destIp'));
+ assert.equal(input('aes67.flows.1.destIp').value,'239.1.0.2');
+ assert.equal(input('aes67.flows.1.port').value,'5004');
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(playback.aes67.flows.length,2);
+ assert.equal(playback.aes67.flows[1].channels,2,'the 10ch layout splits 8+2');
+ assert.equal(playback.outputLayout,'5.1.4');
+ input('outputBackend').value='asio';input('outputBackend').listeners.change();
+ assert.equal(input('aes67.flows.0.destIp'),undefined);
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(playback.outputBackend,'asio');
+ assert.equal(playback.aes67.flows[0].destIp,'239.1.0.1','AES67 settings survive a switch back to ASIO');
  await element('backendTab').onclick();assert.ok(input('fullTiming'));assert.equal(input('master'),undefined);
- console.log('PASS configuration page renders fields, submits shared JSON, switches renderer/routing, guards unsynced raw JSON and loads backend tab');
+ console.log('PASS configuration page renders fields, submits shared JSON, switches renderer/routing, guards unsynced raw JSON, edits AES67, shows per-flow rows on every layout, derives and overrides multi-flow destinations, preserves AES67 settings across backend switches and loads backend tab');
 }finally{for(const [key,value]of Object.entries(prior))globalThis[key]=value;}
