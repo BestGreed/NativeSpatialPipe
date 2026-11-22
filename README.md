@@ -53,7 +53,15 @@ End-to-end playback latency also depends on the source, output backend and devic
 
 ## Architecture
 
-![Native Spatial Pipe architecture](docs/assets/architecture.svg)
+```mermaid
+flowchart LR
+    Input["Spatial objects + PCM"] --> Croksor["Croksor<br/>ROAR / LIRA rendering"]
+    Croksor --> Output["ASIO / Inferno AoIP / WASAPI"]
+    classDef neutral fill:#f6f8fa,stroke:#8c959f,color:#24292f,stroke-width:1px;
+    class Input,Croksor,Output neutral;
+```
+
+FSA and Zig manage sessions; telemetry feeds the local web interface.
 
 Croksor integrates the patched ROAR 1.1 renderer and Inferno AoIP. LIRA and ASIO
 are separate backends. See [runtime architecture](docs/runtime-details.md) for
