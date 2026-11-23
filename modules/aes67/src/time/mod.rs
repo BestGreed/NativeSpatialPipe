@@ -109,31 +109,44 @@ impl ClockFit {
 const MAX_SAMPLES: usize = 24;
 const MIN_SAMPLES: usize = 8;
 const MIN_FIT_SPAN_NS: i128 = 750_000_000;
-const FIT_RMS_LIMIT_NS: f64 = 250_000.0;
-const RATE_LIMIT_PPM: f64 = 500.0;
+pub const RATE_LIMIT_PPM: f64 = 500.0;
+
+pub fn fit_rms_limit_ns(mode: TimestampMode) -> f64 {
+    match mode {
+        TimestampMode::Hardware => 250_000.0,
+        TimestampMode::Auto | TimestampMode::Software => 2_000_000.0,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FitResult {
+    WarmingUp,
+    Accepted,
+    OutOfOrder,
+    RateRejected,
+    RmsRejected,
+}
 
 #[derive(Default)]
 pub struct MediaClock {
     samples: VecDeque<(i128, i128)>,
     fit: Option<ClockFit>,
-    bad_samples: u8,
 }
 impl MediaClock {
     pub fn clear(&mut self) {
         self.samples.clear();
         self.fit = None;
-        self.bad_samples = 0;
     }
     pub fn fit(&self) -> Option<ClockFit> {
         self.fit
     }
-    pub fn observe(&mut self, local_ns: i128, ptp_ns: i128) {
+    pub fn observe(&mut self, local_ns: i128, ptp_ns: i128, mode: TimestampMode) -> FitResult {
         if self
             .samples
             .back()
             .is_some_and(|&(local, _)| local_ns <= local)
         {
-            return;
+            return FitResult::OutOfOrder;
         }
         self.samples.push_back((local_ns, ptp_ns - local_ns));
         if self.samples.len() > MAX_SAMPLES {
@@ -141,7 +154,7 @@ impl MediaClock {
         }
         let &(base_local, base_offset) = self.samples.front().unwrap();
         if self.samples.len() < MIN_SAMPLES || local_ns - base_local < MIN_FIT_SPAN_NS {
-            return;
+            return FitResult::WarmingUp;
         }
 
         let points = || {
@@ -163,14 +176,12 @@ impl MediaClock {
             / count)
             .sqrt();
         let ppm = slope * 1_000_000.0;
-        if ppm.abs() > RATE_LIMIT_PPM || rms > FIT_RMS_LIMIT_NS {
-            self.bad_samples = self.bad_samples.saturating_add(1);
-            if self.bad_samples >= 3 {
-                self.clear();
-            }
-            return;
+        if ppm.abs() > RATE_LIMIT_PPM {
+            return FitResult::RateRejected;
         }
-        self.bad_samples = 0;
+        if rms > fit_rms_limit_ns(mode) {
+            return FitResult::RmsRejected;
+        }
         let offset = base_offset
             + (mean_y + slope * ((local_ns - base_local) as f64 - mean_x)).round() as i128;
         self.fit = Some(ClockFit {
@@ -179,6 +190,7 @@ impl MediaClock {
             rate_ppm: ppm,
             rms_ns: rms,
         });
+        FitResult::Accepted
     }
 }
 
@@ -197,12 +209,32 @@ mod tests {
         ));
     }
     #[test]
+    fn phase_noise_is_gated_by_timestamp_mode() {
+        let mut software = MediaClock::default();
+        let mut hardware = MediaClock::default();
+        let mut software_result = FitResult::WarmingUp;
+        let mut hardware_result = FitResult::WarmingUp;
+        // Each four-point group has zero mean and zero covariance with time.
+        for i in 0..16 {
+            let x = i * 125_000_000;
+            let jitter = [850_000, -850_000, -850_000, 850_000][i as usize % 4];
+            let remote = x + jitter + x * 80 / 1_000_000;
+            software_result = software.observe(x, remote, TimestampMode::Software);
+            hardware_result = hardware.observe(x, remote, TimestampMode::Hardware);
+        }
+        assert_eq!(software_result, FitResult::Accepted);
+        assert_eq!(hardware_result, FitResult::RmsRejected);
+        assert!((software.fit().unwrap().rate_ppm - 80.0).abs() < 0.01);
+        assert!(hardware.fit().is_none());
+    }
+
+    #[test]
     fn fit_80_ppm_with_epoch_precision_and_reset() {
         let mut clock = MediaClock::default();
         let epoch = 1_900_000_000_000_000_123_i128;
         for i in 0..24 {
             let x = i * 125_000_000;
-            clock.observe(x, epoch + x + x * 80 / 1_000_000);
+            clock.observe(x, epoch + x + x * 80 / 1_000_000, TimestampMode::Software);
         }
         let fit = clock.fit().unwrap();
         assert!((fit.rate_ppm - 80.0).abs() < 0.001);
@@ -213,7 +245,7 @@ mod tests {
         assert!(clock.fit().is_none());
         for i in 0..24 {
             let x = i * 125_000_000;
-            clock.observe(x, epoch + x - x / 25_000);
+            clock.observe(x, epoch + x - x / 25_000, TimestampMode::Software);
         }
         assert!((clock.fit().unwrap().rate_ppm + 40.0).abs() < 0.001);
     }

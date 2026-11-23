@@ -2,11 +2,13 @@ use crate::{
     ptp::{self, Follower, codec::ClockId},
     rtp::{self, Flow, Grid, Output, ring::Ring},
     sdp::{self, Reference, Sap},
-    time::{ClockFit, NS_PER_MS, TimestampMode, timestamp_source},
+    time::{
+        ClockFit, NS_PER_MS, RATE_LIMIT_PPM, TimestampMode, fit_rms_limit_ns, timestamp_source,
+    },
 };
 use std::{
     collections::VecDeque,
-    io,
+    io::{self, Write},
     sync::{
         Arc, Mutex, MutexGuard,
         atomic::{AtomicBool, Ordering},
@@ -156,7 +158,7 @@ impl Session {
             Ok(pair) => pair,
             Err(_) => return UNAVAILABLE,
         };
-        let network = match Network::open(&config, source) {
+        let network = match Network::open(&config, source, mode) {
             Ok(network) => network,
             Err(failure) => return failure.code,
         };
@@ -326,8 +328,9 @@ impl Network {
     fn open(
         config: &Config,
         source: Box<dyn crate::time::TimestampSource>,
+        mode: TimestampMode,
     ) -> Result<Self, Failure> {
-        let ptp = Follower::open(config.ptp.clone(), source)?;
+        let ptp = Follower::open(config.ptp.clone(), source, mode)?;
         let outputs: Vec<_> = config
             .flows
             .iter()
@@ -362,6 +365,14 @@ impl Network {
         startup: &mut Option<mpsc::SyncSender<Result<(), Failure>>>,
     ) -> Result<(), Failure> {
         let mut stream = Stream::new(run.config.channels, self.outputs.len());
+        let holdover_ms = std::env::var("NSP_AES67_HOLDOVER_MS")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .filter(|ms| (1000..=3000).contains(ms))
+            .unwrap_or(2000);
+        let holdover_ns = i128::from(holdover_ms) * NS_PER_MS;
+        let diagnostic = std::env::var("NSP_AES67_PTP_DIAGNOSTICS").as_deref() == Ok("1");
+        let mut next_log = 0;
         let mut deadline = Instant::now() + run.config.lock_timeout;
         let outcome = loop {
             if run.cancel.load(Ordering::Acquire) {
@@ -372,25 +383,76 @@ impl Network {
             }
             let now = self.ptp.now_ns();
             let clock = self.ptp.locked();
-            if stream.gm.is_some() && stream.gm != clock.map(|(gm, _)| gm) {
-                self.deactivate(run, &mut stream, true);
+            let mut log_transition = false;
+            if stream.gm.is_some()
+                && stream.holdover_until.is_none()
+                && stream.gm != clock.map(|(gm, _)| gm)
+            {
+                stream.holdover_until = Some(now + holdover_ns);
+                lock(&run.descriptions).clear();
+                lock(&run.counters).locked = 0;
+                self.announce(run, &stream.descriptions, true);
                 event(events, PTP_LOST, Failure::new(0));
+                log_transition = true;
+            }
+            if stream.holdover_until.is_some_and(|until| now >= until) && clock.is_none() {
+                self.deactivate(run, &mut stream, true);
                 deadline = Instant::now() + run.config.lock_timeout;
+                log_transition = true;
             }
             if let Some((gm, fit)) = clock {
-                if stream.gm.is_none() {
-                    self.activate(run, &mut stream, gm, now);
+                if stream.gm.is_none() || stream.holdover_until.is_some() {
+                    let preserve_grid = stream.gm == Some(gm)
+                        && stream.last_fit.is_some_and(|old| {
+                            (old.ptp_ns(now) - fit.ptp_ns(now)).abs() <= NS_PER_MS
+                        });
+                    self.activate(run, &mut stream, gm, now, preserve_grid);
+                    stream.holdover_until = None;
+                    log_transition = true;
                     self.update_clock(run, now, fit);
                     if let Some(tx) = startup.take() {
                         event(events, STARTED, Failure::new(0));
                         let _ = tx.send(Ok(()));
                     }
                 }
+                stream.last_fit = Some(fit);
                 self.update_clock(run, now, fit);
                 if now >= stream.next_sap && !self.sap.is_empty() {
                     self.announce(run, &stream.descriptions, false);
                     stream.next_sap = now + SAP_INTERVAL_NS;
                 }
+            }
+            let pacing_fit = clock
+                .map(|(_, fit)| fit)
+                .or_else(|| stream.holdover_until.and(stream.last_fit));
+            if diagnostic && (log_transition || now >= next_log) {
+                let state = if clock.is_some() {
+                    "locked"
+                } else if stream.holdover_until.is_some() {
+                    "holdover"
+                } else if startup.is_some() {
+                    "acquiring"
+                } else {
+                    "paused"
+                };
+                let c = *lock(&run.counters);
+                let mode = if c.timestamping == TimestampMode::Hardware as u32 {
+                    TimestampMode::Hardware
+                } else {
+                    TimestampMode::Software
+                };
+                let _ = writeln!(
+                    io::stderr(),
+                    "nsp_aes67 ptp state={state} timestamping={mode:?} offset_ns={} rate_ppm={} fit_rms_ns={} rms_limit_ns={} rate_limit_ppm={RATE_LIMIT_PPM} holdover_ms={holdover_ms} {:?}",
+                    c.offset_ns,
+                    c.rate_ppm,
+                    c.fit_rms_ns,
+                    fit_rms_limit_ns(mode),
+                    self.ptp.diagnostics()
+                );
+                next_log = now + 1_000 * NS_PER_MS;
+            }
+            if let Some(fit) = pacing_fit {
                 let ptp_ns = fit.ptp_ns(now);
                 if let Some((stamp, skipped)) = stream.grid.due(ptp_ns) {
                     if let Err(error) = self.send_interval(run, &mut stream, stamp, skipped) {
@@ -419,9 +481,18 @@ impl Network {
         outcome
     }
 
-    fn activate(&mut self, run: &Run, stream: &mut Stream, gm: ClockId, now: i128) {
+    fn activate(
+        &mut self,
+        run: &Run,
+        stream: &mut Stream,
+        gm: ClockId,
+        now: i128,
+        preserve_grid: bool,
+    ) {
         stream.gm = Some(gm);
-        stream.grid = Grid::default();
+        if !preserve_grid {
+            stream.grid = Grid::default();
+        }
         stream.version += 1;
         stream.next_sap = now;
         stream.descriptions = self
@@ -445,8 +516,10 @@ impl Network {
             .collect();
         *lock(&run.descriptions) = stream.descriptions.clone();
         lock(&run.audio).discard = false;
-        for output in &mut self.outputs {
-            output.discontinuity();
+        if !preserve_grid {
+            for output in &mut self.outputs {
+                output.discontinuity();
+            }
         }
     }
 
@@ -462,9 +535,11 @@ impl Network {
             counters.locked = 0;
             counters.dropped += discarded;
         }
-        if stream.gm.take().is_some() {
+        if stream.gm.take().is_some() && stream.holdover_until.is_none() {
             self.announce(run, &stream.descriptions, true);
         }
+        stream.holdover_until = None;
+        stream.last_fit = None;
         stream.prebuffered = false;
     }
 
@@ -549,6 +624,8 @@ impl Network {
 
 struct Stream {
     gm: Option<ClockId>,
+    holdover_until: Option<i128>,
+    last_fit: Option<ClockFit>,
     grid: Grid,
     prebuffered: bool,
     samples: Vec<f32>,
@@ -561,6 +638,8 @@ impl Stream {
     fn new(channels: usize, flows: usize) -> Self {
         Self {
             gm: None,
+            holdover_until: None,
+            last_fit: None,
             grid: Grid::default(),
             prebuffered: false,
             samples: vec![0.0; channels * rtp::FRAMES],
@@ -603,7 +682,6 @@ mod tests {
                     general_port: 320,
                     local_event_port: 0,
                     local_general_port: 0,
-                    loss_ns: 1_000_000_000,
                 },
                 lock_timeout: Duration::from_secs(1),
                 flows: vec![],

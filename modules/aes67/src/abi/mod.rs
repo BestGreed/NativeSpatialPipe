@@ -172,7 +172,6 @@ unsafe fn config(c: &ConfigV1) -> Option<Config> {
         general_port,
         local_event_port: c.ptp_local_event_port,
         local_general_port: c.ptp_local_general_port,
-        loss_ns: i128::from(loss_ms) * 1_000_000,
     };
     let default_dest = fallback(c.default_dest_ip, [239, 69, 0, 1]);
     let base_port = fallback(c.default_port, 5004);

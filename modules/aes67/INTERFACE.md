@@ -13,7 +13,7 @@ Create with nsp_aes67_create(&session) and configure before starting. Set struct
 - Explicit flows may set payload_type to 96–127 or zero for the default. The default payload type is 96 when the config leaves it zero. The source_filter flag emits an RFC 4570 filter for multicast using the actual egress address. default_source_filter applies to generated flows.
 - Timestamp mode values 0/1/2 select auto/software/hardware. Software samples the Windows monotonic QPC timebase at UDP boundaries. Hardware currently returns TIMESTAMP_UNAVAILABLE. Auto selects software when no hardware source is available.
 - Use PTP domain 0–127. An optional eight-octet GM identity is pinned when nonzero. An all-zero multicast address selects 224.0.1.129 and zero event/general ports select 319/320. A nonzero master IP selects unicast test mode. In this mode local event/general ports may request ephemeral bindings (zero) or explicit loopback test ports. For multicast, zero local ports select the corresponding event/general ports.
-- A zero lock timeout selects 8000 ms. A zero loss timeout selects 3000 ms. Start and post-loss recovery fail closed. Set sap=1 to enable RFC 2974 session announcements.
+- A zero lock timeout selects 8000 ms. The legacy loss_timeout_ms ABI field remains accepted for compatibility. Loss timing comes from the GM’s Announce cadence. Set sap=1 to enable RFC 2974 session announcements.
 
 ## Lifecycle and diagnostics
 
@@ -25,7 +25,7 @@ Serialize management calls on each handle. Submit may run concurrently with star
 | start returns negative | Startup failed. Codes distinguish invalid state, socket I/O, unavailable timestamp backend and lock timeout. |
 | poll returns 1 | A lifecycle event was copied to the output. |
 | poll returns 0 | No pending event. |
-| PTP_LOST | RTP pauses during rediscovery. |
+| PTP_LOST | SDP/SAP availability is withdrawn. RTP continues on the previous fit during holdover and pauses if the deadline expires. |
 | SENDER_EXITED | An active worker stopped unexpectedly. Inspect its code and detail. Detail is the OS error when applicable, otherwise zero. |
 | stop returns 0 | On a running or finished worker, stop joined it, released its resources, and queued STOP_COMPLETE. Repeat stops are idempotent. |
 | stop/close returns JOIN_TIMEOUT | Worker has not joined. Keep the handle alive and retry. |
@@ -34,13 +34,17 @@ Counters are diagnostic and scoped to the current or last start. Dropped and lat
 
 ## Native pool callback
 
-Register nsp_aes67_submit_leased directly as the pool-output callback and pass the handle as its context. Its parameter order and C calling convention match Zig publishPool. The source buffer must contain frames * channels floats and remain readable during the call. A return of 0 transfers ownership and the module calls release_fn(token) exactly once, synchronously after copying into its ring or accounting for the dropped or late frames. During PTP reacquisition the module discards incoming frames and returns success with the lease released. A negative return leaves ownership with the producer, including on saturation. The module retains neither the PCM pointer nor the lease token. Use monotonic host frame indices within one start.
+Register nsp_aes67_submit_leased directly as the pool-output callback and pass the handle as its context. Its parameter order and C calling convention match Zig publishPool. The source buffer must contain frames * channels floats and remain readable during the call. A return of 0 transfers ownership and the module calls release_fn(token) exactly once, synchronously after copying into its ring or accounting for the dropped or late frames. After holdover expires, the paused module discards incoming frames during PTP reacquisition and returns success with the lease released. A negative return leaves ownership with the producer, including on saturation. The module retains neither the PCM pointer nor the lease token. Use monotonic host frame indices within one start.
 
 ## Clocking and network discovery
 
 RTP timestamps are absolute PTP epoch frames modulo 2^32. At the PTP millisecond grid, timestamp = floor(PTP epoch ns / 1,000,000) × 48. Every flow uses the same timestamp for that interval. A late wake skips stale intervals and sends at most one datagram per flow. A gap before prebuffer or an underrun is zero padded.
 
-The follower uses two-step PTPv2 end-to-end Delay_Req exchanges over IPv4. It selects the first eligible announcing source, or the pinned GM if supplied, and clears the fit on identity change or expiry. It accepts time scale Announce messages and preserves the PTP epoch. The fit gates are eight exchanges spanning at least 750 ms, up to ±500 ppm, and an RMS residual up to 250 µs. The reported offset is PTP epoch nanoseconds minus local monotonic nanoseconds. A zero lock timeout selects 8000 ms and a zero loss timeout selects 3000 ms. Explicit timeout values must be 100–120000 ms.
+The follower uses two-step PTPv2 end-to-end Delay_Req exchanges over IPv4. It selects the first eligible announcing source, or the pinned GM if supplied, and clears the fit on identity change or expiry. It accepts time scale Announce messages and preserves the PTP epoch. The monotonic Announce deadline is five times the qualified GM's advertised interval (2^logMessageInterval seconds). A clock fit also needs an accepted update within five Announce intervals. Bad fits retain the last accepted mapping while this budget remains. Delay_Resp must match the selected source, domain, requestingPortIdentity and sequenceId within one second of Delay_Req. The fit gates are eight exchanges spanning at least 750 ms and a rate up to ±500 ppm. Phase residual RMS is limited to 2 ms with software timestamps or 250 µs with hardware. The reported offset is PTP epoch nanoseconds minus local monotonic nanoseconds. Explicit lock_timeout_ms values must be 100–120000 ms.
+
+The process environment variable NSP_AES67_HOLDOVER_MS accepts 1000–3000 ms and defaults to 2000 ms. During holdover, the sender keeps using the last accepted fit, retains the PCM queue, and withdraws PTP declarations. On recovery it uses the newly accepted fit. It preserves the packet grid when the same GM returns within 1 ms of the retained fit and marks a discontinuity when it must re-anchor. After the holdover deadline RTP pauses and lock_timeout_ms bounds further reacquisition.
+
+Set NSP_AES67_PTP_DIAGNOSTICS=1 to write opt-in stderr snapshots once a second and on lock, holdover and pause transitions. The snapshots include state, actual timestamping mode, offset_ns, rate_ppm, fit_rms_ns, rms_limit_ns, rate_limit_ppm, holdover_ms, and announce_interval_ns. Each of announce, sync, follow_up, delay_req and delay_resp has received, matched and rejected counters. For Sync and Follow_Up, matched counts accepted components. For Delay_Resp, matched counts responses tied to a request before path and fit quality validation. The snapshots include delay_req_sent, delay_req_icmp_unreachable, delay_resp_timeout, invalid_packets, last_decode_error, last_delay_reject, last_fit_reject, and last_lost_reason. Loss reasons include announce_timeout, clock_fit_stale and grandmaster_changed.
 
 The UDP follower accepts default-profile PTPv2.0 (IEEE 1588-2008, version byte 0x02) and PTPv2.1 (IEEE 1588-2019, 0x12). The two versions share the base message offsets used here. The follower skips well-formed trailing TLVs and rejects unsupported versions and SDO IDs. Outgoing Delay_Req uses the interoperable v2.0 encoding.
 

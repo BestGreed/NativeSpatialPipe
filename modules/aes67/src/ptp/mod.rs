@@ -2,7 +2,7 @@ pub mod codec;
 
 use crate::{
     net::multicast_interface,
-    time::{ClockFit, MediaClock, TimestampSource},
+    time::{ClockFit, FitResult, MediaClock, TimestampMode, TimestampSource},
 };
 use codec::{Body, ClockId, Message, PTP_TIMESCALE, PortId, TWO_STEP, UNICAST};
 use std::{
@@ -16,6 +16,42 @@ const REQUEST_INTERVAL: i128 = 125_000_000;
 const EXCHANGE_MAX_AGE: i128 = 2_000_000_000;
 const MAX_ROUND_TRIP: i128 = 40_000_000;
 const SYNC_HISTORY: usize = 16;
+const ANNOUNCE_MISSES: i128 = 5;
+const DELAY_RESPONSE_TIMEOUT: i128 = 1_000_000_000;
+
+fn announce_interval(log: i8) -> Option<i128> {
+    // 0x7f denotes an unspecified interval, which cannot establish cadence.
+    match log {
+        -20..=-1 => Some(1_000_000_000 >> (-log as u32)),
+        0..=20 => Some(1_000_000_000 << log as u32),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Default)]
+struct PacketCounts {
+    received: u64,
+    matched: u64,
+    rejected: u64,
+}
+
+#[derive(Debug, Default)]
+pub struct Diagnostics {
+    announce: PacketCounts,
+    sync: PacketCounts,
+    follow_up: PacketCounts,
+    delay_req: PacketCounts,
+    delay_resp: PacketCounts,
+    delay_req_sent: u64,
+    delay_req_icmp_unreachable: u64,
+    delay_resp_timeout: u64,
+    invalid_packets: u64,
+    last_decode_error: Option<codec::DecodeError>,
+    last_delay_reject: Option<&'static str>,
+    last_fit_reject: Option<FitResult>,
+    last_lost_reason: Option<&'static str>,
+    announce_interval_ns: i128,
+}
 
 #[derive(Clone)]
 pub struct Config {
@@ -28,7 +64,6 @@ pub struct Config {
     pub general_port: u16,
     pub local_event_port: u16,
     pub local_general_port: u16,
-    pub loss_ns: i128,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -60,11 +95,11 @@ struct Delay {
 struct State {
     domain: u8,
     pin: Option<ClockId>,
-    loss_ns: i128,
+    mode: TimestampMode,
+    diagnostics: Diagnostics,
     port: PortId,
     master: Option<Master>,
     announce_at: i128,
-    selected_at: i128,
     last_good: Option<i128>,
     sync_pairs: VecDeque<(u16, SyncPair)>,
     latest_sync: Option<SyncSample>,
@@ -75,15 +110,15 @@ struct State {
 }
 
 impl State {
-    fn new(config: &Config, port: PortId) -> Self {
+    fn new(config: &Config, port: PortId, mode: TimestampMode) -> Self {
         Self {
             domain: config.domain,
             pin: config.pinned_gm,
-            loss_ns: config.loss_ns,
+            mode,
+            diagnostics: Diagnostics::default(),
             port,
             master: None,
             announce_at: 0,
-            selected_at: 0,
             last_good: None,
             sync_pairs: VecDeque::with_capacity(SYNC_HISTORY),
             latest_sync: None,
@@ -105,11 +140,25 @@ impl State {
     }
 
     fn expire(&mut self, now: i128) {
-        if self.master.is_some()
-            && (now - self.announce_at > self.loss_ns
-                || now - self.last_good.unwrap_or(self.selected_at) > self.loss_ns)
-        {
+        let budget = self.diagnostics.announce_interval_ns * ANNOUNCE_MISSES;
+        if self.master.is_some() && now - self.announce_at >= budget {
+            if self.clock.fit().is_some() {
+                self.diagnostics.last_lost_reason = Some("announce_timeout");
+            }
             self.clear();
+        } else if self.last_good.is_some_and(|last| now - last >= budget) {
+            self.diagnostics.last_lost_reason = Some("clock_fit_stale");
+            self.last_good = None;
+            self.clock.clear();
+        }
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|d| now - d.issued_ns >= DELAY_RESPONSE_TIMEOUT)
+        {
+            self.diagnostics.delay_resp_timeout += 1;
+            self.diagnostics.last_delay_reject = Some("response_timeout");
+            self.pending = None;
         }
     }
 
@@ -118,8 +167,35 @@ impl State {
     }
 
     fn receive(&mut self, msg: Message, ip: Ipv4Addr, now: i128, event: bool) {
+        let result = self.accept(msg, ip, now, event);
+        let counts = match msg.body {
+            Body::Announce { .. } => &mut self.diagnostics.announce,
+            Body::Sync => &mut self.diagnostics.sync,
+            Body::FollowUp(_) => &mut self.diagnostics.follow_up,
+            Body::DelayReq(_) => &mut self.diagnostics.delay_req,
+            Body::DelayResp { .. } => &mut self.diagnostics.delay_resp,
+        };
+        counts.received += 1;
+        match result {
+            Ok(()) => counts.matched += 1,
+            Err(reason) => {
+                counts.rejected += 1;
+                if matches!(msg.body, Body::DelayResp { .. }) {
+                    self.diagnostics.last_delay_reject = Some(reason);
+                }
+            }
+        }
+    }
+
+    fn accept(
+        &mut self,
+        msg: Message,
+        ip: Ipv4Addr,
+        now: i128,
+        event: bool,
+    ) -> Result<(), &'static str> {
         if msg.domain != self.domain || msg.source == self.port {
-            return;
+            return Err("wrong_domain_or_self");
         }
         if let Body::Announce { grandmaster } = msg.body {
             if event
@@ -127,8 +203,9 @@ impl State {
                 || self.pin.is_some_and(|pin| pin != grandmaster)
                 || msg.flags & PTP_TIMESCALE == 0
             {
-                return;
+                return Err("invalid_announce");
             }
+            let cadence = announce_interval(msg.log_interval).ok_or("invalid_announce_interval")?;
             let master = Master {
                 gm: grandmaster,
                 port: msg.source,
@@ -136,24 +213,25 @@ impl State {
             };
             if let Some(existing) = self.master {
                 if existing.port != master.port || existing.ip != master.ip {
-                    return;
+                    return Err("wrong_master");
                 }
                 if existing != master {
+                    if self.clock.fit().is_some() {
+                        self.diagnostics.last_lost_reason = Some("grandmaster_changed");
+                    }
                     self.clear();
                 }
             }
-            if self.master.is_none() {
-                self.selected_at = now;
-            }
             self.master = Some(master);
             self.announce_at = now;
-            return;
+            self.diagnostics.announce_interval_ns = cadence;
+            return Ok(());
         }
         if !self
             .master
             .is_some_and(|m| m.port == msg.source && m.ip == ip)
         {
-            return;
+            return Err("wrong_master");
         }
         match msg.body {
             Body::Sync if event && msg.flags & TWO_STEP != 0 => {
@@ -163,21 +241,35 @@ impl State {
             Body::DelayResp {
                 received_ns,
                 requester,
-            } if !event && requester == self.port => {
-                if let Some(delay) = self
-                    .pending
-                    .as_mut()
-                    .filter(|d| d.seq == msg.seq && now - d.issued_ns <= EXCHANGE_MAX_AGE)
-                {
-                    delay.received_scaled_ns =
-                        Some((received_ns << 16) - i128::from(msg.correction_scaled_ns));
+            } if !event => {
+                if requester != self.port {
+                    return Err("wrong_requesting_port_identity");
                 }
+                let delay = self.pending.as_mut().ok_or("no_pending_delay_req")?;
+                if delay.seq != msg.seq {
+                    return Err("wrong_sequence_id");
+                }
+                if now - delay.issued_ns >= DELAY_RESPONSE_TIMEOUT {
+                    return Err("late_response");
+                }
+                if delay.received_scaled_ns.is_some() {
+                    return Err("duplicate_response");
+                }
+                delay.received_scaled_ns =
+                    Some((received_ns << 16) - i128::from(msg.correction_scaled_ns));
+                Ok(())
             }
-            _ => (),
+            _ => Err("unsupported_message_or_socket"),
         }
     }
 
-    fn sync(&mut self, msg: Message, now: i128, local: Option<i128>, remote: Option<i128>) {
+    fn sync(
+        &mut self,
+        msg: Message,
+        now: i128,
+        local: Option<i128>,
+        remote: Option<i128>,
+    ) -> Result<(), &'static str> {
         self.sync_pairs
             .retain(|(_, p)| now - p.arrival <= EXCHANGE_MAX_AGE);
         let idx = match self.sync_pairs.iter().position(|(seq, _)| *seq == msg.seq) {
@@ -202,7 +294,7 @@ impl State {
         if (local.is_some() && pair.local_ns.is_some())
             || (remote.is_some() && pair.remote_ns.is_some())
         {
-            return;
+            return Err("duplicate_sync_component");
         }
         pair.local_ns = pair.local_ns.or(local);
         pair.remote_ns = pair.remote_ns.or(remote);
@@ -216,6 +308,7 @@ impl State {
             }
             self.sync_pairs.remove(idx);
         }
+        Ok(())
     }
 
     fn request(&mut self, now: i128, unicast: bool) -> Option<Message> {
@@ -226,10 +319,8 @@ impl State {
         if now < self.next_req {
             return None;
         }
-        if let Some(delay) = &self.pending {
-            if now - delay.issued_ns < 2 * REQUEST_INTERVAL {
-                return None;
-            }
+        if self.pending.is_some() {
+            return None;
         }
         self.next_req = now + REQUEST_INTERVAL;
         let seq = self.next_seq;
@@ -248,6 +339,7 @@ impl State {
             seq,
             flags: if unicast { UNICAST } else { 0 },
             correction_scaled_ns: 0,
+            log_interval: 0x7f,
             body: Body::DelayReq(0),
         })
     }
@@ -270,12 +362,16 @@ impl State {
             elapsed + (elapsed as f64 * self.clock.fit().map_or(0.0, |f| f.rate_ppm) / 1e6) as i128;
         let round_trip = (inferred >> 16) - expected;
         if !(-1_000_000..=MAX_ROUND_TRIP).contains(&round_trip) {
+            self.diagnostics.last_delay_reject = Some("invalid_round_trip");
             return;
         }
         let local = (sent + sync.local_ns) / 2;
         let remote = (received + sync.remote_scaled_ns) >> 17;
-        self.clock.observe(local, remote);
-        self.last_good = Some(now);
+        match self.clock.observe(local, remote, self.mode) {
+            FitResult::Accepted => self.last_good = Some(now),
+            FitResult::WarmingUp => (),
+            result => self.diagnostics.last_fit_reject = Some(result),
+        }
     }
 }
 
@@ -288,7 +384,11 @@ pub struct Follower {
 }
 
 impl Follower {
-    pub fn open(config: Config, source: Box<dyn TimestampSource>) -> io::Result<Self> {
+    pub fn open(
+        config: Config,
+        source: Box<dyn TimestampSource>,
+        mode: TimestampMode,
+    ) -> io::Result<Self> {
         let open = |configured, remote| -> io::Result<UdpSocket> {
             let (addr, port) = if config.unicast_master.is_some() {
                 (config.interface, configured)
@@ -318,7 +418,7 @@ impl Follower {
         let mut port = [0; 10];
         port[..8].copy_from_slice(&clock_id);
         port[9] = 1;
-        let state = State::new(&config, port);
+        let state = State::new(&config, port, mode);
         Ok(Self {
             config,
             state,
@@ -335,8 +435,11 @@ impl Follower {
         self.state.locked()
     }
 
+    pub fn diagnostics(&self) -> &Diagnostics {
+        &self.state.diagnostics
+    }
+
     pub fn tick(&mut self) -> io::Result<()> {
-        self.state.expire(self.source.now_ns());
         let mut buf = [0; 1536];
         for (socket, event) in [(&self.event, true), (&self.general, false)] {
             // Bound the work per socket so a flood cannot indefinitely postpone RTP.
@@ -345,14 +448,24 @@ impl Follower {
                     Ok((n, SocketAddr::V4(peer), now)) => {
                         let ip = *peer.ip();
                         if self.config.unicast_master.is_none_or(|master| ip == master) {
-                            if let Ok(message) = codec::decode(&buf[..n]) {
-                                self.state.receive(message, ip, now, event);
+                            match codec::decode(&buf[..n]) {
+                                Ok(message) => self.state.receive(message, ip, now, event),
+                                Err(error) => {
+                                    self.state.diagnostics.invalid_packets += 1;
+                                    self.state.diagnostics.last_decode_error = Some(error);
+                                }
                             }
                         }
                     }
                     Ok(_) => (),
                     Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
                     Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                    // Winsock reports an ICMP port unreachable on a subsequent
+                    // UDP receive. The qualified Announce/fit timers own loss.
+                    Err(error) if cfg!(windows) && error.raw_os_error() == Some(10054) => {
+                        self.state.diagnostics.delay_req_icmp_unreachable += 1;
+                        continue;
+                    }
                     Err(error) => return Err(error),
                 }
             }
@@ -367,6 +480,7 @@ impl Follower {
         }
         let now = self.source.now_ns();
         self.state.finish_exchange(now);
+        self.state.expire(now);
         if let Some(msg) = self
             .state
             .request(now, self.config.unicast_master.is_some())
@@ -380,7 +494,10 @@ impl Follower {
                 .source
                 .send(&self.event, codec::encode(msg, &mut bytes), destination)
             {
-                Ok(sent) => self.state.pending.as_mut().unwrap().sent_ns = sent,
+                Ok(sent) => {
+                    self.state.diagnostics.delay_req_sent += 1;
+                    self.state.pending.as_mut().unwrap().sent_ns = sent;
+                }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
                     self.state.pending = None
                 }
@@ -410,10 +527,10 @@ mod tests {
             general_port: 320,
             local_event_port: 0,
             local_general_port: 0,
-            loss_ns: 600_000_000,
         };
-        let mut s = State::new(&config, port);
+        let mut s = State::new(&config, port, TimestampMode::Software);
         let msg = |body, seq, flags, correction_scaled_ns| Message {
+            log_interval: -3,
             domain: 42,
             source: master,
             seq,
@@ -471,6 +588,26 @@ mod tests {
                     false,
                 );
                 assert!(s.pending.as_ref().unwrap().received_scaled_ns.is_none());
+                assert_eq!(
+                    s.diagnostics.last_delay_reject,
+                    Some("wrong_requesting_port_identity")
+                );
+                s.receive(
+                    msg(
+                        Body::DelayResp {
+                            received_ns,
+                            requester: port,
+                        },
+                        req.seq.wrapping_add(1),
+                        0,
+                        0,
+                    ),
+                    ip,
+                    x + 200_000,
+                    false,
+                );
+                assert!(s.pending.as_ref().unwrap().received_scaled_ns.is_none());
+                assert_eq!(s.diagnostics.last_delay_reject, Some("wrong_sequence_id"));
                 s.receive(
                     msg(
                         Body::DelayResp {
@@ -491,7 +628,11 @@ mod tests {
             let fit = s.locked().unwrap().1;
             assert!((fit.rate_ppm - 80.0).abs() < 0.01);
             assert!((fit.ptp_ns(cycle) - (epoch + cycle + cycle * 80 / 1_000_000)).abs() <= 3);
-            s.expire(cycle + 3_000_000_000);
+            let announce_deadline = cycle + 11 * 130_000_000 + 5 * 125_000_000;
+            s.expire(announce_deadline - 1);
+            assert!(s.locked().is_some());
+            s.expire(announce_deadline);
+            assert_eq!(s.diagnostics.last_lost_reason, Some("announce_timeout"));
             assert!(s.locked().is_none());
             assert!(s.master.is_none());
         }

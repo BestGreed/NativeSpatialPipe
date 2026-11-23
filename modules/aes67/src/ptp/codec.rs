@@ -22,6 +22,7 @@ pub struct Message {
     pub source: PortId,
     pub seq: u16,
     pub flags: u16,
+    pub log_interval: i8,
     pub correction_scaled_ns: i64,
     pub body: Body,
 }
@@ -114,6 +115,7 @@ pub fn decode(buf: &[u8]) -> Result<Message, DecodeError> {
         source: b[20..30].try_into().unwrap(),
         seq: u16::from_be_bytes(b[30..32].try_into().unwrap()),
         flags: u16::from_be_bytes(b[6..8].try_into().unwrap()),
+        log_interval: b[33] as i8,
         correction_scaled_ns: i64::from_be_bytes(b[8..16].try_into().unwrap()),
         body,
     })
@@ -126,12 +128,12 @@ fn put_stamp(buf: &mut [u8], ns: i128) {
 
 pub fn encode(msg: Message, b: &mut [u8; 64]) -> &[u8] {
     b.fill(0);
-    let (ty, control, length, loginterval) = match msg.body {
-        Body::Sync => (0, 0, 44_u16, 0),
-        Body::DelayReq(_) => (1, 1, 44, 0x7f),
-        Body::FollowUp(_) => (8, 2, 44, 0),
-        Body::DelayResp { .. } => (9, 3, 54, 0x7f),
-        Body::Announce { .. } => (11, 5, 64, 1),
+    let (ty, control, length) = match msg.body {
+        Body::Sync => (0, 0, 44_u16),
+        Body::DelayReq(_) => (1, 1, 44),
+        Body::FollowUp(_) => (8, 2, 44),
+        Body::DelayResp { .. } => (9, 3, 54),
+        Body::Announce { .. } => (11, 5, 64),
     };
     b[0] = ty;
     b[1] = 2;
@@ -142,7 +144,7 @@ pub fn encode(msg: Message, b: &mut [u8; 64]) -> &[u8] {
     b[20..30].copy_from_slice(&msg.source);
     b[30..32].copy_from_slice(&msg.seq.to_be_bytes());
     b[32] = control;
-    b[33] = loginterval;
+    b[33] = msg.log_interval as u8;
     match msg.body {
         Body::Sync => (),
         Body::DelayReq(ns) | Body::FollowUp(ns) => put_stamp(&mut b[34..44], ns),
@@ -177,6 +179,7 @@ mod tests {
             },
         ] {
             let msg = Message {
+                log_interval: -2,
                 domain: 42,
                 source: [3; 10],
                 seq: u16::MAX,
@@ -217,6 +220,7 @@ mod tests {
     #[test]
     fn v21_sdo_and_tlv_handling_preserves_announce_body() {
         let msg = Message {
+            log_interval: -2,
             domain: 19,
             source: [7; 10],
             seq: 0,

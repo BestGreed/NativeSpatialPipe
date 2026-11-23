@@ -55,6 +55,7 @@ fn config_base() -> ConfigV1 {
 
 struct Mock {
     stop: Arc<AtomicBool>,
+    impair: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
 }
 impl Mock {
@@ -69,16 +70,24 @@ impl Mock {
         general.set_nonblocking(true).unwrap();
         let stop = Arc::new(AtomicBool::new(false));
         let cancel = Arc::clone(&stop);
+        let impair = Arc::new(AtomicBool::new(false));
+        let inject = Arc::clone(&impair);
         let join = thread::spawn(move || {
             let start = Instant::now();
             let stamp = || EPOCH + start.elapsed().as_nanos() as i128;
             let mut sequence = 0_u16;
             let mut next = Instant::now();
+            let mut delayed = None;
             let mut buf = [0_u8; 64];
             let send = |socket: &UdpSocket, target: u16, sequence, flags, body| {
                 let mut bytes = [0_u8; 64];
                 let msg = Message {
                     domain: 19,
+                    log_interval: if matches!(body, Body::Announce { .. }) {
+                        -1
+                    } else {
+                        0
+                    },
                     source: [7; 10],
                     seq: sequence,
                     flags,
@@ -91,13 +100,17 @@ impl Mock {
             };
             while !cancel.load(Ordering::Acquire) {
                 if Instant::now() >= next {
-                    send(
-                        &general,
-                        dest_general,
-                        sequence,
-                        PTP_TIMESCALE,
-                        Body::Announce { grandmaster: GM },
-                    );
+                    // Eleven Syncs per advertised Announce interval. Occasionally miss one Announce.
+                    if sequence % 11 == 0 && !(inject.load(Ordering::Relaxed) && sequence % 44 == 0)
+                    {
+                        send(
+                            &general,
+                            dest_general,
+                            sequence,
+                            PTP_TIMESCALE,
+                            Body::Announce { grandmaster: GM },
+                        );
+                    }
                     let tx = stamp();
                     send(&event, dest_event, sequence, TWO_STEP, Body::Sync);
                     send(&general, dest_general, sequence, 0, Body::FollowUp(tx));
@@ -109,23 +122,44 @@ impl Mock {
                     if let Ok(request) = codec::decode(&buf[..len])
                         && matches!(request.body, Body::DelayReq(_))
                     {
-                        send(
-                            &general,
-                            dest_general,
-                            request.seq,
-                            0,
-                            Body::DelayResp {
-                                received_ns: rx,
-                                requester: request.source,
-                            },
-                        );
+                        let body = Body::DelayResp {
+                            received_ns: rx,
+                            requester: request.source,
+                        };
+                        let impair = inject.load(Ordering::Relaxed);
+                        if impair && request.seq % 12 == 0 {
+                            // Interleaved Delay_Resp to a different follower must not satisfy our request.
+                            send(
+                                &general,
+                                dest_general,
+                                request.seq,
+                                0,
+                                Body::DelayResp {
+                                    received_ns: rx,
+                                    requester: [9; 10],
+                                },
+                            );
+                        } else if impair && request.seq % 12 == 6 {
+                            delayed = Some((
+                                Instant::now() + Duration::from_millis(300),
+                                request.seq,
+                                body,
+                            ));
+                        } else {
+                            send(&general, dest_general, request.seq, 0, body);
+                        }
                     }
+                }
+                if delayed.is_some_and(|(deadline, _, _)| Instant::now() >= deadline) {
+                    let (_, sequence, body) = delayed.take().unwrap();
+                    send(&general, dest_general, sequence, 0, body);
                 }
                 thread::sleep(Duration::from_micros(70));
             }
         });
         Self {
             stop,
+            impair,
             join: Some(join),
         }
     }
@@ -272,9 +306,21 @@ fn check_udp_mock_gm(version: u8) {
         }
     }
     assert!(received_audio);
+    gm.impair.store(true, Ordering::Release);
+    let deadline = Instant::now() + Duration::from_millis(3200);
+    while Instant::now() < deadline {
+        audio
+            .recv_from(&mut packet)
+            .expect("RTP paused under packet impairment");
+        assert!(
+            handle.poll().is_none(),
+            "transient PTP impairment lost lock"
+        );
+    }
+    gm.impair.store(false, Ordering::Release);
 
     drop(gm);
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + Duration::from_secs(4);
     let loss = loop {
         if let Some(event) = handle.poll() {
             break event;
@@ -287,6 +333,26 @@ fn check_udp_mock_gm(version: u8) {
         unsafe { nsp_aes67_sdp(handle.0, 0, ptr::null_mut(), 0) },
         session::STATE
     );
+    // RTP must still be running after the lock-loss notification, then cease
+    // at the holdover deadline while the follower is trying to reacquire.
+    let holdover_ms = std::env::var("NSP_AES67_HOLDOVER_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|ms| (1000..=3000).contains(ms))
+        .unwrap_or(2000);
+    let loss_seen = Instant::now();
+    while loss_seen.elapsed() < Duration::from_millis(holdover_ms - 200) {
+        audio
+            .recv_from(&mut packet)
+            .expect("RTP stopped before holdover expired");
+    }
+    while audio.recv_from(&mut packet).is_ok() {
+        assert!(
+            loss_seen.elapsed() < Duration::from_millis(holdover_ms + 500),
+            "expired holdover still emits RTP"
+        );
+    }
+    assert!(loss_seen.elapsed() >= Duration::from_millis(holdover_ms - 80));
     let event = UdpSocket::bind((IP, config.ptp_event_port)).unwrap();
     let general = UdpSocket::bind((IP, config.ptp_general_port)).unwrap();
     let gm = Mock::spawn(
@@ -301,8 +367,11 @@ fn check_udp_mock_gm(version: u8) {
         assert!(Instant::now() < deadline, "PTP did not reacquire");
         thread::sleep(Duration::from_millis(1));
     }
+    audio
+        .recv_from(&mut packet)
+        .expect("RTP did not resume after reacquisition");
     drop(gm);
-    let deadline = Instant::now() + Duration::from_secs(2);
+    let deadline = Instant::now() + Duration::from_secs(4);
     loop {
         if let Some(lost_again) = handle.poll() {
             assert_eq!(lost_again.kind, 4);
@@ -311,7 +380,8 @@ fn check_udp_mock_gm(version: u8) {
         assert!(Instant::now() < deadline);
         thread::sleep(Duration::from_millis(1));
     }
-    let deadline = Instant::now() + Duration::from_millis(u64::from(config.lock_timeout_ms) + 1500);
+    let deadline = Instant::now()
+        + Duration::from_millis(u64::from(config.lock_timeout_ms) + holdover_ms + 1500);
     let exit = loop {
         if let Some(event) = handle.poll() {
             break event;
