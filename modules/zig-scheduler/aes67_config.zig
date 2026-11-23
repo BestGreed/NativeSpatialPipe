@@ -65,6 +65,18 @@ pub const Flow = struct {
     srcInterfaceIp: []const u8 = "",
 };
 
+pub const Timestamping = enum(u32) { auto, software, hardware };
+pub const Ptp = struct {
+    domain: u16 = default_ptp_domain,
+    lockTimeoutMs: u32 = 5000,
+    timestamping: Timestamping = .auto,
+
+    pub fn validate(self: Ptp) !void {
+        if (self.domain > 127) return error.InvalidAes67PtpDomain;
+        if (self.lockTimeoutMs < 100 or self.lockTimeoutMs > 120000) return error.InvalidAes67PtpLockTimeout;
+    }
+};
+
 /// Parsed playback.json aes67 object. Slices borrow the parsed document.
 pub const File = struct {
     /// LEGACY single-flow destination of the removed mirror format. Any value
@@ -83,6 +95,7 @@ pub const File = struct {
     srcInterfaceIp: []const u8 = "",
     ptpGmid: []const u8 = "",
     ptpDomain: u16 = default_ptp_domain,
+    ptp: ?Ptp = null,
     ringPackets: u16 = default_ring_packets,
     prebufferFrames: u32 = default_prebuffer_frames,
     /// Multicast TTL (1..255) used for every multicast flow unless a flow

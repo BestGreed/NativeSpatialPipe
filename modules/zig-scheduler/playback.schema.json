@@ -552,6 +552,15 @@
           "default": "",
           "description": "Session-level local IPv4 address used for egress selection: binds the sending sockets and drives IP_MULTICAST_IF. Required when any flow destination is a multicast group and that flow does not carry its own srcInterfaceIp; optional for unicast."
         },
+        "ptp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "domain": { "type": "integer", "minimum": 0, "maximum": 127, "default": 0 },
+            "lockTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 120000, "default": 5000 },
+            "timestamping": { "enum": ["auto", "software", "hardware"], "default": "auto" }
+          }
+        },
         "ptpGmid": {
           "type": "string",
           "pattern": "^([0-9a-fA-F]{2}-){7}[0-9a-fA-F]{2}$",

@@ -295,6 +295,20 @@ test "strict JSON parsing rejects unknown AES67 fields and missing flows" {
     try std.testing.expectError(error.Aes67RequiresFlows, playback.parse(allocator, "{\"bridgeDll\":\"C:/fixture/bridge.dll\",\"outputBackend\":\"aes67\",\"outputLayout\":\"5.1.2\",\"aes67\":{}}"));
 }
 
+test "playback parses and validates PTP settings without changing flow settings" {
+    const allocator = std.testing.allocator;
+    const prefix = "{\"bridgeDll\":\"C:/fixture/bridge.dll\",\"outputBackend\":\"aes67\",\"outputLayout\":\"5.1.2\",\"aes67\":{\"flows\":[{\"destIp\":\"192.0.2.20\",\"channels\":8}],\"ptp\":";
+    var defaults = try playback.parse(allocator, prefix ++ "{}}}");
+    defer defaults.deinit();
+    try std.testing.expectEqual(cfg.Ptp{}, defaults.value.aes67.?.ptp.?);
+    var custom = try playback.parse(allocator, prefix ++ "{\"domain\":127,\"lockTimeoutMs\":2500,\"timestamping\":\"hardware\"}}}");
+    defer custom.deinit();
+    try std.testing.expectEqual(cfg.Ptp{ .domain = 127, .lockTimeoutMs = 2500, .timestamping = .hardware }, custom.value.aes67.?.ptp.?);
+    try std.testing.expectError(error.InvalidAes67PtpDomain, playback.parse(allocator, prefix ++ "{\"domain\":128}}}"));
+    try std.testing.expectError(error.InvalidAes67PtpLockTimeout, playback.parse(allocator, prefix ++ "{\"lockTimeoutMs\":0}}}"));
+    try std.testing.expectError(error.InvalidEnumTag, playback.parse(allocator, prefix ++ "{\"timestamping\":\"other\"}}}"));
+}
+
 test "playback JSON with a full AES67 block validates and keeps the transport defaults" {
     const allocator = std.testing.allocator;
     const text = "{\"bridgeDll\":\"C:/fixture/bridge.dll\",\"outputBackend\":\"aes67\",\"outputLayout\":\"7.1.4\",\"aes67\":{\"framesPerPacket\":48,\"payloadType\":96,\"srcInterfaceIp\":\"127.0.0.1\",\"ptpDomain\":0,\"ringPackets\":64,\"prebufferFrames\":480,\"ttl\":32,\"flows\":[{\"destIp\":\"127.0.0.1\",\"port\":5004,\"channels\":8,\"channelOffset\":0},{\"destIp\":\"127.0.0.1\",\"port\":5006,\"channels\":4,\"channelOffset\":8}]}}";
