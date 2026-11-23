@@ -285,11 +285,8 @@ pub fn prepare(file: File, channels: usize) !Prepared {
         source = value;
     }
     const gmid = try parseGmid(file.ptpGmid);
-    // Phase 1 has no PTP lock source: a configured ptpGmid would make the SDP
-    // claim a=ts-refclk:ptp=... while the sender free-runs. Advertising a
-    // clock that is not actually disciplined is worse than advertising none,
-    // so the configuration fails closed with a dedicated error and the
-    // emitted SDP is always a=ts-refclk:local + a=mediaclk:sender (RFC 7273).
+    // A legacy configured GMID cannot stand in for the module's lock result.
+    // The module derives its SDP clock identity from the locked PTP source.
     if (gmid != null) return error.Aes67PtpGmidRequiresLock;
 
     const total: u16 = @intCast(channels);

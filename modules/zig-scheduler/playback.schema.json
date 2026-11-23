@@ -553,7 +553,7 @@
           "description": "Session-level local IPv4 address used for egress selection: binds the sending sockets and drives IP_MULTICAST_IF. Required when any flow destination is a multicast group and that flow does not carry its own srcInterfaceIp; optional for unicast."
         },
         "ptp": {
-          "type": "object",
+          "type": ["object", "null"],
           "additionalProperties": false,
           "properties": {
             "domain": { "type": "integer", "minimum": 0, "maximum": 127, "default": 0 },
@@ -563,9 +563,9 @@
         },
         "ptpGmid": {
           "type": "string",
-          "pattern": "^([0-9a-fA-F]{2}-){7}[0-9a-fA-F]{2}$",
+          "const": "",
           "default": "",
-          "description": "Reserved for the PTP-disciplined build. The Phase 1 sender has no PTP lock source and rejects any configured value (Aes67PtpGmidRequiresLock): the SDP advertises a=ts-refclk:local + a=mediaclk:sender (RFC 7273) and never claims ptp= without a real lock. Leave empty."
+          "description": "Leave empty. The module derives the advertised grandmaster identity from the locked PTP source."
         },
         "ptpDomain": {
           "type": "integer",
@@ -1008,6 +1008,7 @@
             "aes67": {
               "type": "object"
             },
+            "sourcePolicy": { "enum": ["fixed", "unified"] },
             "sampleRate": {
               "const": 48000
             }

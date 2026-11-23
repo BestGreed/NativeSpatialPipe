@@ -99,9 +99,10 @@ test "AES67 conditional branch requires config and 48 kHz while ASIO/AoIP/WASAPI
     try std.testing.expect(containsString(field(then, "required"), "aes67"));
     try std.testing.expect(containsString(field(then, "required"), "outputLayout"));
     const thenProperties = field(then, "properties");
-    try std.testing.expect(field(thenProperties, "sourcePolicy") == .null);
-    const source_policy = field(field(field(parsed.value, "properties"), "sourcePolicy"), "enum");
-    try std.testing.expect(containsString(source_policy, "active"));
+    const source_policy = field(field(thenProperties, "sourcePolicy"), "enum");
+    try std.testing.expect(containsString(source_policy, "fixed"));
+    try std.testing.expect(containsString(source_policy, "unified"));
+    try std.testing.expect(!containsString(source_policy, "active"));
     try std.testing.expectEqualStrings("object", field(field(thenProperties, "aes67"), "type").string);
     try std.testing.expectEqual(@as(i64, 48000), field(field(thenProperties, "sampleRate"), "const").integer);
     const asio = findBranch(all, "asio");

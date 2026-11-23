@@ -26,10 +26,9 @@ fn execute() !void {
         const channels=parsed.value.channelCount();const labels=try parsed.value.labels();
         const selection=try profile.select(parsed.value.renderer,parsed.value.mode);
         const aoip=std.mem.eql(u8,parsed.value.outputBackend,"aoip");
-        const aes67=std.mem.eql(u8,parsed.value.outputBackend,"aes67");
         const active=std.mem.eql(u8,parsed.value.sourcePolicy,"active");
         const unified=std.mem.eql(u8,parsed.value.sourcePolicy,"unified");
-        const follows_active=active and (aoip or aes67);
+        const follows_active=active and aoip;
         const result=try u.json(.{.valid=true,.renderer=selection.backend,.rendererMode=selection.mode,.playback=parsed.value,
             .effectiveOutputSelection=.{.sourcePolicy=parsed.value.sourcePolicy,.sourceStream=if(follows_active) null else @as(?u32,parsed.value.sourceStream),.hotSwitch=(aoip and !unified) or follows_active},
             .sourceChannels=channels,.outputLayout=(try parsed.value.preset()).id,.deviceOutputLayout=parsed.value.deviceLayout(),.sourceSampleRate=@as(u32,48000),.sourceChannelIndices=try parsed.value.sources(),

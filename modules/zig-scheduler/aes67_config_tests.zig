@@ -235,7 +235,7 @@ test "FSA playback profile selects AES67 without ASIO device fields" {
     try std.testing.expectEqual(@as(u32, 0), sources[0]);
     try std.testing.expectEqual(@as(u32, 11), sources[11]);
     value.sourcePolicy = "active";
-    try value.validate();
+    try std.testing.expectError(error.Aes67RequiresFixedOrUnifiedSource, value.validate());
     value.sourcePolicy = "unified";
     try value.validate();
     value.sourcePolicy = "fixed";
