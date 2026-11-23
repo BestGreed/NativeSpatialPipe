@@ -634,7 +634,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     activation.deinit();
     if (aes67) |*session| {
         session.checkRunning() catch |err| {
-            if (pcm) |*capture| capture.stopAndFinish();
+            if (pcm) |*pcm_session| pcm_session.stopAndFinish();
             try shutdown(&hook, &receiver, pipelines, &bridge, &thread, &recorder, &recordThread, out);
             return err;
         };
