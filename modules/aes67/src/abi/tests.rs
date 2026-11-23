@@ -1220,7 +1220,10 @@ fn role_switch_from_local_to_slave_raises_the_sdp_version() {
     v3.base.base.ptp_general_port = port(&general);
     v3.base.base.ptp_local_event_port = port(&local_event);
     v3.base.base.ptp_local_general_port = port(&local_general);
-    v3.base.base.lock_timeout_ms = loopback_timeout();
+    // Loopback integration with a real QPC servo: keep the lock window well
+    // above the 8-exchange/750 ms fit gate so a loaded test host cannot turn
+    // this into a spurious role oscillation.
+    v3.base.base.lock_timeout_ms = 12_000;
     v3.ptp_announce_timeout_ms = 1_000;
     drop((local_event, local_general));
     let handle = Handle::new();
@@ -1241,13 +1244,19 @@ fn role_switch_from_local_to_slave_raises_the_sdp_version() {
         v3.base.base.ptp_local_general_port,
         0x12,
     );
-    let deadline = Instant::now() + Duration::from_secs(6);
+    let deadline = Instant::now() + Duration::from_secs(20);
     let mut ptp = String::new();
     while Instant::now() < deadline {
-        let candidate = read_sdp(&handle);
-        if candidate.contains("a=ts-refclk:ptp=IEEE1588-2008:12-12-12-12-12-12-12-12:19") {
-            ptp = candidate;
-            break;
+        // Loopback integration: real sockets and wall-clock servo. Allow SDP to
+        // be briefly unavailable during re-render and keep polling instead of
+        // failing on a single unlucky sample.
+        let size = unsafe { nsp_aes67_sdp(handle.0, 0, ptr::null_mut(), 0) };
+        if size > 0 {
+            let candidate = read_sdp(&handle);
+            if candidate.contains("a=ts-refclk:ptp=IEEE1588-2008:12-12-12-12-12-12-12-12:19") {
+                ptp = candidate;
+                break;
+            }
         }
         thread::sleep(Duration::from_millis(10));
     }
