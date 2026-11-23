@@ -179,50 +179,9 @@ pub const Controller = struct {
     }
     pub fn status(self: *Controller) ![]u8 {
         try self.tick();
-        var arena_state = std.heap.ArenaAllocator.init(a);
-        defer arena_state.deinit();
-        const observation = self.aes67Observation(arena_state.allocator()) catch std.json.Value.null;
-        return u.json(.{ .backend = "ready", .scheduler = "zig", .root = self.root, .capabilities = .{ .desktopPlayback = true, .guardedStop = true, .hotOutputRouting = true }, .pid = c.GetCurrentProcessId(), .sessionState = self.state, .dataState = if (std.mem.eql(u8, self.state, "running")) (if (telemetryLive(self.telemetryPort)) "live" else "waiting-or-stale") else "disconnected", .@"error" = self.err, .session = self.session, .config = self.config, .aes67 = observation });
+        return u.json(.{ .backend = "ready", .scheduler = "zig", .root = self.root, .capabilities = .{ .desktopPlayback = true, .guardedStop = true, .hotOutputRouting = true }, .pid = c.GetCurrentProcessId(), .sessionState = self.state, .dataState = if (std.mem.eql(u8, self.state, "running")) (if (telemetryLive(self.telemetryPort)) "live" else "waiting-or-stale") else "disconnected", .@"error" = self.err, .session = self.session, .config = self.config });
     }
 
-    /// Bounded, optional AES67 sender observation for the web status card.
-    /// Reads only the current session's fixed relative report file: no
-    /// historical scan and no absolute path exposure. Display fields are
-    /// projected into a fresh object and a host-measured age is added, so the
-    /// browser never compares clock domains; missing and stale stay distinct.
-    fn aes67Observation(self: *Controller, arena: std.mem.Allocator) !std.json.Value {
-        const session = self.session orelse return .null;
-        const playback = session.playback orelse return .null;
-        if (!std.mem.eql(u8, playback.outputBackend, "aes67")) return .null;
-        const path = try u.join(&.{ session.outputDirectory, "observed/aes67-output.json" });
-        defer a.free(path);
-        const file = std.fs.cwd().openFile(path, .{}) catch |err| switch (err) {
-            error.FileNotFound => return observedState(arena, "missing", null),
-            else => return observedState(arena, "unavailable", null),
-        };
-        defer file.close();
-        const stat = file.stat() catch return observedState(arena, "unavailable", null);
-        const max_report_size = 64 * 1024;
-        if (stat.kind != .file or stat.size == 0 or stat.size > max_report_size) return observedState(arena, "unavailable", null);
-        const raw = file.readToEndAlloc(a, max_report_size) catch return observedState(arena, "unavailable", null);
-        defer a.free(raw);
-        const parsed = std.json.parseFromSlice(std.json.Value, arena, raw, .{ .allocate = .alloc_always }) catch return observedState(arena, "unavailable", null);
-        if (parsed.value != .object) return observedState(arena, "unavailable", null);
-        const now = std.time.nanoTimestamp();
-        const age_ns: i128 = if (now > stat.mtime) now - stat.mtime else 0;
-        const age_ms: u64 = @intCast(@divTrunc(age_ns, std.time.ns_per_ms));
-        const source = parsed.value.object;
-        var projected = std.json.ObjectMap.init(arena);
-        try copyFields(&projected, source, &.{ "outputBackend", "outputLayout", "outputChannels", "outputChannelLabels", "sourcePolicy", "selectedSourceStream" });
-        try copySubset(&projected, arena, source, "health", &.{ "active", "failure", "errorDetail" });
-        try copySubset(&projected, arena, source, "stats", &.{ "packetsSent", "silentPackets", "framesSent", "framesSubmitted", "ringDroppedFrames", "ringDiscardedFrames", "sendErrors", "lateTicks", "bufferedFrames" });
-        try copySubset(&projected, arena, source, "network", &.{ "destIp", "port", "payloadType", "framesPerPacket", "ssrc", "ptpGmid", "ptpDomain", "channels", "multicast", "ttl", "flowCount", "flows" });
-        var outer = std.json.ObjectMap.init(arena);
-        try outer.put("state", std.json.Value{ .string = if (age_ms > 5000) "stale" else "live" });
-        try outer.put("ageMs", std.json.Value{ .integer = @intCast(age_ms) });
-        try outer.put("report", std.json.Value{ .object = projected });
-        return std.json.Value{ .object = outer };
-    }
     pub fn command(self: *Controller, action: []const u8, value: u.Value) ![]u8 {
         try self.tick();
         if (std.mem.eql(u8, action, "status")) return self.status();
@@ -391,30 +350,6 @@ pub const Controller = struct {
         return self.status();
     }
 };
-
-/// Status projection helpers for the AES67 observation: allow-listed fields are
-/// copied into a fresh object so absolute paths (network.sdp) and internal
-/// report fields never leak through the web status API.
-fn observedState(arena: std.mem.Allocator, state: []const u8, age_ms: ?u64) !std.json.Value {
-    var map = std.json.ObjectMap.init(arena);
-    try map.put("state", std.json.Value{ .string = state });
-    const age_value: std.json.Value = if (age_ms) |value| std.json.Value{ .integer = @intCast(value) } else .null;
-    try map.put("ageMs", age_value);
-    try map.put("report", .null);
-    return std.json.Value{ .object = map };
-}
-
-fn copyFields(target: *std.json.ObjectMap, source: std.json.ObjectMap, keys: []const []const u8) !void {
-    for (keys) |key| if (source.get(key)) |value| try target.put(key, value);
-}
-
-fn copySubset(target: *std.json.ObjectMap, arena: std.mem.Allocator, source: std.json.ObjectMap, key: []const u8, allowed: []const []const u8) !void {
-    const value = source.get(key) orelse return;
-    if (value != .object) return try target.put(key, value);
-    var subset = std.json.ObjectMap.init(arena);
-    for (allowed) |name| if (value.object.get(name)) |item| try subset.put(name, item);
-    try target.put(key, std.json.Value{ .object = subset });
-}
 
 fn telemetryLive(port: u16) bool {
     const address = std.net.Address.parseIp4("127.0.0.1", port) catch return false;
