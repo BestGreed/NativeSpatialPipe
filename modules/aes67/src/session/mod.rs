@@ -558,7 +558,9 @@ impl Network {
         lock(&run.audio).discard = false;
         if !preserve_grid {
             for output in &mut self.outputs {
-                output.discontinuity();
+                // A re-anchor opens a new stream epoch; only its first packet
+                // carries the RTP marker bit.
+                output.restart();
             }
         }
     }

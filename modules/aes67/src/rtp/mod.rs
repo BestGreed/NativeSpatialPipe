@@ -30,7 +30,10 @@ pub struct Output {
     pub source: Ipv4Addr,
     socket: UdpSocket,
     sequence: u16,
+    /// True while the next datagram opens a stream epoch and must carry M=1.
     marker: bool,
+    #[cfg(test)]
+    fail_next_send: bool,
 }
 
 impl Output {
@@ -56,16 +59,20 @@ impl Output {
             socket,
             sequence: 0,
             marker: true,
+            #[cfg(test)]
+            fail_next_send: false,
         })
     }
 
-    pub fn discontinuity(&mut self) {
+    /// Explicit stream restart/re-anchor: the next datagram opens a new epoch
+    /// and carries the RTP marker bit. Steady-state gaps are signaled only by
+    /// the sequence and RTP-timestamp jumps.
+    pub fn restart(&mut self) {
         self.marker = true;
     }
 
     pub fn drop_slots(&mut self, count: u64) {
         self.sequence = self.sequence.wrapping_add(count as u16);
-        self.discontinuity();
     }
 
     pub fn send(&mut self, stamp: u32, frames: &[f32], channels: usize) -> io::Result<usize> {
@@ -89,7 +96,7 @@ impl Output {
                 end += 3;
             }
         }
-        let sent = self.socket.send(&packet[..end]).and_then(|size| {
+        let sent = self.write(&packet[..end]).and_then(|size| {
             if size == end {
                 Ok(size)
             } else {
@@ -97,8 +104,20 @@ impl Output {
             }
         });
         self.sequence = self.sequence.wrapping_add(1);
-        self.marker = sent.is_err();
+        // The marker bit opens one stream epoch only. Every later datagram,
+        // including retries after a send error, stays at M=0.
+        self.marker = false;
         sent
+    }
+
+    fn write(&mut self, packet: &[u8]) -> io::Result<usize> {
+        #[cfg(test)]
+        {
+            if std::mem::take(&mut self.fail_next_send) {
+                return Err(io::ErrorKind::Other.into());
+            }
+        }
+        self.socket.send(packet)
     }
 }
 
@@ -254,12 +273,118 @@ mod tests {
             .unwrap();
         let mut datagram = [0; PACKET_CAPACITY];
         sink.recv(&mut datagram).unwrap();
-        assert_ne!(datagram[1] & 0x80, 0);
+        // Dropped slots keep the marker bit clear; the sequence and
+        // RTP-timestamp jumps alone signal the gap.
+        assert_eq!(datagram[1], 96);
         assert_eq!(u16::from_be_bytes(datagram[2..4].try_into().unwrap()), 14);
         assert_eq!(
             u32::from_be_bytes(datagram[4..8].try_into().unwrap()),
             117 * 48
         );
+    }
+
+    fn loopback_output() -> (Output, UdpSocket) {
+        let ip = Ipv4Addr::LOCALHOST;
+        let sink = UdpSocket::bind((ip, 0)).unwrap();
+        sink.set_read_timeout(Some(std::time::Duration::from_millis(500)))
+            .unwrap();
+        let SocketAddr::V4(destination) = sink.local_addr().unwrap() else {
+            unreachable!()
+        };
+        let output = Output::open(Flow {
+            destination,
+            interface: ip,
+            ttl: 1,
+            ssrc: 0x4E53_5000,
+            offset: 0,
+            channels: 1,
+            payload_type: 96,
+            source_filter: false,
+        })
+        .unwrap();
+        (output, sink)
+    }
+
+    fn receive(sink: &UdpSocket) -> ([u8; PACKET_CAPACITY], usize) {
+        let mut datagram = [0; PACKET_CAPACITY];
+        let size = sink.recv(&mut datagram).unwrap();
+        (datagram, size)
+    }
+
+    #[test]
+    fn marker_bit_opens_the_stream_and_then_stays_clear() {
+        let (mut output, sink) = loopback_output();
+        for index in 0..4_u32 {
+            output.send(index * 48, &[0.5; FRAMES], 1).unwrap();
+            let (datagram, size) = receive(&sink);
+            assert_eq!(size, RTP_HEADER + FRAMES * 3);
+            // M=1 only on the first packet; the payload type itself is
+            // unchanged on every packet.
+            assert_eq!(datagram[1], 96 | if index == 0 { 0x80 } else { 0 });
+        }
+    }
+
+    #[test]
+    fn dropped_slots_jump_headers_without_the_marker_bit() {
+        let (mut output, sink) = loopback_output();
+        output.send(48, &[0.5; FRAMES], 1).unwrap();
+        let (datagram, _) = receive(&sink);
+        assert_eq!(datagram[1], 96 | 0x80);
+        assert_eq!(u16::from_be_bytes(datagram[2..4].try_into().unwrap()), 0);
+
+        output.drop_slots(7);
+        assert!(!output.marker);
+        output.send(8 * 48, &[0.5; FRAMES], 1).unwrap();
+        let (datagram, size) = receive(&sink);
+        assert_eq!(size, RTP_HEADER + FRAMES * 3);
+        assert_eq!(datagram[1], 96);
+        assert_eq!(u16::from_be_bytes(datagram[2..4].try_into().unwrap()), 8);
+        assert_eq!(
+            u32::from_be_bytes(datagram[4..8].try_into().unwrap()),
+            8 * 48
+        );
+    }
+
+    #[test]
+    fn send_error_retry_never_sets_the_marker_bit() {
+        let (mut output, sink) = loopback_output();
+        // A fresh stream opens with M=1.
+        output.send(0, &[0.5; FRAMES], 1).unwrap();
+        let (datagram, _) = receive(&sink);
+        assert_ne!(datagram[1] & 0x80, 0);
+        assert_eq!(output.sequence, 1);
+
+        // The retry after a failed datagram must stay at M=0.
+        output.fail_next_send = true;
+        assert!(output.send(48, &[0.5; FRAMES], 1).is_err());
+        assert_eq!(output.sequence, 2);
+        assert!(!output.marker);
+        output.send(96, &[0.5; FRAMES], 1).unwrap();
+        let (datagram, size) = receive(&sink);
+        assert_eq!(size, RTP_HEADER + FRAMES * 3);
+        assert_eq!(datagram[1], 96);
+        assert_eq!(
+            u32::from_be_bytes(datagram[4..8].try_into().unwrap()),
+            96
+        );
+    }
+
+    #[test]
+    fn stream_restart_marks_the_next_packet_once() {
+        let (mut output, sink) = loopback_output();
+        for index in 0..3_u32 {
+            output.send(index * 48, &[0.5; FRAMES], 1).unwrap();
+            let (datagram, _) = receive(&sink);
+            assert_eq!(datagram[1], 96 | if index == 0 { 0x80 } else { 0 });
+        }
+
+        output.restart();
+        output.send(3 * 48, &[0.5; FRAMES], 1).unwrap();
+        let (datagram, _) = receive(&sink);
+        assert_eq!(datagram[1], 96 | 0x80);
+        output.send(4 * 48, &[0.5; FRAMES], 1).unwrap();
+        let (datagram, _) = receive(&sink);
+        assert_eq!(datagram[1], 96);
     }
 
     #[test]
