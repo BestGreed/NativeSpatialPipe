@@ -1,7 +1,7 @@
 pub mod codec;
 
 use crate::{
-    net::multicast_interface,
+    net::{TOS_EF, dscp, multicast_interface},
     time::{ClockFit, FitResult, MediaClock, TimestampMode, TimestampSource},
 };
 use codec::{Body, ClockId, Message, PTP_TIMESCALE, PortId, TWO_STEP, UNICAST};
@@ -410,6 +410,9 @@ impl Follower {
         };
         let event = open(config.local_event_port, config.event_port)?;
         let general = open(config.local_general_port, config.general_port)?;
+        // AES67-2023 sec 6.2 Table 1 (line 1295-1299): clock traffic EF (46).
+        let _ = dscp(&event, TOS_EF);
+        let _ = dscp(&general, TOS_EF);
         // Use a random locally administered identity for this follower session.
         let mut clock_id = RandomState::new()
             .hash_one(event.local_addr()?)

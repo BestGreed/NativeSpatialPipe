@@ -51,8 +51,20 @@ const Config = extern struct {
     input_channels: u32 = 0,
     default_payload_type: u8,
     default_source_filter: u8 = 0,
-    reserved: [2]u8 = .{ 0, 0 },
+    flow_mode: u8 = 0,
+    redundant: u8 = 0,
+    packet_time_us: u32 = 1000,
+    sap_interval_ms: u32 = 30000,
+    frames_per_packet: u32 = 0,
+    sap_address: [4]u8 = .{ 224, 2, 127, 254 },
+    bit_depth: u8 = 0,
+    port_policy: u8 = 0,
+    reserved: [6]u8 = .{0} ** 6,
 };
+comptime {
+    if (@sizeOf(Config) != 152) @compileError("AES67 ABI Config mirror must stay 152 bytes");
+}
+
 const Event = extern struct { kind: u32, code: i32, detail: i32 };
 const started_event = 1;
 const sender_exited_event = 2;
@@ -112,20 +124,30 @@ pub const Session = struct {
         }
         const config = Config{
             .channels = @intCast(channels),
+            .sample_rate = prepared.sample_rate,
             .buffer_ms = net.ringPackets,
-            .prebuffer_ms = (net.prebufferFrames + settings.frames_per_packet - 1) / settings.frames_per_packet,
+            .prebuffer_ms = (net.prebufferFrames + prepared.frames_per_packet - 1) / prepared.frames_per_packet,
             .timestamping = @intFromEnum(ptp.timestamping),
             .lock_timeout_ms = ptp.lockTimeoutMs,
             .ptp_domain = ptp.domain,
             .ptp_interface_ip = prepared.src_interface_ip orelse prepared.flows[0].source_ip orelse unspecified_ip,
             .default_ttl = net.ttl,
+            .default_port = prepared.port,
             .default_src_interface_ip = prepared.src_interface_ip orelse unspecified_ip,
-            .ssrc_base = if (net.ssrc == 0) settings.default_ssrc else net.ssrc,
+            .ssrc_base = net.ssrc,
             .flow_count = prepared.flow_count,
             .flows = &flows,
             .channel_labels = &labels,
             .channel_map = &channel_map,
             .default_payload_type = net.payloadType,
+            .flow_mode = prepared.abi_flow_mode,
+            .redundant = @intFromBool(prepared.redundant),
+            .packet_time_us = prepared.packet_time_us,
+            .sap_interval_ms = prepared.sap_interval_ms,
+            .frames_per_packet = prepared.frames_per_packet,
+            .sap_address = prepared.sap_address,
+            .bit_depth = @intFromEnum(prepared.bit_depth),
+            .port_policy = @intFromEnum(prepared.port_policy),
         };
         const path = try u.join(&.{ root, @import("native.zig").default_aes67_module });
         defer u.a.free(path);

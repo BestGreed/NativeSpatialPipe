@@ -285,7 +285,10 @@ pub const Config = struct {
             // The RTP transport replaces the device side only. Channels and
             // order come from outputLayout/sources(); no device is opened.
             if(self.aes67==null)return error.Aes67ConfigRequired;
-            if(self.sampleRate!=48000)return error.Aes67Requires48000;
+            // The renderer rate must match the AES67 transport rate; the
+            // supported set is validated by aes67_config.prepare (48 kHz
+            // mandatory, 44.1/96 recommended, 88.2/176.4/192 extensions).
+            if(self.aes67.?.sampleRate==0 or self.sampleRate!=@as(f64,@floatFromInt(self.aes67.?.sampleRate)))return error.Aes67Requires48000;
             if (std.mem.eql(u8, self.sourcePolicy, "active")) return error.Aes67RequiresFixedOrUnifiedSource;
         } else if(wasapi) {
             const settings=self.wasapi orelse return error.WasapiConfigRequired;

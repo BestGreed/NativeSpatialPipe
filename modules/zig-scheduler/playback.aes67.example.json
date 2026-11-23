@@ -15,12 +15,12 @@
     "srcInterfaceIp": "192.0.2.1",
     "ptpDomain": 0,
     "ttl": 32,
-    "sourceFilter": false,
+    "sourceFilter": true,
     "ringPackets": 64,
     "prebufferFrames": 480,
     "flows": [
       {"destIp": "192.0.2.20", "port": 5004, "channels": 8, "channelOffset": 0, "payloadType": 96, "ssrc": 0, "ttl": 32, "srcInterfaceIp": "192.0.2.1"},
-      {"destIp": "192.0.2.20", "port": 5006, "channels": 4, "channelOffset": 8, "payloadType": 96, "ssrc": 0, "ttl": 32, "srcInterfaceIp": "192.0.2.1"}
+      {"destIp": "192.0.2.21", "port": 5004, "channels": 4, "channelOffset": 8, "payloadType": 96, "ssrc": 0, "ttl": 32, "srcInterfaceIp": "192.0.2.1"}
     ]
   },
   "outputLayout": "7.1.4",

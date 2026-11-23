@@ -513,9 +513,6 @@
         "null"
       ],
       "additionalProperties": false,
-      "required": [
-        "flows"
-      ],
       "properties": {
         "ttl": {
           "type": "integer",
@@ -526,13 +523,69 @@
         },
         "sourceFilter": {
           "type": "boolean",
+          "default": true,
+          "description": "Emit an RFC 4570 single-source a=source-filter line for multicast flows. Default on: the reference daemon always emits it and SSM/IGMPv3 receivers require it; AES67 itself treats it as optional."
+        },
+        "sampleRate": {
+          "type": "integer",
+          "enum": [44100, 48000, 88200, 96000, 176400, 192000],
+          "default": 48000,
+          "description": "RTP sampling rate / media-clock rate. 48 kHz is AES67-mandatory (AES67-2023 sec 7.1 line 1416); 44.1 and 96 kHz are recommended; 88.2/176.4/192 kHz are RAVENNA-family extensions outside AES67. The renderer sampleRate must equal this value."
+        },
+        "ptimeUs": {
+          "type": "integer",
+          "enum": [125, 250, 333, 500, 1000, 2000, 4000],
+          "default": 1000,
+          "description": "Packet time in microseconds. The 1 ms profile carries 48 samples at both 48 kHz and 44.1 kHz (AES67-2023 sec 7.2.1 line 1473-1476); other rows follow Table 2 (6/12/16/24/96/192 samples at 1FS). The 44.1 kHz 1 ms packet lasts 1.088 ms (SDP a=ptime:1.09, 918.75 pps)."
+        },
+        "codec": {
+          "enum": ["L16", "L24"],
+          "description": "Linear PCM encoding. Omitted selects L16 for the 44.1 kHz family (AES67-2023 sec 7.1 line 1423-1424) and L24 otherwise. 16-bit is 2 bytes/sample, 24-bit 3 bytes/sample, both big-endian per RFC 3551/RFC 3190."
+        },
+        "flowMode": {
+          "enum": ["auto", "single", "multi"],
+          "default": "auto",
+          "description": "auto derives the MTU-minimal flow plan from (rate, ptime, codec, channels): 16ch at 48k/1ms becomes 2 x 8ch, 64ch becomes 8 x 8ch, and a flow is never wider than the AES67 8-channel media profile. single forces one flow (<=8ch). multi requires explicit flows."
+        },
+        "portPolicy": {
+          "enum": ["strict", "explicit"],
+          "default": "strict",
+          "description": "strict requires the standard shared RTP port 5004 for every flow and rejects divergent per-flow ports; redundant legs use 5006 (primary + 2). explicit allows even per-flow ports for migration/lab use. Legacy FLP01 sender ports 5010/5012 must migrate to 5004 with unique multicast groups."
+        },
+        "redundant": {
+          "type": "boolean",
           "default": false,
-          "description": "Emit an RFC 4570 single-source a=source-filter line for multicast flows (informational for receivers that ignore it)."
+          "description": "ST 2022-7 duplicate legs on primary port + 2 (5006 when primary is 5004). Tier 2/optional."
+        },
+        "basePort": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65534,
+          "default": 5004,
+          "description": "Even base RTP port for derived flows; strict mode requires every flow to use it."
+        },
+        "groupBase": {
+          "type": "string",
+          "default": "",
+          "description": "Base class-D multicast group used by auto/single derivation (flow k = base + k, AES67 sec 6.1.3). Required when flows are omitted."
+        },
+        "sapAddress": {
+          "type": "string",
+          "default": "",
+          "description": "SAP announcement group. Empty selects RFC 2974 global scope 224.2.127.254:9875; the N150 deployment can be configured to 239.255.255.255. TTL is always 255 on SAP."
+        },
+        "sapIntervalMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 300000,
+          "default": 30000,
+          "description": "SAP repeat interval. RFC 2974 computes max(300 s, bandwidth-based) and adds a random offset; 30 s matches the reference daemon's default."
         },
         "framesPerPacket": {
-          "const": 48,
-          "default": 48,
-          "description": "Fixed 1 ms packet (48 frames at 48 kHz) in this transport step."
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 768,
+          "description": "LEGACY fixed samples-per-packet. Omitted derives the AES67 Table 2 count from sampleRate/ptimeUs; when present it must match that count (48 at 48k/1ms, 48 at 44.1k/1ms, 96 at 96k/1ms, 16 at 48k/333us, ...)."
         },
         "payloadType": {
           "type": "integer",
@@ -591,7 +644,7 @@
           "type": "array",
           "minItems": 1,
           "maxItems": 8,
-          "description": "Mandatory multi-flow split, layout-agnostic: 1-8 explicit flows, each carrying 1-8 channels. channelOffset values must be contiguous from 0 and sum(channels) must equal the outputLayout channel count; ceil(channels/8) is only the minimal split and the web UI default proposal, not an enforced flow count. The legacy single-flow mirror format (top-level destIp/port, flows omitted) was removed and is rejected as Aes67LegacyMirrorFormat - regenerate such configs through the UI, they are not migrated. Per-flow destinations are EXPLICIT: every flow carries its own destIp and the sender never derives an address at runtime. The web save path fills a missing flow destIp with the documented rule (multicast: flow-0 group + flow index, one group per stream per AES67 6.1.3; unicast: the same host), defaults missing multicast ports to 5004 (Plan A) and continues unique even ports for unicast, materializing the result into the saved file so it stays visible. Plan A = one group per flow, all on the default port 5004; Plan B = one group per flow with per-flow unique ports. Two multicast flows may never share a group (rejected as Aes67DuplicateFlowGroup).",
+          "description": "Optional explicit flows. When omitted, flowMode=auto derives the MTU-minimal plan and groupBase supplies the base class-D group (flow k = base + k). When present, 1-8 flows each carry 1-8 channels with contiguous channelOffset covering the layout exactly; one unique destination per flow (two multicast flows may never share a group). Sender never emits a 16-channel single flow: 16ch = 2 x 8ch, 64ch = 8 x 8ch. Every flow uses the standard RTP port 5004 in strict policy; ST 2022-7 redundant legs use 5006. Legacy per-flow ports 5010/5012 are rejected and must migrate to 5004 + unique groups.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -599,8 +652,8 @@
             "properties": {
               "destIp": {"type": "string", "description": "Explicit IPv4 unicast destination or class-D multicast group (224/4) of this flow. Required per flow: the sender rejects a flow without it; the web save path materializes the documented base+index allocation into the file before validation, so a saved config always shows every per-flow address."},
               "ttl": {"type": "integer", "minimum": 1, "maximum": 255, "default": 0, "description": "Per-flow multicast TTL override (0 = inherit the session-level ttl; ignored for unicast). The save path materializes the inherited value into each multicast flow so the saved file is self-describing."},
-              "port": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 5004, "description": "UDP port of this flow. Defaults to the AES67 default 5004, so Plan A (distinct groups, one shared port) needs no port entries at all."},
-              "channels": {"type": "integer", "minimum": 1, "maximum": 8, "description": "Wire channels in this flow (AES67 media profile limit 8)."},
+              "port": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 5004, "description": "UDP port of this flow. Strict policy requires the standard 5004 (unique multicast group per flow distinguishes streams); 0 selects basePort. Legacy per-flow ports 5010/5012 are rejected."},
+              "channels": {"type": "integer", "minimum": 1, "maximum": 8, "description": "Wire channels in this flow (AES67 media profile: 1-8, AES67-2023 sec 7.3 line 1556-1558). Larger channel counts are split across flows."},
               "channelOffset": {"type": "integer", "minimum": 0, "maximum": 15, "description": "First wire channel of this flow in the session-wide interleaved input (flow0=0, flow1=8 for 16ch)."},
               "payloadType": {"type": "integer", "minimum": 96, "maximum": 127, "description": "Omitted inherits the session-level payloadType."},
               "ssrc": {"type": "integer", "minimum": 0, "maximum": 4294967295, "default": 0, "description": "0 derives a unique per-flow SSRC from the base default."},
@@ -616,7 +669,7 @@
           "items": {"type": "integer", "minimum": 0, "maximum": 15}
         }
       },
-      "description": "AES67 RTP/L24 transport only. Channel count, channel order and labels come from outputLayout and routing; no downmix happens here."
+      "description": "AES67 RTP/L16/L24 transport only. Channel count, channel order and labels come from outputLayout and routing; no downmix happens here."
     },
     "unifiedSlotProfile": {
       "enum": ["standard", "dtsxHtCompact"],
@@ -1010,7 +1063,7 @@
             },
             "sourcePolicy": { "enum": ["fixed", "unified"] },
             "sampleRate": {
-              "const": 48000
+              "enum": [44100, 48000, 88200, 96000, 176400, 192000]
             }
           }
         },

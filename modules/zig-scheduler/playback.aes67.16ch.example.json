@@ -21,7 +21,7 @@
     "ringPackets": 256,
     "prebufferFrames": 480,
     "ttl": 32,
-    "sourceFilter": false,
+    "sourceFilter": true,
     "flows": [
       {
         "destIp": "239.1.0.1",

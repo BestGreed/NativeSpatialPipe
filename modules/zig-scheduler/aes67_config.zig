@@ -2,66 +2,110 @@
 //! validation only; channel count and channel order are derived by the caller
 //! from outputLayout/routing, never from a fixed layout here.
 //!
-//! Multi-flow (NSP 16ch = 2 x 8ch AES67): a 'flows' array in the playback
-//! 'aes67' block splits the interleaved renderer output into N independent RTP
-//! flows that share one sender thread, one timestamp timeline and one SDP file
-//! (one v=0 session per flow). Every flow is bounded by the RFC 3550 AES67
-//! payload budget (12 + frames*channels*3 <= 12 + 1440), so a 16ch/1ms single
-//! stream (2304 B payload) is structurally impossible.
-//!
-//! Per-flow destinations are EXPLICIT and fail closed: flows[] is mandatory
-//! for every layout (flow count = ceil(channels / 8), each flow <= 8 channels)
-//! and every flow entry carries its own destIp. The sender never derives a
-//! destination at runtime. The legacy single-flow mirror format (top-level
-//! destIp/port with flows omitted) is rejected with Aes67LegacyMirrorFormat:
-//! regenerate such configs through the UI, they are not migrated silently.
-//! The one sanctioned auto-allocation (web save path) is deterministic
-//! (allocateFlowGroup: flow-0 base + flow index, staying inside class D),
-//! runs only at configuration-authoring time and is materialized into the
-//! saved file so every per-flow address is visible in the config itself.
+//! Standard shape (AES67-2023 sec 6.3 line 1332-1333): every stream uses RTP
+//! port 5004; flows are distinguished by unique administrative-scope multicast
+//! groups (sec 6.1.3 line 1258-1260). ST 2022-7 redundancy uses port 5006
+//! (primary + 2). Legacy per-flow sender ports 5010/5012 must be migrated to
+//! 5004 + unique groups; strict mode rejects divergent per-flow ports.
 const std = @import("std");
 
 pub const max_channels: u16 = 16;
-/// Maximum number of flows in one session (16ch uses 2; 64ch would use 8).
 pub const max_flows: u8 = 8;
-/// AES67 media-profile per-flow channel limit (one RTP payload).
-pub const max_flow_channels: u16 = 8;
-/// AES67 RTP payload budget (RTP fixed header excluded).
+/// AES67 media profile: senders offer streams of 1-8 channels (sec 7.3 line
+/// 1556-1558). Larger flows are an extension used only when the MTU permits.
+pub const standard_flow_channels: u16 = 8;
+pub const max_flow_channels: u16 = 16;
+/// AES67-2023 sec 6.3 line 1364-1366: maximum RTP payload is 1440 bytes.
 pub const max_payload_bytes: usize = 1440;
-pub const frames_per_packet: u16 = 48;
-pub const sample_rate: u32 = 48000;
 pub const default_port: u16 = 5004;
+pub const secondary_port_offset: u16 = 2;
 pub const default_payload_type: u8 = 96;
-/// Fixed default SSRC "NSP6". A configured nonzero value overrides it.
-pub const default_ssrc: u32 = 0x4E535036;
+/// RFC 3550 sec 5.1 line 857-862: SSRC should be random. Zero asks the module
+/// to pick a random per-session base and keep flow k = base + k.
+pub const default_ssrc: u32 = 0;
 pub const default_ring_packets: u16 = 64;
 pub const default_prebuffer_frames: u32 = 480;
 pub const default_ptp_domain: u16 = 0;
-/// RFC 4566 multicast TTL default used when a destination is a multicast group
-/// and no explicit ttl is configured (AES67 SDP conventionally uses /32).
 pub const default_ttl: u8 = 32;
+pub const default_sap_interval_ms: u32 = 30_000;
+pub const auto_max_flows: u8 = 4;
+
+pub const supported_sample_rates = [_]u32{ 44_100, 48_000, 88_200, 96_000, 176_400, 192_000 };
+pub const supported_packet_times_us = [_]u16{ 125, 250, 333, 500, 1_000, 2_000, 4_000 };
+
+/// Linear PCM encoding (AES67-2023 sec 7.1 line 1411-1414): L16 per RFC 3551
+/// 4.5.11 and L24 per RFC 3190 clause 4.
+pub const BitDepth = enum(u8) {
+    L24 = 0,
+    L16 = 1,
+
+    pub fn bytes(self: BitDepth) u8 {
+        return switch (self) {
+            .L16 => 2,
+            .L24 => 3,
+        };
+    }
+    pub fn codec(self: BitDepth) []const u8 {
+        return switch (self) {
+            .L16 => "L16",
+            .L24 => "L24",
+        };
+    }
+};
+
+pub const FlowMode = enum(u8) { auto = 0, single = 1, multi = 2 };
+pub const PortPolicy = enum(u8) { strict = 0, explicit = 1 };
+
+fn familyBase(rate: u32) ?u32 {
+    if (rate % 44_100 == 0) return 44_100;
+    if (rate % 48_000 == 0) return 48_000;
+    return null;
+}
+
+/// Samples per packet from AES67-2023 Table 2 (lines 1486-1550): 6/12/16/48/
+/// 192 samples at the family's 1FS rate; 24 (500 us) and 96 (2 ms) are
+/// additional packet times permitted by sec 7.2.2 line 1484. The 1 ms row is
+/// 48 samples at BOTH 48 kHz and 44.1 kHz (sec 7.2.1 line 1473-1476), so a
+/// 44.1 kHz packet lasts 48/44100 s = 1.088 ms (ptime:1.09, 918.75 pps).
+pub fn samplesPerPacket(rate: u32, packet_time_us: u16) ?u16 {
+    if (std.mem.indexOfScalar(u32, &supported_sample_rates, rate) == null) return null;
+    if (std.mem.indexOfScalar(u16, &supported_packet_times_us, packet_time_us) == null) return null;
+    const base = familyBase(rate) orelse return null;
+    const base_samples: u16 = switch (packet_time_us) {
+        125 => 6,
+        250 => 12,
+        333 => 16,
+        500 => 24,
+        1_000 => 48,
+        2_000 => 96,
+        4_000 => 192,
+        else => return null,
+    };
+    return base_samples * @as(u16, @intCast(rate / base));
+}
+
+pub fn maxChannelsPerFlow(samples: u16, bytes_per_sample: u8) u16 {
+    return @intCast(max_payload_bytes / (@as(usize, samples) * bytes_per_sample));
+}
+
+/// 44.1 kHz family defaults to L16: AES67-2023 sec 7.1 line 1423-1424 requires
+/// L16 support at 44.1 kHz, L24 is optional (line 1429). 48 kHz family
+/// defaults to L24, the production encoding; L16 is selectable.
+pub fn defaultBitDepth(rate: u32) BitDepth {
+    return if (rate % 44_100 == 0) .L16 else .L24;
+}
 
 /// One RTP flow in a multi-flow AES67 session.
-///
-/// channelOffset is the first wire channel of this flow in the session-wide
-/// interleaved input (flow0 = 0, flow1 = 8 for 16ch). Offsets must be contiguous
-/// from 0 so the union of flows is exactly the total channel set.
 pub const Flow = struct {
-    /// Explicit destination of this flow (required, never derived at runtime).
-    destIp: []const u8,
-    /// UDP port of this flow. Defaults to the AES67 default 5004, so Plan A
-    /// (every flow on 5004, one group per flow) needs no port entries at all.
+    /// Empty is allowed only when the flow comes from auto/single derivation.
+    destIp: []const u8 = "",
+    /// UDP port. Strict policy defaults to 5004 and rejects any other value.
     port: u16 = default_port,
     channels: u16 = 8,
     channelOffset: u16 = 0,
-    /// null = inherit the session-level payloadType (validated 96-127).
     payloadType: ?u8 = null,
     ssrc: u32 = 0,
-    /// Multicast TTL for this flow (0 = inherit File.ttl). Ignored for unicast.
     ttl: u8 = 0,
-    /// Per-flow egress interface override. Empty inherits File.srcInterfaceIp.
-    /// Persisted per flow so each flow's full destination tuple
-    /// (group + port + TTL + source interface) is visible in the config.
     srcInterfaceIp: []const u8 = "",
 };
 
@@ -79,90 +123,52 @@ pub const Ptp = struct {
 
 /// Parsed playback.json aes67 object. Slices borrow the parsed document.
 pub const File = struct {
-    /// LEGACY single-flow destination of the removed mirror format. Any value
-    /// (with or without flows) fails prepare() with Aes67LegacyMirrorFormat.
-    /// Kept optional so old documents parse and fail with the clear error
-    /// instead of a generic unknown-field JSON error.
+    /// LEGACY single-flow destination of the removed mirror format: rejected.
     destIp: ?[]const u8 = null,
     /// LEGACY single-flow port, same treatment as destIp.
     port: ?u16 = null,
-    framesPerPacket: u16 = frames_per_packet,
-    /// Session-level payload type (96-127); a flow row inherits it when its own
-    /// payloadType is omitted.
+    /// LEGACY fixed frames-per-packet. When present it must agree with the
+    /// (sample rate, packet time) sample count, otherwise it is rejected.
+    framesPerPacket: ?u16 = null,
+    /// Sampling rate; 48 kHz default (AES67 mandatory). 44.1/96 recommended,
+    /// 88.2/176.4/192 are RAVENNA-family extensions.
+    sampleRate: u32 = 48_000,
+    /// Packet time in microseconds: 125/250/333/500/1000/2000/4000.
+    ptimeUs: u16 = 1_000,
+    /// null selects defaultBitDepth(rate): L16 for 44.1 kHz, L24 for 48 kHz.
+    codec: ?BitDepth = null,
+    /// auto derives the MTU-minimal flow plan, single forces one extension
+    /// flow, multi requires explicit flows.
+    flowMode: FlowMode = .auto,
+    /// strict enforces the standard shared 5004 port; explicit allows 5004/5006
+    /// style per-flow ports for migration and lab use.
+    portPolicy: PortPolicy = .strict,
+    /// ST 2022-7 duplicate legs on primary port + 2 (5006 when primary 5004).
+    redundant: bool = false,
+    /// Session base port for derived flows; must be even and in 1024-65534.
+    basePort: u16 = default_port,
+    /// Base multicast group for auto/single derivation (e.g. 239.69.0.1);
+    /// flow k uses base + k per AES67 sec 6.1.3.
+    groupBase: []const u8 = "",
+    /// SAP announcement group; empty selects RFC 2974 224.2.127.254.
+    sapAddress: []const u8 = "",
+    /// SAP repeat interval in milliseconds (1000-300000; daemon uses 30000).
+    sapIntervalMs: u32 = default_sap_interval_ms,
     payloadType: u8 = default_payload_type,
-    /// Session SSRC base; flow k derives base + k unless the row sets its own.
-    ssrc: u32 = 0,
+    ssrc: u32 = default_ssrc,
     srcInterfaceIp: []const u8 = "",
     ptpGmid: []const u8 = "",
     ptpDomain: u16 = default_ptp_domain,
     ptp: ?Ptp = null,
     ringPackets: u16 = default_ring_packets,
     prebufferFrames: u32 = default_prebuffer_frames,
-    /// Multicast TTL (1..255) used for every multicast flow unless a flow
-    /// overrides it. Emitted in SDP as c=IN IP4 <group>/<ttl> and applied with
-    /// IP_MULTICAST_TTL. Ignored for unicast destinations.
     ttl: u8 = default_ttl,
-    /// Optional RFC 4570 single-source filter. Emitted only for multicast flows
-    /// when true; it is informational for AES67 receivers that ignore it.
-    sourceFilter: bool = false,
-    /// Mandatory multi-flow split: one explicit destination per flow, flow
-    /// count = ceil(channels / 8), each flow <= 8 channels. Null fails with
-    /// Aes67RequiresFlows - the legacy single-flow shape no longer exists.
+    /// Emit RFC 4570 source-filter for multicast flows. Default on: the daemon
+    /// always emits it and SSM/IGMPv3 receivers need it (audit 2026-11-23 item 6).
+    sourceFilter: bool = true,
     flows: ?[]const Flow = null,
-    /// Optional wire-order channel permutation: transmitted channel k is source
-    /// channel channelMap[k]. Used to emit the 16ch container order
-    /// (L,R,C,LFE,Ls,Rs,Lrs,Rrs,Lw,Rw,Ltf,Rtf,Aux12,Aux13,Ltr,Rtr) from a
-    /// 9.1.6 renderer layout (explicit mapping, never implicit).
     channelMap: ?[]const u16 = null,
 };
-
-/// Validated single-flow settings (fixed-size, no slices after prepare).
-pub const PreparedFlow = struct {
-    dest_ip: [4]u8,
-    dest_text: [15]u8,
-    port: u16,
-    payload_type: u8,
-    ssrc: u32,
-    channels: u16,
-    channel_offset: u16,
-    /// Destination is an IPv4 multicast group (224/4).
-    multicast: bool = false,
-    /// Multicast TTL (0 for unicast flows).
-    ttl: u8 = 0,
-    /// Effective egress interface: the flow's own srcInterfaceIp when set,
-    /// otherwise the session-level one. Null only for unicast flows without any
-    /// configured source (multicast flows fail closed instead).
-    source_ip: ?[4]u8 = null,
-};
-
-/// Validated, fixed-size transport settings consumed by the sender.
-pub const Prepared = struct {
-    /// Legacy single-flow mirror (= flow 0). Kept for existing callers/tests and
-    /// for single-flow reports; multi-flow callers use flows[0..flow_count].
-    dest_ip: [4]u8,
-    port: u16,
-    frames_per_packet: u16,
-    payload_type: u8,
-    ssrc: u32,
-    src_interface_ip: ?[4]u8,
-    ptp_gmid: ?[23]u8,
-    ptp_domain: u16,
-    ring_packets: u16,
-    prebuffer_frames: u32,
-    /// Total channels across all flows (= sum of flow.channels).
-    channels: u16,
-    /// Number of RTP flows (1 = legacy single flow, 2 = 16ch 2x8ch).
-    flow_count: u8,
-    flows: [max_flows]PreparedFlow,
-    /// Wire channel -> source channel permutation (identity when unspecified).
-    channel_map: [max_channels]u16,
-    /// Aggregate transport shape of flow 0 (single-flow mirror/report use).
-    multicast: bool = false,
-    ttl: u8 = 0,
-    /// Emit a=source-filter for multicast flows when src_interface_ip is set.
-    source_filter: bool = false,
-};
-
 fn parseIpv4(text: []const u8, out: *[4]u8) bool {
     var parts = std.mem.splitScalar(u8, text, '.');
     var count: usize = 0;
@@ -178,6 +184,19 @@ fn parseIpv4(text: []const u8, out: *[4]u8) bool {
         count += 1;
     }
     return count == 4;
+}
+
+pub fn parseIpv4Address(text: []const u8) ?[4]u8 {
+    var out: [4]u8 = undefined;
+    if (!parseIpv4(text, &out)) return null;
+    return out;
+}
+
+pub fn formatIpv4(address: [4]u8) [15]u8 {
+    var out: [15]u8 = [_]u8{0} ** 15;
+    const text = std.fmt.bufPrint(&out, "{d}.{d}.{d}.{d}", .{ address[0], address[1], address[2], address[3] }) catch return out;
+    _ = text;
+    return out;
 }
 
 fn parseGmid(text: []const u8) !?[23]u8 {
@@ -197,18 +216,15 @@ fn parseGmid(text: []const u8) !?[23]u8 {
 }
 
 fn isUnicastIpv4(address: [4]u8) bool {
-    // Unicast only: no unspecified, multicast or limited broadcast destination.
     if (address[0] == 0 or address[0] == 255) return false;
     if (address[0] >= 224) return false;
     return true;
 }
 
-/// IPv4 multicast class D range (224.0.0.0/4).
 pub fn isMulticastIpv4(address: [4]u8) bool {
     return address[0] >= 224 and address[0] <= 239;
 }
 
-/// Parsed destination: explicit IPv4 unicast host or multicast group.
 pub const Destination = struct {
     address: [4]u8,
     multicast: bool,
@@ -222,22 +238,8 @@ fn resolveDestination(text: []const u8) !Destination {
     return .{ .address = dest, .multicast = false };
 }
 
-/// Parses dotted IPv4 text into octets; null on malformed input. Public form
-/// for the configuration-authoring paths (web save materialization, offline
-/// tools) that must reproduce exactly the sender's address syntax.
-pub fn parseIpv4Address(text: []const u8) ?[4]u8 {
-    var out: [4]u8 = undefined;
-    if (!parseIpv4(text, &out)) return null;
-    return out;
-}
-
-/// Deterministic auto-allocation for multi-flow destinations (AES67 6.1.3:
-/// one group per stream). Flow k gets `base + k` with ordinary octet carry;
-/// the result must stay inside the class-D multicast range. Returns null when
-/// base is not multicast or base+k would leave the range - callers must then
-/// reject the configuration instead of guessing a different group. This runs
-/// only at configuration-authoring time; the sender itself never derives a
-/// destination, and the result is always materialized into the saved file.
+/// Deterministic one-group-per-flow allocation (AES67 sec 6.1.3 line
+/// 1258-1260: one sender per stream, unique destination address).
 pub fn allocateFlowGroup(base: [4]u8, index: u8) ?[4]u8 {
     if (!isMulticastIpv4(base)) return null;
     const value: u32 = (@as(u32, base[0]) << 24) | (@as(u32, base[1]) << 16) | (@as(u32, base[2]) << 8) | @as(u32, base[3]);
@@ -254,28 +256,144 @@ pub fn allocateFlowGroup(base: [4]u8, index: u8) ?[4]u8 {
     return out;
 }
 
+pub const PreparedFlow = struct {
+    dest_ip: [4]u8,
+    dest_text: [15]u8,
+    port: u16,
+    payload_type: u8,
+    ssrc: u32,
+    channels: u16,
+    channel_offset: u16,
+    multicast: bool = false,
+    ttl: u8 = 0,
+    source_ip: ?[4]u8 = null,
+};
+
+pub const Prepared = struct {
+    dest_ip: [4]u8,
+    dest_text: [15]u8,
+    port: u16,
+    frames_per_packet: u16,
+    sample_rate: u32,
+    packet_time_us: u16,
+    bit_depth: BitDepth,
+    bytes_per_sample: u8,
+    payload_type: u8,
+    ssrc: u32,
+    src_interface_ip: ?[4]u8,
+    ptp_gmid: ?[23]u8,
+    ptp_domain: u16,
+    ring_packets: u16,
+    prebuffer_frames: u32,
+    channels: u16,
+    flow_count: u8,
+    flows: [max_flows]PreparedFlow,
+    channel_map: [max_channels]u16,
+    multicast: bool = false,
+    ttl: u8 = 0,
+    source_filter: bool = false,
+    redundant: bool = false,
+    sap_interval_ms: u32 = default_sap_interval_ms,
+    sap_address: [4]u8 = .{ 224, 2, 127, 254 },
+    port_policy: PortPolicy = .strict,
+    /// Resolved ABI flow mode: 1 = single explicit flow, 2 = multi explicit.
+    abi_flow_mode: u8 = 2,
+
+    pub fn ptimeMilliseconds(self: Prepared) f64 {
+        return @as(f64, @floatFromInt(self.frames_per_packet)) * 1000.0 / @as(f64, @floatFromInt(self.sample_rate));
+    }
+    pub fn packetsPerSecond(self: Prepared) f64 {
+        return @as(f64, @floatFromInt(self.sample_rate)) / @as(f64, @floatFromInt(self.frames_per_packet));
+    }
+};
+fn balancedCounts(channels: u16, flow_count: u8, counts: *[max_flows]u16) void {
+    const n: u16 = flow_count;
+    const quotient = channels / n;
+    const remainder = channels % n;
+    for (0..flow_count) |index| {
+        counts[index] = quotient + @as(u16, @intFromBool(index < remainder));
+    }
+}
+
+fn appendFlow(
+    prepared: *Prepared,
+    index: usize,
+    dest: Destination,
+    port: u16,
+    channels: u16,
+    offset: u16,
+    payload_type: u8,
+    ssrc: u32,
+    ttl: u8,
+    source: ?[4]u8,
+) !void {
+    for (prepared.flows[0..index]) |previous| {
+        if (previous.port == port and std.mem.eql(u8, &previous.dest_ip, &dest.address))
+            return error.Aes67DuplicateFlowDestination;
+        if (dest.multicast and previous.multicast and std.mem.eql(u8, &previous.dest_ip, &dest.address))
+            return error.Aes67DuplicateFlowGroup;
+        // SSRC 0 means "module picks a random per-session base + index"; it is
+        // not a real identifier yet, so it cannot conflict.
+        if (ssrc != 0 and previous.ssrc == ssrc) return error.Aes67DuplicateFlowSsrc;
+    }
+    prepared.flows[index] = .{
+        .dest_ip = dest.address,
+        .dest_text = formatIpv4(dest.address),
+        .port = port,
+        .payload_type = payload_type,
+        .ssrc = ssrc,
+        .channels = channels,
+        .channel_offset = offset,
+        .multicast = dest.multicast,
+        .ttl = ttl,
+        .source_ip = source,
+    };
+}
+
 /// Validates the JSON object and resolves defaults. Fail-closed: every value
 /// used by the transport is checked here before a socket or session exists.
 ///
 /// channels is the renderer output width (outputLayout channel count).
 pub fn prepare(file: File, channels: usize) !Prepared {
     if (channels == 0 or channels > max_channels) return error.Aes67ChannelCount;
-    if (file.framesPerPacket != frames_per_packet) return error.UnsupportedAes67PacketFrames;
+    if (std.mem.indexOfScalar(u32, &supported_sample_rates, file.sampleRate) == null)
+        return error.InvalidAes67SampleRate;
+    if (std.mem.indexOfScalar(u16, &supported_packet_times_us, file.ptimeUs) == null)
+        return error.InvalidAes67Ptime;
+    const samples = samplesPerPacket(file.sampleRate, file.ptimeUs) orelse return error.InvalidAes67Ptime;
+    const bit_depth = file.codec orelse defaultBitDepth(file.sampleRate);
+    const bytes_per_sample = bit_depth.bytes();
+    if (file.framesPerPacket) |frames_per_packet| {
+        if (frames_per_packet != samples) return error.UnsupportedAes67PacketFrames;
+    }
+    const fit = maxChannelsPerFlow(samples, bytes_per_sample);
+    const flow_cap = @min(standard_flow_channels, fit);
+    if (flow_cap == 0) return error.Aes67PayloadTooLarge;
+
+    if (file.basePort == 0 or file.basePort < 1024 or file.basePort % 2 != 0)
+        return error.InvalidAes67Port;
+    if (file.redundant and (@as(u32, file.basePort) + secondary_port_offset > 65535))
+        return error.InvalidAes67Port;
     if (file.ptpDomain > 127) return error.InvalidAes67PtpDomain;
     if (file.ringPackets < 8 or file.ringPackets > 1024) return error.InvalidAes67RingPackets;
-    if (file.prebufferFrames < frames_per_packet or file.prebufferFrames > 48000 or
-        file.prebufferFrames > @as(u32, file.ringPackets) * frames_per_packet) return error.InvalidAes67Prebuffer;
+    const capacity_frames = @as(u32, file.ringPackets) * file.sampleRate / 1000;
+    if (file.prebufferFrames < samples or file.prebufferFrames > 48000 or
+        file.prebufferFrames > capacity_frames) return error.InvalidAes67Prebuffer;
     if (file.ttl == 0) return error.InvalidAes67Ttl;
     if (file.payloadType < 96 or file.payloadType > 127) return error.InvalidAes67PayloadType;
-    // The single-flow mirror format is gone: top-level destIp/port were a
-    // local transitional design and were never merged upstream, so there is no
-    // compatibility obligation. Fail closed with a dedicated error so callers
-    // can tell the user to regenerate the config through the UI; no silent
-    // migration happens here.
+    if (file.sapIntervalMs < 1000 or file.sapIntervalMs > 300000) return error.InvalidAes67SapInterval;
+
+    var sap_address: [4]u8 = .{ 224, 2, 127, 254 };
+    if (file.sapAddress.len != 0) {
+        var value: [4]u8 = undefined;
+        if (!parseIpv4(file.sapAddress, &value) or !isMulticastIpv4(value))
+            return error.InvalidAes67SapAddress;
+        sap_address = value;
+    }
+    var base_group: ?Destination = null;
+    if (file.groupBase.len != 0) base_group = try resolveDestination(file.groupBase);
+
     if (file.destIp != null or file.port != null) return error.Aes67LegacyMirrorFormat;
-    // flows[] is mandatory for every layout and channel count: flow count is
-    // ceil(channels / 8) with each flow bounded to 8 channels / 1440 B.
-    const flows = file.flows orelse return error.Aes67RequiresFlows;
 
     var source: ?[4]u8 = null;
     if (file.srcInterfaceIp.len != 0) {
@@ -285,17 +403,20 @@ pub fn prepare(file: File, channels: usize) !Prepared {
         source = value;
     }
     const gmid = try parseGmid(file.ptpGmid);
-    // A legacy configured GMID cannot stand in for the module's lock result.
-    // The module derives its SDP clock identity from the locked PTP source.
     if (gmid != null) return error.Aes67PtpGmidRequiresLock;
 
     const total: u16 = @intCast(channels);
     var prepared = Prepared{
         .dest_ip = .{ 0, 0, 0, 0 },
-        .port = 0,
-        .frames_per_packet = file.framesPerPacket,
+        .dest_text = [_]u8{0} ** 15,
+        .port = file.basePort,
+        .frames_per_packet = samples,
+        .sample_rate = file.sampleRate,
+        .packet_time_us = file.ptimeUs,
+        .bit_depth = bit_depth,
+        .bytes_per_sample = bytes_per_sample,
         .payload_type = file.payloadType,
-        .ssrc = if (file.ssrc == 0) default_ssrc else file.ssrc,
+        .ssrc = file.ssrc,
         .src_interface_ip = source,
         .ptp_gmid = gmid,
         .ptp_domain = file.ptpDomain,
@@ -305,79 +426,89 @@ pub fn prepare(file: File, channels: usize) !Prepared {
         .flow_count = 1,
         .flows = [_]PreparedFlow{std.mem.zeroes(PreparedFlow)} ** max_flows,
         .channel_map = [_]u16{0} ** max_channels,
+        .source_filter = file.sourceFilter,
+        .redundant = file.redundant,
+        .sap_interval_ms = file.sapIntervalMs,
+        .sap_address = sap_address,
+        .port_policy = file.portPolicy,
     };
     for (0..channels) |index| prepared.channel_map[index] = @intCast(index);
 
-    if (flows.len == 0 or flows.len > max_flows) return error.InvalidAes67FlowCount;
     var offset: u16 = 0;
     var count: usize = 0;
-    for (flows, 0..) |flow, index| {
-        if (flow.channels == 0 or flow.channels > max_flow_channels) return error.InvalidAes67FlowChannels;
-        if (flow.channelOffset != offset) return error.InvalidAes67FlowOffset;
-        if (flow.port == 0) return error.InvalidAes67Port;
-        const flow_payload_type = flow.payloadType orelse file.payloadType;
-        if (flow_payload_type < 96 or flow_payload_type > 127) return error.InvalidAes67PayloadType;
-        const dest = try resolveDestination(flow.destIp);
-        const payload = @as(usize, flow.channels) * frames_per_packet * 3;
-        if (payload > max_payload_bytes) return error.Aes67PayloadTooLarge;
-        const flow_ttl: u8 = if (flow.ttl == 0) file.ttl else flow.ttl;
-        if (dest.multicast and flow_ttl == 0) return error.InvalidAes67Ttl;
-        // Per-flow egress override: an explicit flow source wins over the
-        // session-level srcInterfaceIp; both must be unicast IPv4.
-        var flow_source: ?[4]u8 = source;
-        if (flow.srcInterfaceIp.len != 0) {
-            var value: [4]u8 = undefined;
-            if (!parseIpv4(flow.srcInterfaceIp, &value)) return error.InvalidAes67SourceInterface;
-            if (!isUnicastIpv4(value)) return error.InvalidAes67SourceInterface;
-            flow_source = value;
+    if (file.flows) |flows| {
+        if (flows.len == 0 or flows.len > max_flows) return error.InvalidAes67FlowCount;
+        if (file.flowMode == .single and flows.len != 1) return error.InvalidAes67FlowCount;
+        for (flows, 0..) |flow, index| {
+            if (flow.channels == 0 or flow.channels > flow_cap) return error.InvalidAes67FlowChannels;
+            if (flow.channels > total -| offset) return error.InvalidAes67FlowChannels;
+            if (flow.channelOffset != offset) return error.InvalidAes67FlowOffset;
+            const dest = try resolveDestination(flow.destIp);
+            const port = if (flow.port == 0) file.basePort else flow.port;
+            if (port < 1024 or port % 2 != 0) return error.InvalidAes67Port;
+            if (file.portPolicy == .strict and port != file.basePort) return error.InvalidAes67Port;
+            if (@as(usize, flow.channels) * samples * bytes_per_sample > max_payload_bytes)
+                return error.Aes67PayloadTooLarge;
+            const flow_payload_type = flow.payloadType orelse file.payloadType;
+            if (flow_payload_type < 96 or flow_payload_type > 127) return error.InvalidAes67PayloadType;
+            const flow_ttl: u8 = if (flow.ttl == 0) file.ttl else flow.ttl;
+            if (dest.multicast and flow_ttl == 0) return error.InvalidAes67Ttl;
+            var flow_source: ?[4]u8 = source;
+            if (flow.srcInterfaceIp.len != 0) {
+                var value: [4]u8 = undefined;
+                if (!parseIpv4(flow.srcInterfaceIp, &value)) return error.InvalidAes67SourceInterface;
+                if (!isUnicastIpv4(value)) return error.InvalidAes67SourceInterface;
+                flow_source = value;
+            }
+            const ssrc = if (flow.ssrc != 0) flow.ssrc else if (file.ssrc == 0) 0 else file.ssrc +% @as(u32, @intCast(index));
+            try appendFlow(&prepared, count, dest, port, flow.channels, flow.channelOffset, flow_payload_type, ssrc, flow_ttl, flow_source);
+            offset += flow.channels;
+            count += 1;
         }
-        for (prepared.flows[0..index]) |previous| {
-            if (previous.port == flow.port and std.mem.eql(u8, &previous.dest_ip, &dest.address))
-                return error.Aes67DuplicateFlowDestination;
-            // AES67 6.1.3: each stream is assigned a unique destination
-            // address and only a single device sends per multicast group.
-            // Two flows on one group cannot be demuxed by a compliant
-            // receiver, so the whole shape is rejected regardless of port.
-            if (dest.multicast and previous.multicast and std.mem.eql(u8, &previous.dest_ip, &dest.address))
-                return error.Aes67DuplicateFlowGroup;
+    } else {
+        if (file.flowMode == .multi) return error.Aes67RequiresFlows;
+        var counts = [_]u16{0} ** max_flows;
+        var flow_count: u8 = 1;
+        if (file.flowMode == .single) {
+            if (total > flow_cap) return error.InvalidAes67FlowChannels;
+            counts[0] = total;
+        } else if (total <= flow_cap) {
+            counts[0] = total;
+        } else {
+            const target = flow_cap;
+            flow_count = @intCast((@as(u32, total) + target - 1) / target);
+            if (flow_count > max_flows) return error.Aes67PayloadTooLarge;
+            balancedCounts(total, flow_count, &counts);
         }
-        const base = if (file.ssrc == 0) default_ssrc else file.ssrc;
-        const ssrc = if (flow.ssrc != 0) flow.ssrc else base +% @as(u32, @intCast(index));
-        for (prepared.flows[0..index]) |previous| {
-            if (previous.ssrc == ssrc) return error.Aes67DuplicateFlowSsrc;
+        const base = base_group orelse return error.Aes67BaseGroupRequired;
+        if (flow_count > 1 and !base.multicast) return error.Aes67UnicastRequiresExplicitFlows;
+        var index: usize = 0;
+        var derived_offset: u16 = 0;
+        while (index < flow_count) : (index += 1) {
+            const dest_address = if (base.multicast)
+                allocateFlowGroup(base.address, @intCast(index)) orelse return error.InvalidAes67Destination
+            else
+                base.address;
+            const ssrc = if (file.ssrc == 0) 0 else file.ssrc +% @as(u32, @intCast(index));
+            try appendFlow(&prepared, index, .{ .address = dest_address, .multicast = base.multicast }, file.basePort, counts[index], derived_offset, file.payloadType, ssrc, file.ttl, source);
+            derived_offset += counts[index];
         }
-        prepared.flows[index] = .{
-            .dest_ip = dest.address,
-            .dest_text = formatIpv4(dest.address),
-            .port = flow.port,
-            .payload_type = flow_payload_type,
-            .ssrc = ssrc,
-            .channels = flow.channels,
-            .channel_offset = flow.channelOffset,
-            .multicast = dest.multicast,
-            .ttl = flow_ttl,
-            .source_ip = flow_source,
-        };
-        offset += flow.channels;
-        count += 1;
+        count = flow_count;
+        offset = total;
     }
-    if (offset != total) return error.InvalidAes67FlowChannels;
+    if (offset != total or count == 0) return error.InvalidAes67FlowChannels;
     prepared.flow_count = @intCast(count);
-    // Legacy aggregate mirror for single-flow readers: always flow 0's values.
+    prepared.abi_flow_mode = if (file.flowMode == .single) 1 else 2;
     prepared.dest_ip = prepared.flows[0].dest_ip;
+    prepared.dest_text = prepared.flows[0].dest_text;
     prepared.port = prepared.flows[0].port;
     prepared.payload_type = prepared.flows[0].payload_type;
     prepared.ssrc = prepared.flows[0].ssrc;
-
-    // Multicast egress is explicit per flow: the OS cannot guess between the
-    // several NICs a desktop can have, so every multicast flow must resolve an
-    // egress interface (its own srcInterfaceIp or the session-level one).
     for (prepared.flows[0..prepared.flow_count]) |flow| {
         if (flow.multicast and flow.source_ip == null) return error.Aes67MulticastRequiresSourceInterface;
     }
     prepared.multicast = prepared.flows[0].multicast;
     prepared.ttl = prepared.flows[0].ttl;
-    prepared.source_filter = file.sourceFilter;
 
     if (file.channelMap) |map| {
         if (map.len != channels) return error.InvalidAes67ChannelMap;
@@ -391,12 +522,4 @@ pub fn prepare(file: File, channels: usize) !Prepared {
         for (map, 0..) |value, index| prepared.channel_map[index] = value;
     }
     return prepared;
-}
-
-/// Renders the dotted IPv4 form used in reports and SDP.
-pub fn formatIpv4(address: [4]u8) [15]u8 {
-    var out: [15]u8 = [_]u8{0} ** 15;
-    const text = std.fmt.bufPrint(&out, "{d}.{d}.{d}.{d}", .{ address[0], address[1], address[2], address[3] }) catch return out;
-    _ = text;
-    return out;
 }

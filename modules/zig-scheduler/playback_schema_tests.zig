@@ -69,17 +69,19 @@ test "AES67 schema block matches the disabled-by-default transport contract" {
     try std.testing.expectEqual(@as(usize, 2), items(field(aes67, "type")).len);
     const additional = field(aes67, "additionalProperties");
     try std.testing.expect(additional == .bool and !additional.bool);
-    // flows are mandatory; the removed mirror fields are gone from the schema.
-    try std.testing.expect(containsString(field(aes67, "required"), "flows"));
+    // flows are optional now: auto/single derive them from groupBase.
+    try std.testing.expect(!containsString(field(aes67, "required"), "flows"));
     const properties = field(aes67, "properties");
+    try std.testing.expectEqual(@as(i64, 48_000), field(field(properties, "sampleRate"), "default").integer);
+    try std.testing.expectEqual(@as(i64, 1_000), field(field(properties, "ptimeUs"), "default").integer);
     try std.testing.expect(field(properties, "destIp") == .null);
     try std.testing.expect(field(properties, "port") == .null);
     const flows = field(properties, "flows");
     try std.testing.expect(flows == .object);
     try std.testing.expectEqualStrings("array", field(flows, "type").string);
     const frames = field(properties, "framesPerPacket");
-    try std.testing.expectEqual(@as(i64, 48), field(frames, "const").integer);
-    try std.testing.expectEqual(@as(i64, 48), field(frames, "default").integer);
+    try std.testing.expectEqualStrings("integer", field(frames, "type").string);
+    try std.testing.expectEqual(@as(i64, 768), field(frames, "maximum").integer);
     try std.testing.expectEqual(@as(i64, cfg.default_payload_type), field(field(properties, "payloadType"), "default").integer);
     try std.testing.expectEqual(@as(i64, cfg.default_ring_packets), field(field(properties, "ringPackets"), "default").integer);
     try std.testing.expectEqual(@as(i64, cfg.default_prebuffer_frames), field(field(properties, "prebufferFrames"), "default").integer);
@@ -104,7 +106,7 @@ test "AES67 conditional branch requires config and 48 kHz while ASIO/AoIP/WASAPI
     try std.testing.expect(containsString(source_policy, "unified"));
     try std.testing.expect(!containsString(source_policy, "active"));
     try std.testing.expectEqualStrings("object", field(field(thenProperties, "aes67"), "type").string);
-    try std.testing.expectEqual(@as(i64, 48000), field(field(thenProperties, "sampleRate"), "const").integer);
+    try std.testing.expect(field(field(thenProperties, "sampleRate"), "enum") == .array);
     const asio = findBranch(all, "asio");
     const aoip = findBranch(all, "aoip").?;
     const wasapi = findBranch(all, "wasapi").?;
@@ -192,11 +194,11 @@ test "flows sub-schema persists a full per-flow destination tuple with Plan A de
     try std.testing.expectEqualStrings("", field(source, "default").string);
     // TTL stays an inherit-by-default per-flow override.
     try std.testing.expectEqual(@as(i64, 0), field(field(properties, "ttl"), "default").integer);
-    // The flows contract documents the explicit per-flow destination rule,
-    // the Plan A/B usage and the same-group rejection.
+    // The flows contract documents the auto-derived plan, the 8-channel
+    // media-profile cap and the standard shared 5004 port.
     const description = field(flows, "description");
     try std.testing.expect(description == .string);
-    try std.testing.expect(std.mem.indexOf(u8, description.string, "EXPLICIT") != null);
-    try std.testing.expect(std.mem.indexOf(u8, description.string, "Plan A") != null);
-    try std.testing.expect(std.mem.indexOf(u8, description.string, "Aes67DuplicateFlowGroup") != null);
+    try std.testing.expect(std.mem.indexOf(u8, description.string, "Optional explicit flows") != null);
+    try std.testing.expect(std.mem.indexOf(u8, description.string, "16ch = 2 x 8ch") != null);
+    try std.testing.expect(std.mem.indexOf(u8, description.string, "5004") != null);
 }

@@ -1,9 +1,10 @@
 use crate::{
     ptp::{self, Follower, codec::ClockId},
-    rtp::{self, Flow, Grid, Output, ring::Ring},
+    rtp::{self, Encoding, Flow, Grid, Output, ring::Ring},
     sdp::{self, Reference, Sap},
     time::{
-        ClockFit, NS_PER_MS, RATE_LIMIT_PPM, TimestampMode, fit_rms_limit_ns, timestamp_source,
+        ClockFit, NS_PER_MS, PacketTiming, RATE_LIMIT_PPM, TimestampMode, fit_rms_limit_ns,
+        timestamp_source,
     },
 };
 use std::{
@@ -33,7 +34,9 @@ const SENDER_EXITED: u32 = 2;
 const STOP_COMPLETE: u32 = 3;
 const PTP_LOST: u32 = 4;
 const MAX_EVENTS: usize = 32;
-const SAP_INTERVAL_NS: i128 = 300_000_000_000;
+/// DNS-SD/SAP: repeat a deletion three times for loss robustness, as the
+/// daemon does (sap.hpp max_deletions = 3).
+const SAP_DELETE_REPEATS: u32 = 3;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug)]
@@ -72,6 +75,11 @@ pub struct Config {
     pub lock_timeout: Duration,
     pub flows: Vec<Flow>,
     pub sap: bool,
+    pub sap_interval: Duration,
+    pub sap_destination: std::net::Ipv4Addr,
+    pub timing: PacketTiming,
+    pub encoding: Encoding,
+    pub redundant: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -114,12 +122,22 @@ struct Audio {
     accept: bool,
     discard: bool,
 }
+
+/// One announced SDP and its RFC 2974 message identifier hash. The hash is a
+/// CRC-16 of exactly the bytes announced, so any description change yields a
+/// new identity and a deletion can reference the old one.
+#[derive(Clone)]
+struct Description {
+    sdp: String,
+    hash: u16,
+}
+
 struct Run {
     config: Arc<Config>,
     audio: Mutex<Audio>,
     cancel: AtomicBool,
     counters: Mutex<Counters>,
-    descriptions: Mutex<Vec<String>>,
+    descriptions: Mutex<Vec<Description>>,
 }
 
 struct Worker {
@@ -250,7 +268,6 @@ impl Session {
         event(&self.events, STOP_COMPLETE, Failure::new(0));
         0
     }
-
     pub fn poll(&self) -> Option<Event> {
         lock(&self.events).pop_front()
     }
@@ -271,7 +288,7 @@ impl Session {
             return INVALID;
         }
         let descriptions = lock(&worker.run.descriptions);
-        descriptions.get(index).map_or(STATE, |sdp| use_sdp(sdp))
+        descriptions.get(index).map_or(STATE, |sdp| use_sdp(&sdp.sdp))
     }
 
     /// The caller keeps the PCM readable until this function returns. Shared
@@ -323,6 +340,9 @@ mod pacer;
 struct Network {
     ptp: Follower,
     outputs: Vec<Output>,
+    /// ST 2022-7 duplicate legs on the secondary port (primary + 2). Empty when
+    /// redundancy is disabled.
+    secondary: Vec<Output>,
     sap: Vec<Sap>,
     id: u64,
 }
@@ -337,17 +357,30 @@ impl Network {
             .flows
             .iter()
             .cloned()
-            .map(Output::open)
+            .map(|flow| Output::open(flow, config.encoding))
             .collect::<io::Result<_>>()?;
-        let id = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as u64;
+        let secondary: Vec<Output> = if config.redundant {
+            config
+                .flows
+                .iter()
+                .cloned()
+                .map(|flow| {
+                    let mut flow = flow;
+                    flow.destination = std::net::SocketAddrV4::new(
+                        *flow.destination.ip(),
+                        flow.destination.port() + 2,
+                    );
+                    Output::open(flow, config.encoding)
+                })
+                .collect::<io::Result<_>>()?
+        } else {
+            Vec::new()
+        };
+        let id = stable_session_id(config);
         let sap = if config.sap {
             outputs
                 .iter()
-                .enumerate()
-                .map(|(i, flow)| Sap::open(flow, (id as u16).wrapping_add(i as u16)))
+                .map(|output| Sap::open(output, config.sap_destination))
                 .collect::<io::Result<_>>()?
         } else {
             Vec::new()
@@ -355,6 +388,7 @@ impl Network {
         Ok(Self {
             ptp,
             outputs,
+            secondary,
             sap,
             id,
         })
@@ -366,7 +400,7 @@ impl Network {
         events: &Events,
         startup: &mut Option<mpsc::SyncSender<Result<(), Failure>>>,
     ) -> Result<(), Failure> {
-        let mut stream = Stream::new(run.config.channels, self.outputs.len());
+        let mut stream = Stream::new(run.config.channels, self.outputs.len() + self.secondary.len(), run.config.timing);
         let holdover_ms = std::env::var("NSP_AES67_HOLDOVER_MS")
             .ok()
             .and_then(|value| value.parse::<u32>().ok())
@@ -380,6 +414,7 @@ impl Network {
             .filter(|slots| (1..=10).contains(slots))
             .unwrap_or(8);
         let pacer = pacer::Pacer::new();
+        let spin_ns = (run.config.timing.slot_period_ns() / 8).clamp(1, 500_000);
         let mut next_log = 0;
         let mut deadline = Instant::now() + run.config.lock_timeout;
         let outcome = loop {
@@ -396,10 +431,11 @@ impl Network {
                 && stream.holdover_until.is_none()
                 && stream.gm != clock.map(|(gm, _)| gm)
             {
+                // Keep RTP and SAP alive during holdover: the announcement is
+                // only withdrawn when RTP actually pauses (audit 2026-11-23,
+                // issue 3; RFC 2974 requires consistency with the media).
                 stream.holdover_until = Some(now + holdover_ns);
-                lock(&run.descriptions).clear();
                 lock(&run.counters).locked = 0;
-                self.announce(run, &stream.descriptions, true);
                 event(events, PTP_LOST, Failure::new(0));
                 log_transition = true;
             }
@@ -425,10 +461,19 @@ impl Network {
                 }
                 stream.last_fit = Some(fit);
                 self.update_clock(run, now, fit);
-                if now >= stream.next_sap && !self.sap.is_empty() {
-                    self.announce(run, &stream.descriptions, false);
-                    stream.next_sap = now + SAP_INTERVAL_NS;
-                }
+            }
+            // SAP follows the media: announce while locked and while RTP is
+            // still flowing in holdover. A re-lock raises the SDP version and
+            // changes the hash instead of delete+re-announce flapping.
+            if now >= stream.next_sap
+                && !self.sap.is_empty()
+                && !stream.descriptions.is_empty()
+                && (clock.is_some() || stream.holdover_until.is_some())
+            {
+                self.announce(run, &stream.descriptions, false);
+                stream.next_sap = now
+                    + duration_ns(run.config.sap_interval)
+                    + rfc2974_offset(run.config.sap_interval, self.id ^ now as u64);
             }
             let pacing_fit = clock
                 .map(|(_, fit)| fit)
@@ -456,13 +501,17 @@ impl Network {
                 let pcm = stream.pcm.take();
                 let ring_frames = lock(&run.audio).ring.frames();
                 let metrics = &stream.pacing;
+                let samples = run.config.timing.samples_per_packet();
                 let _ = writeln!(
                     io::stderr(),
-                    "nsp_aes67 pacing unix_ns={unix_ns} state={state} timer={} priority={} max_catch_up_slots={max_catch_up} packetsSent={} framesSent={} due_slots={} caught_up_slots={} dropped_slots={} max_wake_late_us={} p99_wake_late_us={} ring_dropped={} send_errors={} silent_packets={} ring_frames={} consumed_frames={} nonzero_frames={} peak_abs={:.3} nonzero_frames_total={}",
+                    "nsp_aes67 pacing unix_ns={unix_ns} state={state} timer={} priority={} rate={} ptime_us={} samples_per_packet={} max_catch_up_slots={max_catch_up} packetsSent={} framesSent={} due_slots={} caught_up_slots={} dropped_slots={} max_wake_late_us={} p99_wake_late_us={} ring_dropped={} send_errors={} silent_packets={} ring_frames={} consumed_frames={} nonzero_frames={} peak_abs={:.3} nonzero_frames_total={}",
                     pacer.timer(),
                     pacer.priority(),
+                    run.config.timing.sample_rate(),
+                    run.config.timing.packet_time_us(),
+                    samples,
                     c.packets,
-                    c.packets.saturating_mul(rtp::FRAMES as u64),
+                    c.packets.saturating_mul(u64::from(samples)),
                     metrics.due_slots,
                     metrics.caught_up_slots,
                     metrics.dropped_slots,
@@ -479,11 +528,12 @@ impl Network {
                 );
                 let _ = writeln!(
                     io::stderr(),
-                    "nsp_aes67 ptp unix_ns={unix_ns} state={state} timestamping={mode:?} offset_ns={} rate_ppm={} fit_rms_ns={} rms_limit_ns={} rate_limit_ppm={RATE_LIMIT_PPM} holdover_ms={holdover_ms} {:?}",
+                    "nsp_aes67 ptp unix_ns={unix_ns} state={state} timestamping={mode:?} offset_ns={} rate_ppm={} fit_rms_ns={} rms_limit_ns={} rate_limit_ppm={RATE_LIMIT_PPM} holdover_ms={holdover_ms} sap_interval_ms={} {:?}",
                     c.offset_ns,
                     c.rate_ppm,
                     c.fit_rms_ns,
                     fit_rms_limit_ns(mode),
+                    run.config.sap_interval.as_millis(),
                     self.ptp.diagnostics()
                 );
                 next_log = now + 1_000 * NS_PER_MS;
@@ -495,26 +545,22 @@ impl Network {
                 if let Some(batch) = stream.grid.due(ptp_ns, max_catch_up) {
                     stream.pacing.batch(&batch);
                     self.drop_backlog(run, &stream, batch.dropped);
-                    let send = batch.stamps().try_for_each(|stamp| {
-                        self.send_interval(run, &mut stream, stamp, diagnostic)
-                    });
-                    if let Err(error) = send {
-                        break Err(error);
+                    for slot in batch.slot_range() {
+                        self.send_interval(run, &mut stream, stream_timestamp(run, slot), diagnostic)?;
                     }
                 }
                 let deadline = stream.grid.next_ns();
                 let remaining = deadline - fit.ptp_ns(self.ptp.now_ns());
-                const SPIN_NS: i128 = 500_000;
-                if remaining > SPIN_NS {
+                if remaining > spin_ns {
                     pacer.wait(Duration::from_nanos(
-                        (remaining - SPIN_NS).min(NS_PER_MS) as u64
+                        (remaining - spin_ns).min(NS_PER_MS) as u64
                     ));
                 }
                 // In case a new fit has moved the next grid slot noticeably,
                 // return to PTP polling instead of spinning for the entire gap.
                 while {
                     let remaining = deadline - fit.ptp_ns(self.ptp.now_ns());
-                    (1..=SPIN_NS).contains(&remaining)
+                    (1..=spin_ns).contains(&remaining)
                 } {
                     std::hint::spin_loop();
                 }
@@ -539,7 +585,7 @@ impl Network {
     ) {
         stream.gm = Some(gm);
         if !preserve_grid {
-            stream.grid = Grid::default();
+            stream.grid = Grid::new(run.config.timing);
         }
         stream.version += 1;
         stream.next_sap = now;
@@ -548,7 +594,12 @@ impl Network {
             .iter()
             .enumerate()
             .map(|(i, output)| {
-                sdp::describe(
+                let secondary_port = if run.config.redundant {
+                    Some(output.flow.destination.port() + 2)
+                } else {
+                    None
+                };
+                let sdp = sdp::describe(
                     &run.config.name,
                     output,
                     i,
@@ -559,22 +610,21 @@ impl Network {
                     }),
                     self.id.wrapping_add(i as u64),
                     stream.version,
-                )
+                    run.config.timing,
+                    secondary_port,
+                );
+                Description {
+                    hash: sdp::crc16(sdp.as_bytes()),
+                    sdp,
+                }
             })
             .collect();
         *lock(&run.descriptions) = stream.descriptions.clone();
         lock(&run.audio).discard = false;
-        if !preserve_grid {
-            for output in &mut self.outputs {
-                // A re-anchor opens a new stream epoch; only its first packet
-                // carries the RTP marker bit.
-                output.restart();
-            }
-        }
+        stream.prebuffered = false;
     }
 
     fn deactivate(&self, run: &Run, stream: &mut Stream, rediscover: bool) {
-        lock(&run.descriptions).clear();
         {
             let mut audio = lock(&run.audio);
             let discarded = audio.ring.frames() as u64;
@@ -585,9 +635,12 @@ impl Network {
             counters.locked = 0;
             counters.dropped += discarded;
         }
-        if stream.gm.take().is_some() && stream.holdover_until.is_none() {
+        if !stream.descriptions.is_empty() {
             self.announce(run, &stream.descriptions, true);
         }
+        stream.descriptions.clear();
+        lock(&run.descriptions).clear();
+        stream.gm = None;
         stream.holdover_until = None;
         stream.last_fit = None;
         stream.prebuffered = false;
@@ -601,13 +654,16 @@ impl Network {
         c.fit_rms_ns = fit.rms_ns;
     }
 
-    fn announce(&self, run: &Run, descriptions: &[String], delete: bool) {
-        let failures = self
-            .sap
-            .iter()
-            .zip(descriptions)
-            .filter(|(sap, sdp)| sap.publish(sdp, delete).is_err())
-            .count();
+    fn announce(&self, run: &Run, descriptions: &[Description], delete: bool) {
+        let repeats = if delete { SAP_DELETE_REPEATS } else { 1 };
+        let mut failures = 0;
+        for _ in 0..repeats {
+            for (sap, description) in self.sap.iter().zip(descriptions) {
+                if sap.publish(description.hash, &description.sdp, delete).is_err() {
+                    failures += 1;
+                }
+            }
+        }
         if failures != 0 {
             lock(&run.counters).errors += failures as u64;
         }
@@ -617,7 +673,7 @@ impl Network {
         if dropped == 0 {
             return;
         }
-        let frames = dropped.saturating_mul(rtp::FRAMES as u64);
+        let frames = dropped.saturating_mul(u64::from(run.config.timing.samples_per_packet()));
         let discarded = if stream.prebuffered {
             lock(&run.audio).ring.skip(frames)
         } else {
@@ -626,7 +682,7 @@ impl Network {
         let mut c = lock(&run.counters);
         c.late = c.late.saturating_add(frames);
         c.dropped = c.dropped.saturating_add(discarded);
-        for output in &mut self.outputs {
+        for output in self.outputs.iter_mut().chain(self.secondary.iter_mut()) {
             output.drop_slots(dropped);
         }
     }
@@ -638,25 +694,32 @@ impl Network {
         stamp: u32,
         diagnostic: bool,
     ) -> Result<(), Failure> {
+        let samples = run.config.timing.samples_per_packet() as usize;
+        let len = samples * run.config.channels;
         let silent = {
             let mut audio = lock(&run.audio);
             stream.prebuffered |= audio.ring.frames() >= run.config.prebuffer;
             if stream.prebuffered {
-                audio.ring.consume(&mut stream.samples)
+                audio.ring.consume(&mut stream.samples[..len])
             } else {
-                stream.samples.fill(0.0);
+                stream.samples[..len].fill(0.0);
                 true
             }
         };
         if diagnostic {
-            stream.pcm.account(&stream.samples, run.config.channels);
+            stream.pcm.account(&stream.samples[..len], run.config.channels);
         }
         let mut packets = 0;
         let mut bytes = 0;
         let mut errors = 0;
         let mut fatal = None;
-        for (channel, output) in self.outputs.iter_mut().enumerate() {
-            match output.send(stamp, &stream.samples, run.config.channels) {
+        for (channel, output) in self
+            .outputs
+            .iter_mut()
+            .chain(self.secondary.iter_mut())
+            .enumerate()
+        {
+            match output.send(stamp, &stream.samples[..len], run.config.channels) {
                 Ok(size) => {
                     packets += 1;
                     bytes += size as u64;
@@ -685,8 +748,54 @@ impl Network {
     }
 }
 
+/// Stable per-configuration session id for the SDP origin line. Using a
+/// launch timestamp makes the daemon's auto_sinks_update see a brand new
+/// session on every restart; hashing the transport configuration keeps o=
+/// stable while the stream shape is unchanged (audit 2026-11-23, item 2).
+fn stable_session_id(config: &Config) -> u64 {
+    let mut hash: u64 = 0xCBF2_9CE4_8422_2325;
+    let mut feed = |bytes: &[u8]| {
+        for &byte in bytes {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01B3);
+        }
+    };
+    feed(config.name.as_bytes());
+    feed(&(config.channels as u32).to_be_bytes());
+    feed(&config.timing.sample_rate().to_be_bytes());
+    feed(&config.timing.packet_time_us().to_be_bytes());
+    feed(&config.encoding.abi().to_be_bytes());
+    for flow in &config.flows {
+        feed(&flow.destination.ip().octets());
+        feed(&flow.destination.port().to_be_bytes());
+        feed(&(flow.channels as u32).to_be_bytes());
+        feed(&(flow.offset as u32).to_be_bytes());
+        feed(&flow.payload_type.to_be_bytes());
+    }
+    if hash == 0 { 1 } else { hash }
+}
+
+/// RFC 2974 clause 3.1 offset: rand(interval*2/3) - interval/3, keeping the
+/// average announcement interval while avoiding lockstep with other senders.
+fn rfc2974_offset(interval: Duration, seed: u64) -> i128 {
+    let interval_ns = duration_ns(interval);
+    if interval_ns <= 0 {
+        return 0;
+    }
+    let random = ((seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407))
+        >> 33) as i128;
+    random % interval_ns - interval_ns / 3
+}
+
+fn duration_ns(duration: Duration) -> i128 {
+    duration.as_nanos() as i128
+}
+
+fn stream_timestamp(run: &Run, slot: i128) -> u32 {
+    run.config.timing.timestamp(slot)
+}
 const WAKE_BUCKET_US: u64 = 10;
-const WAKE_BUCKETS: usize = 1201; // 0–12 ms, with the last bucket including larger delays.
+const WAKE_BUCKETS: usize = 1201; // 0-12 ms, with the last bucket including larger delays.
 
 struct PacingMetrics {
     due_slots: u64,
@@ -745,7 +854,7 @@ impl PacingMetrics {
 }
 
 /// Diagnostics-only view of the interleaved PCM the pacing loop consumes.
-/// One 1 ms block is accounted per send interval, and only while
+/// One packet block is accounted per send interval, and only while
 /// NSP_AES67_PTP_DIAGNOSTICS is enabled, so the audio path stays unchanged.
 #[derive(Default)]
 struct PcmConsumption {
@@ -805,22 +914,22 @@ struct Stream {
     grid: Grid,
     prebuffered: bool,
     samples: Vec<f32>,
-    descriptions: Vec<String>,
+    descriptions: Vec<Description>,
     version: u64,
     next_sap: i128,
     io_streak: Vec<u32>,
 }
 impl Stream {
-    fn new(channels: usize, flows: usize) -> Self {
+    fn new(channels: usize, flows: usize, timing: PacketTiming) -> Self {
         Self {
             gm: None,
             pacing: PacingMetrics::new(),
             pcm: PcmConsumption::default(),
             holdover_until: None,
             last_fit: None,
-            grid: Grid::default(),
+            grid: Grid::new(timing),
             prebuffered: false,
-            samples: vec![0.0; channels * rtp::FRAMES],
+            samples: vec![0.0; channels * timing.samples_per_packet() as usize],
             descriptions: Vec::new(),
             version: 0,
             next_sap: 0,
@@ -833,6 +942,39 @@ impl Stream {
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
+
+    fn test_config() -> Config {
+        Config {
+            channels: 1,
+            inputs: 1,
+            map: vec![0],
+            labels: vec!["CH1".into()],
+            name: "test".into(),
+            capacity: 48,
+            prebuffer: 48,
+            mode: TimestampMode::Auto,
+            ptp: ptp::Config {
+                domain: 0,
+                pinned_gm: None,
+                interface: Ipv4Addr::LOCALHOST,
+                multicast: Ipv4Addr::new(224, 0, 1, 129),
+                unicast_master: Some(Ipv4Addr::LOCALHOST),
+                event_port: 319,
+                general_port: 320,
+                local_event_port: 0,
+                local_general_port: 0,
+            },
+            lock_timeout: Duration::from_secs(1),
+            flows: vec![],
+            sap: false,
+            sap_interval: Duration::from_secs(30),
+            sap_destination: std::net::Ipv4Addr::new(224, 2, 127, 254),
+            timing: PacketTiming::new(48_000, 1_000).unwrap(),
+            encoding: Encoding::L24,
+            redundant: false,
+        }
+    }
+
     #[test]
     fn pcm_consumption_reports_nonzero_frames_and_peak() {
         let mut pcm = PcmConsumption::default();
@@ -858,30 +1000,7 @@ mod tests {
             wait.recv().unwrap();
         });
         let run = Arc::new(Run {
-            config: Arc::new(Config {
-                channels: 1,
-                inputs: 1,
-                map: vec![0],
-                labels: vec!["CH1".into()],
-                name: "test".into(),
-                capacity: 48,
-                prebuffer: 48,
-                mode: TimestampMode::Auto,
-                ptp: ptp::Config {
-                    domain: 0,
-                    pinned_gm: None,
-                    interface: Ipv4Addr::LOCALHOST,
-                    multicast: Ipv4Addr::new(224, 0, 1, 129),
-                    unicast_master: Some(Ipv4Addr::LOCALHOST),
-                    event_port: 319,
-                    general_port: 320,
-                    local_event_port: 0,
-                    local_general_port: 0,
-                },
-                lock_timeout: Duration::from_secs(1),
-                flows: vec![],
-                sap: false,
-            }),
+            config: Arc::new(test_config()),
             audio: Mutex::new(Audio {
                 ring: Ring::new(48, 1),
                 accept: true,
