@@ -83,8 +83,9 @@ function render(){
   field(body,'aes67.payloadType','RTP payloadType','integer',null,'动态负载类型范围 96–127，AES67 默认 96。');
   const baseSsrc=field(body,'aes67.ssrc','SSRC（0x0 = 默认）','ssrc',null,'0x0 使用固定默认 0x4E535036（NSP6）；非 0 时按填写值发送并在 SDP 通告。多流时每流 SSRC 在下表逐流显示与保存（自动分配 = 基准 + 流序号）。');baseSsrc.value=formatAes67Ssrc(working.aes67?.ssrc??0);
   field(body,'aes67.srcInterfaceIp','源网卡绑定 IP（可空）','text',null,'留空由系统路由选择发送网卡；填写时必须是本机单播 IPv4。组播目标必填。');
-  field(body,'aes67.ptpGmid','PTP GMID（本阶段必须留空）','text',null,'本阶段发送端没有 PTP 锁源，必须留空；填写任何值都会被后端拒绝（SDP 使用 ts-refclk:local）。');
-  field(body,'aes67.ptpDomain','PTP domain（0–127）','integer');
+  field(body,'aes67.ptp.domain','PTP domain（0–127）','integer');
+  field(body,'aes67.ptp.lockTimeoutMs','PTP 锁定超时（ms）','integer');
+  field(body,'aes67.ptp.timestamping','PTP 时间戳模式','text',['auto','software','hardware'].map(value=>({value,label:value})));
   field(body,'aes67.ttl','组播 TTL（1–255）','integer',null,'仅组播目标生效，默认 32；单播忽略。逐流 TTL 为 0 时继承此值。');
   field(body,'aes67.ringPackets','环形缓冲包数','integer',null,'范围 8–1024，每包 1 ms；溢出会丢最旧音频并计入 ringDroppedFrames。');
   field(body,'aes67.prebufferFrames','发送前预缓冲（源帧）','integer',null,'48–48000 帧且不超过 ringPackets × 48；只影响发送状态机。');

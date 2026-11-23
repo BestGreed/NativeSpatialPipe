@@ -47,16 +47,15 @@ export const channelLabels=['L','R','C','LFE','Ls','Rs','Lrs','Rrs','Ltf','Rtf',
 export const orders={olr:[0,1,2,3,4,5,6,7,8,9,10,11],'dvs-speakers':[0,2,1,5,4,7,6,3,10,8,9,11]};
 export function getPath(object,path){return path.split('.').reduce((value,key)=>value?.[key],object);}
 export function setPath(object,path,value){const keys=path.split('.');let target=object;for(const key of keys.slice(0,-1)){target[key]??={};target=target[key];}target[keys.at(-1)]=value;}
-export const supportsActiveSource=backend=>backend==='aoip'||backend==='aes67';
+export const supportsActiveSource=backend=>backend==='aoip';
 function normalizeSourcePolicy(value){
  value.sourcePolicy??=value.outputBackend==='aoip'?'active':'fixed';
  if(value.sourcePolicy==='active'&&!supportsActiveSource(value.outputBackend))value.sourcePolicy='fixed';
 }
 export function updateSourceSelection(value,previousBackend){
  const backend=value.outputBackend;
- // Preserve policy choices between network transports. Native AoIP still
- // defaults to active when switching from a device backend in fixed mode.
- if(previousBackend&&previousBackend!==backend&&!supportsActiveSource(previousBackend)&&
+ // Native AoIP defaults to active when switching from a device backend.
+ if(previousBackend&&previousBackend!==backend&&previousBackend!=='aes67'&&!supportsActiveSource(previousBackend)&&
     backend==='aoip'&&value.sourcePolicy==='fixed')value.sourcePolicy='active';
  normalizeSourcePolicy(value);
  if(value.sourcePolicy==='unified'&&value.renderer==='lira')value.sourcePolicy='fixed';
@@ -79,6 +78,8 @@ export function prepare(config,id){
   // selected, so normalise it in place instead of dropping or recreating it.
   if(value.aes67&&typeof value.aes67==='object')value.aes67={...aes67Defaults,...value.aes67};
   else if(value.outputBackend==='aes67')value.aes67={...aes67Defaults,flows:proposeAes67Flows(layoutFor(value.outputLayout).channels.length)};
+  if(value.aes67?.ptp==null&&value.aes67)value.aes67.ptp={domain:value.aes67.ptpDomain,lockTimeoutMs:5000,timestamping:'auto'};
+  else if(value.aes67?.ptp&&typeof value.aes67.ptp==='object'&&!Array.isArray(value.aes67.ptp))value.aes67.ptp={domain:0,lockTimeoutMs:5000,timestamping:'auto',...value.aes67.ptp};
   value.recording??={};value.recording.pcm??=false;value.recording.telemetrySnapshots??=false;value.recording.rawStreamStats??=false;
   if(value.notebookFilterFile&&!value.lsac){
    value.lsac={enabled:true,filterFile:value.notebookFilterFile,virtualBass:value.notebookVirtualBass,loudness:value.outputProcessing?.loudness};
@@ -204,8 +205,17 @@ export function aes67BlockProblems(aes,channels){
  if(!intRange(aes?.payloadType,96,127))problems.push({path:'aes67.payloadType',message:'AES67 payloadType 必须在 96–127'});
  if(!intRange(aes?.ssrc,0,4294967295))problems.push({path:'aes67.ssrc',message:'AES67 SSRC 必须在 0–4294967295'});
  if(String(aes?.srcInterfaceIp??'')!==''&&!unicastIpv4(aes?.srcInterfaceIp))problems.push({path:'aes67.srcInterfaceIp',message:'AES67 源网卡 IP 必须留空或为有效的单播 IPv4'});
- if(String(aes?.ptpGmid??'').trim()!=='')problems.push({path:'aes67.ptpGmid',message:'AES67 本阶段没有 PTP 锁源，PTP GMID 必须留空'});
+ if(String(aes?.ptpGmid??'').trim()!=='')problems.push({path:'aes67.ptpGmid',message:'AES67 PTP GMID 必须留空，由模块从锁定的时钟取得'});
  if(!intRange(aes?.ptpDomain,0,127))problems.push({path:'aes67.ptpDomain',message:'AES67 PTP domain 必须在 0–127'});
+ if(aes?.ptp!=null){
+  const ptp=aes.ptp;
+  if(typeof ptp!=='object'||Array.isArray(ptp))problems.push({path:'aes67.ptp',message:'AES67 PTP 配置必须是对象'});
+  else{
+   if(Object.hasOwn(ptp,'domain')&&!intRange(ptp.domain,0,127))problems.push({path:'aes67.ptp.domain',message:'AES67 PTP domain 必须在 0–127'});
+   if(Object.hasOwn(ptp,'lockTimeoutMs')&&!intRange(ptp.lockTimeoutMs,100,120000))problems.push({path:'aes67.ptp.lockTimeoutMs',message:'AES67 PTP 锁定超时必须在 100–120000 ms'});
+   if(Object.hasOwn(ptp,'timestamping')&&!['auto','software','hardware'].includes(ptp.timestamping))problems.push({path:'aes67.ptp.timestamping',message:'AES67 PTP 时间戳模式必须是 auto、software 或 hardware'});
+  }
+ }
  if(!intRange(aes?.ringPackets,8,1024))problems.push({path:'aes67.ringPackets',message:'AES67 环形缓冲包数必须在 8–1024'});
  if(!intRange(aes?.prebufferFrames,48,48000)||(intRange(aes?.ringPackets,8,1024)&&intRange(aes?.prebufferFrames,0,1e9)&&aes.prebufferFrames>aes.ringPackets*48))problems.push({path:'aes67.prebufferFrames',message:'AES67 预缓冲必须在 48–48000 帧且不超过 ringPackets × 48'});
  if(!intRange(aes?.ttl,1,255))problems.push({path:'aes67.ttl',message:'AES67 组播 TTL 必须在 1–255'});
@@ -256,7 +266,7 @@ export function validateAes67(value){
  else if(value?.outputBackend==='aes67')problems.push({path:'aes67.flows.0.destIp',message:'AES67 后端需要完整的 aes67 网络配置'});
  if(value?.outputBackend==='aes67'){
   if(value.sampleRate!==48000)problems.push({path:'sampleRate',message:'AES67 需要设备采样率 48000 Hz'});
-  if(!['active','fixed','unified'].includes(value.sourcePolicy))problems.push({path:'sourcePolicy',message:'AES67 选流方式必须是自动跟随活动流、固定源流或统一输入'});
+  if(!['fixed','unified'].includes(value.sourcePolicy))problems.push({path:'sourcePolicy',message:'AES67 选流方式必须是固定源流或统一输入'});
  }
  return problems;
 }

@@ -59,7 +59,7 @@ assert.equal(mixed.wasapiUpmix.modelPath,'C:/model.onnx');
 mixed.outputBackend='asio';
 assert.equal(updateSourceSelection(mixed,'aoip').sourcePolicy,'unified');
 for(const backend of ['aes67','aoip','asio','wasapi']){
- const network=backend==='aes67'||backend==='aoip';
+ const network=backend==='aoip';
  assert.equal(prepare({...original,outputBackend:backend},'playback').sourcePolicy,backend==='aoip'?'active':'fixed');
  for(const policy of ['active','fixed','unified']){
   const expected=policy==='active'&&!network?'fixed':policy;
@@ -107,8 +107,9 @@ assert.equal(deviceChannels({outputBackend:'aes67',outputLayout:'7.1.4'}).length
 // Legacy mirror keys are preserved for explicit repair and rejected on save.
 const legacy={...aes67Defaults,destIp:'192.0.2.20',port:5006,ringPackets:256};
 const kept=prepare({...asioBase,aes67:legacy},'playback');
-assert.deepEqual(kept.aes67,legacy);
-assert.deepEqual(finish(kept).aes67,legacy);
+const expectedLegacy={...legacy,ptp:{domain:0,lockTimeoutMs:5000,timestamping:'auto'}};
+assert.deepEqual(kept.aes67,expectedLegacy);
+assert.deepEqual(finish(kept).aes67,expectedLegacy);
 assert.ok(validateAes67(kept).some(problem=>problem.path==='aes67.destIp'));
 assert.ok(validateAes67(kept).some(problem=>problem.path==='aes67.port'));
 // Switching back to ASIO keeps a real AES67 block; only the empty flow-1
@@ -118,7 +119,7 @@ assert.equal(finish({...asioBase,aes67:{...aes67Defaults,flows:[{destIp:'',port:
 // A valid AES67 backend configuration passes client validation.
 assert.deepEqual(validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}),[]);
 assert.deepEqual(validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'unified',sampleRate:48000}),[]);
-assert.deepEqual(validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'active',sampleRate:48000}),[]);
+assert.ok(validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'active',sampleRate:48000}).some(problem=>problem.path==='sourcePolicy'));
 // Field-level problems mirror aes67_config.zig. Flow destinations validate
 // per flow; scalar transport fields validate at the top of the block.
 const invalidFlow=modifier=>validateAes67({...aesPrepared,aes67:{...aes67,flows:[{...aes67.flows[0],...modifier}]},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.flows.0.'+Object.keys(modifier)[0]);
@@ -152,7 +153,7 @@ assert.ok(invalidScalar({ttl:0}));
 // A block without any flow row is incomplete.
 assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,flows:[]},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.flows.0.destIp'));
 assert.ok(validateAes67({...asioBase,outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.flows.0.destIp'));
-const backendRule=validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'active',sampleRate:44100}).map(problem=>problem.path);
+const backendRule=validateAes67({...aesPrepared,aes67,outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:44100}).map(problem=>problem.path);
 assert.deepEqual(backendRule,['sampleRate']);
 assert.ok(validateAes67({...aesPrepared,aes67,sourcePolicy:'unknown'}).some(problem=>problem.path==='sourcePolicy'));
 assert.ok(validateAes67({...asioBase,aes67,sourcePolicy:'fixed',sampleRate:48000}).length===0);
@@ -207,7 +208,7 @@ assert.deepEqual(proposeAes67Flows(8).map(flow=>flow.channels),[8]);
 assert.deepEqual(proposeAes67Flows(10).map(flow=>flow.channels),[8,2]);
 const custom={...aes916,flows:[{...first,channels:6},{...first,destIp:'239.1.0.2',channels:6,channelOffset:6},{...first,destIp:'239.1.0.3',channels:4,channelOffset:12}],channelMap:aes67StandardChannelMap916};
 const saved=prepare({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',aes67:custom},'playback');
-assert.deepEqual(saved.aes67,custom);
+assert.deepEqual(saved.aes67,{...custom,ptp:expectedLegacy.ptp});
 assert.deepEqual(validateAes67(saved),[]);
 const draft={...aes916,flows:proposeAes67Flows(16,first)};
 materializeAes67Destinations(draft);

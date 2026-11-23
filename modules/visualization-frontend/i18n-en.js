@@ -1,7 +1,6 @@
 // Display text only. Configuration keys, protocol values and user data stay in
 // the shared page/model. Phrases also cover interpolated live-status messages.
 export const english=Object.freeze(Object.fromEntries(`
-上次发送报告=Last sender report
 旧版=Legacy
 目标字段=destination field
 已移除=has been removed
@@ -829,7 +828,20 @@ JSON 已应用到表单，尚未保存。=JSON applied to the form. Save to keep
 需要设备采样率=requires a device sample rate of
 选流方式必须是自动跟随活动流=source selection must be follow active stream
 固定源流或统一输入=fixed stream or unified input
-AES67 选流方式必须是自动跟随活动流、固定源流或统一输入=AES67 source selection must be follow active stream, fixed stream, or unified input
+AES67 选流方式必须是固定源流或统一输入=AES67 source selection must be fixed stream or unified input
+PTP 锁定超时（ms）=PTP lock timeout (ms)
+PTP 时间戳模式=PTP timestamping mode
+由模块从锁定的时钟取得=the module derives it from the locked clock
+配置必须是对象=configuration must be an object
+锁定超时必须在=lock timeout must be within
+时间戳模式必须是=timestamping mode must be
+选流方式必须是固定源流或统一输入=source selection must be fixed stream or unified input
+锁定超时=lock timeout
+时间戳模式=timestamping mode
+AES67 PTP 锁定超时必须在 100–120000 ms=AES67 PTP lock timeout must be 100–120000 ms
+AES67 PTP 时间戳模式必须是 auto、software 或 hardware=AES67 PTP timestamping must be auto, software, or hardware
+AES67 PTP GMID 必须留空，由模块从锁定的时钟取得=The AES67 module derives the GMID from the locked clock. Leave the configured GMID empty.
+AES67 PTP 配置必须是对象=AES67 PTP configuration must be an object.
 另有=plus
 项问题=more problems
 AES67 流 1 目标=AES67 flow 1 destination
