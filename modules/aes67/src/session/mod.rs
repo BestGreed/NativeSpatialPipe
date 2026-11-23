@@ -453,10 +453,12 @@ impl Network {
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_nanos();
+                let pcm = stream.pcm.take();
+                let ring_frames = lock(&run.audio).ring.frames();
                 let metrics = &stream.pacing;
                 let _ = writeln!(
                     io::stderr(),
-                    "nsp_aes67 pacing unix_ns={unix_ns} state={state} timer={} priority={} max_catch_up_slots={max_catch_up} packetsSent={} framesSent={} due_slots={} caught_up_slots={} dropped_slots={} max_wake_late_us={} p99_wake_late_us={} ring_dropped={} send_errors={}",
+                    "nsp_aes67 pacing unix_ns={unix_ns} state={state} timer={} priority={} max_catch_up_slots={max_catch_up} packetsSent={} framesSent={} due_slots={} caught_up_slots={} dropped_slots={} max_wake_late_us={} p99_wake_late_us={} ring_dropped={} send_errors={} silent_packets={} ring_frames={} consumed_frames={} nonzero_frames={} peak_abs={:.3} nonzero_frames_total={}",
                     pacer.timer(),
                     pacer.priority(),
                     c.packets,
@@ -468,6 +470,12 @@ impl Network {
                     metrics.p99_wake_late_us(),
                     c.dropped,
                     metrics.send_errors,
+                    c.silent,
+                    ring_frames,
+                    pcm.consumed_frames,
+                    pcm.nonzero_frames,
+                    pcm.peak_abs,
+                    pcm.nonzero_frames_total,
                 );
                 let _ = writeln!(
                     io::stderr(),
@@ -487,9 +495,9 @@ impl Network {
                 if let Some(batch) = stream.grid.due(ptp_ns, max_catch_up) {
                     stream.pacing.batch(&batch);
                     self.drop_backlog(run, &stream, batch.dropped);
-                    let send = batch
-                        .stamps()
-                        .try_for_each(|stamp| self.send_interval(run, &mut stream, stamp));
+                    let send = batch.stamps().try_for_each(|stamp| {
+                        self.send_interval(run, &mut stream, stamp, diagnostic)
+                    });
                     if let Err(error) = send {
                         break Err(error);
                     }
@@ -623,7 +631,13 @@ impl Network {
         }
     }
 
-    fn send_interval(&mut self, run: &Run, stream: &mut Stream, stamp: u32) -> Result<(), Failure> {
+    fn send_interval(
+        &mut self,
+        run: &Run,
+        stream: &mut Stream,
+        stamp: u32,
+        diagnostic: bool,
+    ) -> Result<(), Failure> {
         let silent = {
             let mut audio = lock(&run.audio);
             stream.prebuffered |= audio.ring.frames() >= run.config.prebuffer;
@@ -634,6 +648,9 @@ impl Network {
                 true
             }
         };
+        if diagnostic {
+            stream.pcm.account(&stream.samples, run.config.channels);
+        }
         let mut packets = 0;
         let mut bytes = 0;
         let mut errors = 0;
@@ -727,8 +744,61 @@ impl PacingMetrics {
     }
 }
 
+/// Diagnostics-only view of the interleaved PCM the pacing loop consumes.
+/// One 1 ms block is accounted per send interval, and only while
+/// NSP_AES67_PTP_DIAGNOSTICS is enabled, so the audio path stays unchanged.
+#[derive(Default)]
+struct PcmConsumption {
+    consumed_frames: u64,
+    nonzero_frames: u64,
+    peak_abs: f32,
+    nonzero_frames_total: u64,
+}
+
+struct PcmWindow {
+    consumed_frames: u64,
+    nonzero_frames: u64,
+    peak_abs: f32,
+    nonzero_frames_total: u64,
+}
+
+impl PcmConsumption {
+    /// A frame counts as nonzero when any of its channel samples is nonzero.
+    fn account(&mut self, samples: &[f32], channels: usize) {
+        if channels == 0 {
+            return;
+        }
+        self.consumed_frames += (samples.len() / channels) as u64;
+        for frame in samples.chunks_exact(channels) {
+            let peak = frame
+                .iter()
+                .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
+            if peak > 0.0 {
+                self.nonzero_frames += 1;
+                self.nonzero_frames_total += 1;
+            }
+            self.peak_abs = self.peak_abs.max(peak);
+        }
+    }
+
+    /// Snapshot the window since the previous diagnostics line and restart it.
+    fn take(&mut self) -> PcmWindow {
+        let window = PcmWindow {
+            consumed_frames: self.consumed_frames,
+            nonzero_frames: self.nonzero_frames,
+            peak_abs: self.peak_abs,
+            nonzero_frames_total: self.nonzero_frames_total,
+        };
+        self.consumed_frames = 0;
+        self.nonzero_frames = 0;
+        self.peak_abs = 0.0;
+        window
+    }
+}
+
 struct Stream {
     pacing: PacingMetrics,
+    pcm: PcmConsumption,
     gm: Option<ClockId>,
     holdover_until: Option<i128>,
     last_fit: Option<ClockFit>,
@@ -745,6 +815,7 @@ impl Stream {
         Self {
             gm: None,
             pacing: PacingMetrics::new(),
+            pcm: PcmConsumption::default(),
             holdover_until: None,
             last_fit: None,
             grid: Grid::default(),
@@ -762,6 +833,23 @@ impl Stream {
 mod tests {
     use super::*;
     use std::net::Ipv4Addr;
+    #[test]
+    fn pcm_consumption_reports_nonzero_frames_and_peak() {
+        let mut pcm = PcmConsumption::default();
+        pcm.account(&[0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, -0.25], 2);
+        let window = pcm.take();
+        assert_eq!(window.consumed_frames, 4);
+        assert_eq!(window.nonzero_frames, 2);
+        assert_eq!(window.peak_abs, 0.5);
+        assert_eq!(window.nonzero_frames_total, 2);
+        pcm.account(&[0.0; 8], 2);
+        let window = pcm.take();
+        assert_eq!(window.consumed_frames, 4);
+        assert_eq!(window.nonzero_frames, 0);
+        assert_eq!(window.peak_abs, 0.0);
+        assert_eq!(window.nonzero_frames_total, 2);
+    }
+
     #[test]
     fn join_timeout_retains_handle_for_a_clean_retry() {
         let session = Session::default();
