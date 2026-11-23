@@ -345,7 +345,7 @@ impl Follower {
                     Ok((n, SocketAddr::V4(peer), now)) => {
                         let ip = *peer.ip();
                         if self.config.unicast_master.is_none_or(|master| ip == master) {
-                            if let Some(message) = codec::decode(&buf[..n]) {
+                            if let Ok(message) = codec::decode(&buf[..n]) {
                                 self.state.receive(message, ip, now, event);
                             }
                         }

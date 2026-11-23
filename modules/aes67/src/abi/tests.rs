@@ -58,7 +58,13 @@ struct Mock {
     join: Option<JoinHandle<()>>,
 }
 impl Mock {
-    fn spawn(event: UdpSocket, general: UdpSocket, dest_event: u16, dest_general: u16) -> Self {
+    fn spawn(
+        event: UdpSocket,
+        general: UdpSocket,
+        dest_event: u16,
+        dest_general: u16,
+        version: u8,
+    ) -> Self {
         event.set_nonblocking(true).unwrap();
         general.set_nonblocking(true).unwrap();
         let stop = Arc::new(AtomicBool::new(false));
@@ -79,7 +85,9 @@ impl Mock {
                     correction_scaled_ns: 0,
                     body,
                 };
-                let _ = socket.send_to(codec::encode(msg, &mut bytes), (IP, target));
+                let length = codec::encode(msg, &mut bytes).len();
+                bytes[1] = version;
+                let _ = socket.send_to(&bytes[..length], (IP, target));
             };
             while !cancel.load(Ordering::Acquire) {
                 if Instant::now() >= next {
@@ -98,8 +106,8 @@ impl Mock {
                 }
                 if let Ok((len, _)) = event.recv_from(&mut buf) {
                     let rx = stamp();
-                    if let Some(request) =
-                        codec::decode(&buf[..len]).filter(|m| matches!(m.body, Body::DelayReq(_)))
+                    if let Ok(request) = codec::decode(&buf[..len])
+                        && matches!(request.body, Body::DelayReq(_))
                     {
                         send(
                             &general,
@@ -141,7 +149,16 @@ unsafe extern "C" fn release(token: *mut c_void) {
 }
 
 #[test]
-fn udp_mock_gm_drives_native_start_rtp_lease_loss_and_stop() {
+fn udp_mock_v20_gm_drives_native_start_rtp_lease_loss_and_stop() {
+    check_udp_mock_gm(0x02);
+}
+
+#[test]
+fn udp_mock_v21_gm_drives_native_start_rtp_lease_loss_and_stop() {
+    check_udp_mock_gm(0x12);
+}
+
+fn check_udp_mock_gm(version: u8) {
     let event = bind();
     let general = bind();
     let local_event = bind();
@@ -166,6 +183,7 @@ fn udp_mock_gm_drives_native_start_rtp_lease_loss_and_stop() {
         general,
         config.ptp_local_event_port,
         config.ptp_local_general_port,
+        version,
     );
     assert_eq!(unsafe { nsp_aes67_configure(handle.0, &config) }, 0);
     assert_eq!(unsafe { nsp_aes67_start(handle.0) }, 0);
@@ -276,6 +294,7 @@ fn udp_mock_gm_drives_native_start_rtp_lease_loss_and_stop() {
         general,
         config.ptp_local_event_port,
         config.ptp_local_general_port,
+        version,
     );
     let deadline = Instant::now() + Duration::from_millis(u64::from(config.lock_timeout_ms));
     while unsafe { nsp_aes67_sdp(handle.0, 0, ptr::null_mut(), 0) } <= 0 {

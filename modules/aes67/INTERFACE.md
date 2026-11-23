@@ -42,6 +42,8 @@ RTP timestamps are absolute PTP epoch frames modulo 2^32. At the PTP millisecond
 
 The follower uses two-step PTPv2 end-to-end Delay_Req exchanges over IPv4. It selects the first eligible announcing source, or the pinned GM if supplied, and clears the fit on identity change or expiry. It accepts time scale Announce messages and preserves the PTP epoch. The fit gates are eight exchanges spanning at least 750 ms, up to ±500 ppm, and an RMS residual up to 250 µs. The reported offset is PTP epoch nanoseconds minus local monotonic nanoseconds. A zero lock timeout selects 8000 ms and a zero loss timeout selects 3000 ms. Explicit timeout values must be 100–120000 ms.
 
+The UDP follower accepts default-profile PTPv2.0 (IEEE 1588-2008, version byte 0x02) and PTPv2.1 (IEEE 1588-2019, 0x12). The two versions share the base message offsets used here. The follower skips well-formed trailing TLVs and rejects unsupported versions and SDO IDs. Outgoing Delay_Req uses the interoperable v2.0 encoding.
+
 One SDP document is available per active flow. Optional SAP announces on UDP 9875, with 239.255.255.255 for administratively scoped RTP groups and 224.2.127.254 otherwise. The module withdraws announcements on loss or stop. RTCP is deferred.
 
 ## Windows build and artifact path
