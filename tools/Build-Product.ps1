@@ -22,6 +22,7 @@ if($WasapiUpmix){
  Build-Step 'modules/semantic-separator/Build-JointLive.ps1' @('-Cpu')
 }
 Build-Step 'modules/croksor/Build.ps1' @('-TargetDirectory','build/nsp-product/runtime','-Features','aoip-output')
+Build-Step 'modules/aes67/Build.ps1' @('-TargetDirectory','build/nsp-product/runtime')
 $frontend=Join-Path $root 'build/nsp-product/web'
 New-Item -ItemType Directory -Force $frontend | Out-Null
 Copy-Item -Path "$root/modules/visualization-frontend/*" -Destination $frontend -Recurse -Force
@@ -36,6 +37,7 @@ function Assert-DllExports([string]$RelativePath,[string[]]$Names) {
 }
 Assert-DllExports 'build/nsp-product/receiver/release/nsp_native_receiver.dll' @('nsp_receiver_start_priority_leased','nsp_receiver_route_snapshot','nsp_receiver_route_status')
 Assert-DllExports 'build/nsp-product/runtime/release/nsp_croksor.dll' @('nsp_pipeline_submit_input_leased','nsp_pipeline_create_unified_v3')
+Assert-DllExports 'build/nsp-product/runtime/release/nsp_aes67.dll' @('nsp_aes67_create','nsp_aes67_submit_leased','nsp_aes67_poll_lifecycle_event')
 if($PcmCapture -or $BrowserIdentity -or $WasapiUpmix){
  Assert-DllExports 'build/pcm-capture-v1/NSP.PcmCapture.dll' @('nsp_pcm_capture_open_multi','nsp_pcm_capture_source_mask','nsp_pcm_capture_activate_source')
  Assert-DllExports 'build/pcm-capture-v1/NSP.PcmIngress.dll' @('nsp_pcm_ingress_open_leased')
