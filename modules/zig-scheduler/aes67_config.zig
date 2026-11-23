@@ -26,6 +26,9 @@ pub const default_ssrc: u32 = 0;
 pub const default_ring_packets: u16 = 64;
 pub const default_prebuffer_frames: u32 = 480;
 pub const default_ptp_domain: u16 = 0;
+pub const default_ptp_priority: u8 = 128;
+/// AES67 Annex A Table A.1 announceReceiptTimeout default 3 x 2 s.
+pub const default_ptp_announce_timeout_ms: u32 = 6_000;
 pub const default_ttl: u8 = 32;
 pub const default_sap_interval_ms: u32 = 30_000;
 pub const auto_max_flows: u8 = 4;
@@ -110,14 +113,48 @@ pub const Flow = struct {
 };
 
 pub const Timestamping = enum(u32) { auto, software, hardware };
+/// PTP topology mode (DESIGN-TOPO.md section 2 / appended ABI ptp_mode):
+/// slave follows an external GM (pre-existing behavior), auto listens then
+/// falls back to gm when gmCapable else local, gm announces this sender,
+/// local uses a local media clock.
+pub const PtpMode = enum(u8) { slave = 0, auto = 1, gm = 2, local = 3 };
 pub const Ptp = struct {
     domain: u16 = default_ptp_domain,
     lockTimeoutMs: u32 = 5000,
     timestamping: Timestamping = .auto,
+    /// aes67.ptp.mode (frozen key, DESIGN audit D8). Default slave keeps the
+    /// pre-existing wait-for-external-GM behavior.
+    mode: PtpMode = .slave,
+    priority1: u8 = default_ptp_priority,
+    priority2: u8 = default_ptp_priority,
+    /// aes67.ptp.announceTimeoutMs: AUTO listening window and foreign-master
+    /// receipt timeout (1000..60000 ms).
+    announceTimeoutMs: u32 = default_ptp_announce_timeout_ms,
+    /// aes67.ptp.gmCapable: auto mode may announce a GM after the timeout.
+    gmCapable: bool = false,
+    /// aes67.ptp.gmUtcOffset: null = not configured (ARB, ptpTimescale=0);
+    /// 0..127 = currentUtcOffset seconds (ptpTimescale=1, offsetValid=1).
+    gmUtcOffset: ?u8 = null,
 
     pub fn validate(self: Ptp) !void {
         if (self.domain > 127) return error.InvalidAes67PtpDomain;
         if (self.lockTimeoutMs < 100 or self.lockTimeoutMs > 120000) return error.InvalidAes67PtpLockTimeout;
+        if (self.announceTimeoutMs < 1000 or self.announceTimeoutMs > 60000)
+            return error.InvalidAes67PtpAnnounceTimeout;
+        if (self.gmUtcOffset) |offset| {
+            if (offset > 127) return error.InvalidAes67PtpUtcOffset;
+        }
+    }
+    /// ABI ptp_mode value; gm mode implies ptp_gm_capable.
+    pub fn abiMode(self: Ptp) u8 {
+        return @intFromEnum(self.mode);
+    }
+    pub fn abiGmCapable(self: Ptp) u8 {
+        return @intFromBool(self.mode == .gm or self.gmCapable);
+    }
+    /// -1 sentinel = "not configured" (ARB) in the appended ABI field.
+    pub fn abiUtcOffset(self: Ptp) i16 {
+        return if (self.gmUtcOffset) |offset| @intCast(offset) else -1;
     }
 };
 

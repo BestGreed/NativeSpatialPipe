@@ -86,6 +86,12 @@ function render(){
   field(body,'aes67.ptp.domain','PTP domain（0–127）','integer');
   field(body,'aes67.ptp.lockTimeoutMs','PTP 锁定超时（ms）','integer');
   field(body,'aes67.ptp.timestamping','PTP 时间戳模式','text',['auto','software','hardware'].map(value=>({value,label:value})));
+  field(body,'aes67.ptp.mode','PTP 拓扑模式','text',[{value:'slave',label:'slave（跟随外部 GM，默认）'},{value:'auto',label:'先监听再回退'},{value:'gm',label:'本机作为 GM'},{value:'local',label:'无 PTP 本地时钟'}],'slave 保持原有行为；gm 需要可读取网卡 MAC 作为 EUI-64 时钟标识。');
+  field(body,'aes67.ptp.announceTimeoutMs','Announce 超时（ms）','integer',null,'auto 模式的监听窗口与外部 GM 超时，1000–60000，默认 6000。');
+  field(body,'aes67.ptp.priority1','GM priority1（0–255）','integer',null,'gm 模式广播的 BMCA priority1，默认 128。');
+  field(body,'aes67.ptp.priority2','GM priority2（0–255）','integer',null,'gm 模式广播的 BMCA priority2，默认 128。');
+  field(body,'aes67.ptp.gmCapable','auto 可成为 GM','text',[{value:'false',label:'false'},{value:'true',label:'true'}],'仅 auto 模式使用；gm 模式隐含 true。');
+  field(body,'aes67.ptp.gmUtcOffset','GM UTC 偏移（秒，可空）','integer',null,'留空为 ARB（ptpTimescale=0）；0–127 时广播 ptpTimescale=1 与 currentUtcOffsetValid=1。');
   field(body,'aes67.ttl','组播 TTL（1–255）','integer',null,'仅组播目标生效，默认 32；单播忽略。逐流 TTL 为 0 时继承此值。');
   field(body,'aes67.ringPackets','环形缓冲包数','integer',null,'范围 8–1024，每包 1 ms；溢出会丢最旧音频并计入 ringDroppedFrames。');
   field(body,'aes67.prebufferFrames','发送前预缓冲（源帧）','integer',null,'48–48000 帧且不超过 ringPackets × 48；只影响发送状态机。');

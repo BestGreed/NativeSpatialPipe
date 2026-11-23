@@ -87,6 +87,21 @@ test "AES67 schema block matches the disabled-by-default transport contract" {
     try std.testing.expectEqual(@as(i64, cfg.default_prebuffer_frames), field(field(properties, "prebufferFrames"), "default").integer);
     try std.testing.expectEqual(@as(i64, 96), field(field(properties, "payloadType"), "minimum").integer);
     try std.testing.expectEqual(@as(i64, 127), field(field(properties, "payloadType"), "maximum").integer);
+    // PTP topology keys are part of the frozen aes67.ptp contract (DESIGN
+    // audit D8): mode/priority1/priority2/announceTimeoutMs/gmCapable/gmUtcOffset.
+    const ptpProperties = field(field(properties, "ptp"), "properties");
+    try std.testing.expect(containsString(field(field(ptpProperties, "mode"), "enum"), "slave"));
+    try std.testing.expect(containsString(field(field(ptpProperties, "mode"), "enum"), "auto"));
+    try std.testing.expect(containsString(field(field(ptpProperties, "mode"), "enum"), "gm"));
+    try std.testing.expect(containsString(field(field(ptpProperties, "mode"), "enum"), "local"));
+    try std.testing.expectEqualStrings("slave", field(field(ptpProperties, "mode"), "default").string);
+    try std.testing.expectEqual(@as(i64, 128), field(field(ptpProperties, "priority1"), "default").integer);
+    try std.testing.expectEqual(@as(i64, 128), field(field(ptpProperties, "priority2"), "default").integer);
+    try std.testing.expectEqual(@as(i64, 6000), field(field(ptpProperties, "announceTimeoutMs"), "default").integer);
+    try std.testing.expectEqual(@as(i64, 1000), field(field(ptpProperties, "announceTimeoutMs"), "minimum").integer);
+    try std.testing.expectEqual(@as(i64, 60000), field(field(ptpProperties, "announceTimeoutMs"), "maximum").integer);
+    try std.testing.expect(field(field(ptpProperties, "gmCapable"), "default").bool == false);
+    try std.testing.expect(field(field(ptpProperties, "gmUtcOffset"), "default") == .null);
 }
 
 test "AES67 conditional branch requires config and 48 kHz while ASIO/AoIP/WASAPI branches survive" {
