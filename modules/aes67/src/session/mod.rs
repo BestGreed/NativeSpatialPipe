@@ -318,6 +318,8 @@ impl Session {
     }
 }
 
+mod pacer;
+
 struct Network {
     ptp: Follower,
     outputs: Vec<Output>,
@@ -372,6 +374,12 @@ impl Network {
             .unwrap_or(2000);
         let holdover_ns = i128::from(holdover_ms) * NS_PER_MS;
         let diagnostic = std::env::var("NSP_AES67_PTP_DIAGNOSTICS").as_deref() == Ok("1");
+        let max_catch_up = std::env::var("NSP_AES67_CATCH_UP_SLOTS")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .filter(|slots| (1..=10).contains(slots))
+            .unwrap_or(8);
+        let pacer = pacer::Pacer::new();
         let mut next_log = 0;
         let mut deadline = Instant::now() + run.config.lock_timeout;
         let outcome = loop {
@@ -441,9 +449,29 @@ impl Network {
                 } else {
                     TimestampMode::Software
                 };
+                let unix_ns = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos();
+                let metrics = &stream.pacing;
                 let _ = writeln!(
                     io::stderr(),
-                    "nsp_aes67 ptp state={state} timestamping={mode:?} offset_ns={} rate_ppm={} fit_rms_ns={} rms_limit_ns={} rate_limit_ppm={RATE_LIMIT_PPM} holdover_ms={holdover_ms} {:?}",
+                    "nsp_aes67 pacing unix_ns={unix_ns} state={state} timer={} priority={} max_catch_up_slots={max_catch_up} packetsSent={} framesSent={} due_slots={} caught_up_slots={} dropped_slots={} max_wake_late_us={} p99_wake_late_us={} ring_dropped={} send_errors={}",
+                    pacer.timer(),
+                    pacer.priority(),
+                    c.packets,
+                    c.packets.saturating_mul(rtp::FRAMES as u64),
+                    metrics.due_slots,
+                    metrics.caught_up_slots,
+                    metrics.dropped_slots,
+                    metrics.max_wake_late_us,
+                    metrics.p99_wake_late_us(),
+                    c.dropped,
+                    metrics.send_errors,
+                );
+                let _ = writeln!(
+                    io::stderr(),
+                    "nsp_aes67 ptp unix_ns={unix_ns} state={state} timestamping={mode:?} offset_ns={} rate_ppm={} fit_rms_ns={} rms_limit_ns={} rate_limit_ppm={RATE_LIMIT_PPM} holdover_ms={holdover_ms} {:?}",
                     c.offset_ns,
                     c.rate_ppm,
                     c.fit_rms_ns,
@@ -453,28 +481,40 @@ impl Network {
                 next_log = now + 1_000 * NS_PER_MS;
             }
             if let Some(fit) = pacing_fit {
-                let ptp_ns = fit.ptp_ns(now);
-                if let Some((stamp, skipped)) = stream.grid.due(ptp_ns) {
-                    if let Err(error) = self.send_interval(run, &mut stream, stamp, skipped) {
+                // Sample again after PTP processing and diagnostics. Deadline checks
+                // before blocking work would undercount lateness and add idle time.
+                let ptp_ns = fit.ptp_ns(self.ptp.now_ns());
+                if let Some(batch) = stream.grid.due(ptp_ns, max_catch_up) {
+                    stream.pacing.batch(&batch);
+                    self.drop_backlog(run, &stream, batch.dropped);
+                    let send = batch
+                        .stamps()
+                        .try_for_each(|stamp| self.send_interval(run, &mut stream, stamp));
+                    if let Err(error) = send {
                         break Err(error);
                     }
                 }
-                let remaining = NS_PER_MS - ptp_ns.rem_euclid(NS_PER_MS);
-                if remaining > 250_000 {
-                    thread::sleep(Duration::from_nanos(
-                        (remaining - 180_000).min(300_000) as u64
+                let deadline = stream.grid.next_ns();
+                let remaining = deadline - fit.ptp_ns(self.ptp.now_ns());
+                const SPIN_NS: i128 = 500_000;
+                if remaining > SPIN_NS {
+                    pacer.wait(Duration::from_nanos(
+                        (remaining - SPIN_NS).min(NS_PER_MS) as u64
                     ));
-                } else {
-                    let until = now + remaining.min(180_000);
-                    while self.ptp.now_ns() < until {
-                        std::hint::spin_loop();
-                    }
+                }
+                // In case a new fit has moved the next grid slot noticeably,
+                // return to PTP polling instead of spinning for the entire gap.
+                while {
+                    let remaining = deadline - fit.ptp_ns(self.ptp.now_ns());
+                    (1..=SPIN_NS).contains(&remaining)
+                } {
+                    std::hint::spin_loop();
                 }
             } else {
                 if Instant::now() >= deadline {
                     break Err(Failure::new(LOCK_TIMEOUT));
                 }
-                thread::sleep(Duration::from_micros(100));
+                pacer.wait(Duration::from_micros(100));
             }
         };
         self.deactivate(run, &mut stream, false);
@@ -563,21 +603,27 @@ impl Network {
         }
     }
 
-    fn send_interval(
-        &mut self,
-        run: &Run,
-        stream: &mut Stream,
-        stamp: u32,
-        skipped: u64,
-    ) -> Result<(), Failure> {
+    fn drop_backlog(&mut self, run: &Run, stream: &Stream, dropped: u64) {
+        if dropped == 0 {
+            return;
+        }
+        let frames = dropped.saturating_mul(rtp::FRAMES as u64);
+        let discarded = if stream.prebuffered {
+            lock(&run.audio).ring.skip(frames)
+        } else {
+            0
+        };
+        let mut c = lock(&run.counters);
+        c.late = c.late.saturating_add(frames);
+        c.dropped = c.dropped.saturating_add(discarded);
+        for output in &mut self.outputs {
+            output.drop_slots(dropped);
+        }
+    }
+
+    fn send_interval(&mut self, run: &Run, stream: &mut Stream, stamp: u32) -> Result<(), Failure> {
         let silent = {
             let mut audio = lock(&run.audio);
-            let mut counters = lock(&run.counters);
-            let skipped_frames = skipped.saturating_mul(rtp::FRAMES as u64);
-            counters.late = counters.late.saturating_add(skipped_frames);
-            if stream.prebuffered {
-                audio.ring.skip(skipped_frames);
-            }
             stream.prebuffered |= audio.ring.frames() >= run.config.prebuffer;
             if stream.prebuffered {
                 audio.ring.consume(&mut stream.samples)
@@ -591,9 +637,6 @@ impl Network {
         let mut errors = 0;
         let mut fatal = None;
         for (channel, output) in self.outputs.iter_mut().enumerate() {
-            if skipped != 0 {
-                output.discontinuity();
-            }
             match output.send(stamp, &stream.samples, run.config.channels) {
                 Ok(size) => {
                     packets += 1;
@@ -615,6 +658,7 @@ impl Network {
         c.packets += packets;
         c.bytes += bytes;
         c.errors += errors;
+        stream.pacing.send_errors += errors;
         if silent {
             c.silent += packets;
         }
@@ -622,7 +666,67 @@ impl Network {
     }
 }
 
+const WAKE_BUCKET_US: u64 = 10;
+const WAKE_BUCKETS: usize = 1201; // 0–12 ms, with the last bucket including larger delays.
+
+struct PacingMetrics {
+    due_slots: u64,
+    caught_up_slots: u64,
+    dropped_slots: u64,
+    send_errors: u64,
+    max_wake_late_us: u64,
+    wakes: u64,
+    histogram: [u64; WAKE_BUCKETS],
+}
+
+impl PacingMetrics {
+    fn new() -> Self {
+        Self {
+            due_slots: 0,
+            caught_up_slots: 0,
+            dropped_slots: 0,
+            send_errors: 0,
+            max_wake_late_us: 0,
+            wakes: 0,
+            histogram: [0; WAKE_BUCKETS],
+        }
+    }
+
+    fn batch(&mut self, batch: &rtp::Batch) {
+        self.due_slots += u64::from(batch.slots) + batch.dropped;
+        self.caught_up_slots += u64::from(batch.slots - 1);
+        self.dropped_slots += batch.dropped;
+        let late_us = batch.wake_late_ns.div_euclid(1000) as u64;
+        self.max_wake_late_us = self.max_wake_late_us.max(late_us);
+        let bin = late_us
+            .div_ceil(WAKE_BUCKET_US)
+            .min((WAKE_BUCKETS - 1) as u64) as usize;
+        self.histogram[bin] += 1;
+        self.wakes += 1;
+    }
+
+    fn p99_wake_late_us(&self) -> u64 {
+        if self.wakes == 0 {
+            return 0;
+        }
+        let rank = self.wakes - self.wakes / 100;
+        let mut seen = 0;
+        for (i, count) in self.histogram.iter().enumerate() {
+            seen += count;
+            if seen >= rank {
+                return if i == WAKE_BUCKETS - 1 {
+                    self.max_wake_late_us
+                } else {
+                    (i as u64 * WAKE_BUCKET_US).min(self.max_wake_late_us)
+                };
+            }
+        }
+        unreachable!("histogram count tracks the number of wakes");
+    }
+}
+
 struct Stream {
+    pacing: PacingMetrics,
     gm: Option<ClockId>,
     holdover_until: Option<i128>,
     last_fit: Option<ClockFit>,
@@ -638,6 +742,7 @@ impl Stream {
     fn new(channels: usize, flows: usize) -> Self {
         Self {
             gm: None,
+            pacing: PacingMetrics::new(),
             holdover_until: None,
             last_fit: None,
             grid: Grid::default(),

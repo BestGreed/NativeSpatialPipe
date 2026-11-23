@@ -63,6 +63,11 @@ impl Output {
         self.marker = true;
     }
 
+    pub fn drop_slots(&mut self, count: u64) {
+        self.sequence = self.sequence.wrapping_add(count as u16);
+        self.discontinuity();
+    }
+
     pub fn send(&mut self, stamp: u32, frames: &[f32], channels: usize) -> io::Result<usize> {
         let mut packet = [0_u8; PACKET_CAPACITY];
         packet[0] = 0x80;
@@ -84,31 +89,59 @@ impl Output {
                 end += 3;
             }
         }
-        let size = self.socket.send(&packet[..end])?;
-        if size != end {
-            return Err(io::ErrorKind::WriteZero.into());
-        }
+        let sent = self.socket.send(&packet[..end]).and_then(|size| {
+            if size == end {
+                Ok(size)
+            } else {
+                Err(io::ErrorKind::WriteZero.into())
+            }
+        });
         self.sequence = self.sequence.wrapping_add(1);
-        self.marker = false;
-        Ok(size)
+        self.marker = sent.is_err();
+        sent
     }
 }
 
-/// Emits at most one packet interval per wake. A missed grid interval is skipped
-/// rather than introducing a burst or drifting the cadence from the PTP clock.
+/// Each slot remains anchored to the absolute PTP grid, including the slots
+/// at the front of a delayed batch. Keep the newest slots if the batch is full.
 #[derive(Default)]
 pub struct Grid {
     next_ms: Option<i128>,
 }
+
+pub struct Batch {
+    first_ms: i128,
+    pub slots: u32,
+    pub dropped: u64,
+    pub wake_late_ns: i128,
+}
+
+impl Batch {
+    pub fn stamps(&self) -> impl Iterator<Item = u32> + '_ {
+        (0..self.slots).map(|i| ((self.first_ms + i128::from(i)) * FRAMES_PER_MS) as u32)
+    }
+}
+
 impl Grid {
-    pub fn due(&mut self, ptp_ns: i128) -> Option<(u32, u64)> {
+    pub fn due(&mut self, ptp_ns: i128, max_catch_up: u32) -> Option<Batch> {
         let ms = ptp_ns.div_euclid(NS_PER_MS);
         let next = *self.next_ms.get_or_insert(ms + 1);
         if ms < next {
             return None;
         }
         self.next_ms = Some(ms + 1);
-        Some(((ms * FRAMES_PER_MS) as u32, (ms - next) as u64))
+        let total = ms - next + 1;
+        let slots = total.min(i128::from(max_catch_up) + 1);
+        Some(Batch {
+            first_ms: ms - slots + 1,
+            slots: slots as u32,
+            dropped: (total - slots) as u64,
+            wake_late_ns: ptp_ns - next * NS_PER_MS,
+        })
+    }
+
+    pub fn next_ns(&self) -> i128 {
+        self.next_ms.expect("grid initialized by due") * NS_PER_MS
     }
 }
 
@@ -171,6 +204,65 @@ mod tests {
         }
     }
     #[test]
+    fn late_wake_sends_each_pcm_slice_with_continuous_rtp_headers() {
+        let ip = Ipv4Addr::LOCALHOST;
+        let sink = UdpSocket::bind((ip, 0)).unwrap();
+        sink.set_read_timeout(Some(std::time::Duration::from_millis(500)))
+            .unwrap();
+        let mut output = Output::open(Flow {
+            destination: SocketAddrV4::new(ip, sink.local_addr().unwrap().port()),
+            interface: ip,
+            ttl: 1,
+            ssrc: 123,
+            offset: 0,
+            channels: 1,
+            payload_type: 96,
+            source_filter: false,
+        })
+        .unwrap();
+        output.sequence = u16::MAX - 1;
+        let mut ring = ring::Ring::new(8 * FRAMES, 1);
+        let levels = [0.125, 0.25, 0.375, 0.5];
+        for (index, level) in levels.into_iter().enumerate() {
+            ring.copy((index * FRAMES) as u64, &[level; FRAMES], 1, &[0])
+                .unwrap();
+        }
+        let mut grid = Grid::default();
+        assert!(grid.due(100_000_100, 8).is_none());
+        let batch = grid.due(104_000_000, 8).unwrap();
+        assert_eq!(batch.slots - 1, 3);
+        assert_eq!(batch.dropped, 0);
+        for (index, stamp) in batch.stamps().enumerate() {
+            let mut frames = [0.0; FRAMES];
+            assert!(!ring.consume(&mut frames));
+            output.send(stamp, &frames, 1).unwrap();
+            let mut datagram = [0; PACKET_CAPACITY];
+            let size = sink.recv(&mut datagram).unwrap();
+            let seq = u16::from_be_bytes(datagram[2..4].try_into().unwrap());
+            let ts = u32::from_be_bytes(datagram[4..8].try_into().unwrap());
+            assert_eq!(seq, (u16::MAX - 1).wrapping_add(index as u16));
+            assert_eq!(ts, (101 + index as u32) * 48);
+            for sample in datagram[12..size].chunks_exact(3) {
+                assert_eq!(sample, [((index + 1) * 0x10) as u8, 0, 0]);
+            }
+        }
+        let overflow = grid.due(125_000_000, 8).unwrap();
+        assert_eq!(overflow.dropped, 12);
+        output.drop_slots(overflow.dropped);
+        output
+            .send(overflow.stamps().next().unwrap(), &[0.0; FRAMES], 1)
+            .unwrap();
+        let mut datagram = [0; PACKET_CAPACITY];
+        sink.recv(&mut datagram).unwrap();
+        assert_ne!(datagram[1] & 0x80, 0);
+        assert_eq!(u16::from_be_bytes(datagram[2..4].try_into().unwrap()), 14);
+        assert_eq!(
+            u32::from_be_bytes(datagram[4..8].try_into().unwrap()),
+            117 * 48
+        );
+    }
+
+    #[test]
     fn multicast_interface_and_ttl_can_be_set_without_transmitting() {
         let socket = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         multicast_interface(&socket, Ipv4Addr::LOCALHOST).unwrap();
@@ -178,12 +270,31 @@ mod tests {
         assert_eq!(socket.multicast_ttl_v4().unwrap(), 19);
     }
     #[test]
-    fn grid_is_absolute_and_skips_backlog() {
+    fn grid_catches_up_in_order_and_bounds_the_burst() {
         let mut grid = Grid::default();
-        assert_eq!(grid.due(150_000_100), None);
-        assert_eq!(grid.due(151_000_000), Some((151 * 48, 0)));
-        assert_eq!(grid.due(151_999_999), None);
-        assert_eq!(grid.due(156_000_001), Some((156 * 48, 4)));
-        assert_eq!(grid.due(154_000_000), None);
+        assert!(grid.due(150_000_100, 3).is_none());
+        assert_eq!(
+            grid.due(151_000_000, 3)
+                .unwrap()
+                .stamps()
+                .collect::<Vec<_>>(),
+            [151 * 48]
+        );
+        assert!(grid.due(151_999_999, 3).is_none());
+        let late = grid.due(155_000_100, 3).unwrap();
+        assert_eq!(late.wake_late_ns, 3_000_100);
+        assert_eq!(late.dropped, 0);
+        assert_eq!(
+            late.stamps().collect::<Vec<_>>(),
+            [152 * 48, 153 * 48, 154 * 48, 155 * 48]
+        );
+        let overflow = grid.due(163_000_000, 3).unwrap();
+        assert_eq!(overflow.dropped, 4);
+        assert_eq!(
+            overflow.stamps().collect::<Vec<_>>(),
+            [160 * 48, 161 * 48, 162 * 48, 163 * 48]
+        );
+        assert!(grid.due(154_000_000, 3).is_none());
+        assert_eq!(grid.next_ns(), 164_000_000);
     }
 }

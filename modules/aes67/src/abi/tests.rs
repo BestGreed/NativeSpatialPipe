@@ -399,6 +399,70 @@ fn check_udp_mock_gm(version: u8) {
 }
 
 #[test]
+fn udp_pacing_30s_delivers_at_least_999_pps_without_timestamp_holes() {
+    let event = bind();
+    let general = bind();
+    let local_event = bind();
+    let local_general = bind();
+    let audio = bind();
+    audio
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
+    let handle = Handle::new();
+    let mut config = config_base();
+    config.default_port = port(&audio);
+    config.ptp_event_port = port(&event);
+    config.ptp_general_port = port(&general);
+    config.ptp_local_event_port = port(&local_event);
+    config.ptp_local_general_port = port(&local_general);
+    config.lock_timeout_ms = loopback_timeout();
+    drop((local_event, local_general));
+    let _gm = Mock::spawn(
+        event,
+        general,
+        config.ptp_local_event_port,
+        config.ptp_local_general_port,
+        0x12,
+    );
+    assert_eq!(unsafe { nsp_aes67_configure(handle.0, &config) }, 0);
+    assert_eq!(unsafe { nsp_aes67_start(handle.0) }, 0);
+    assert_eq!(handle.poll().unwrap().kind, 1);
+
+    let mut buf = [0; 1500];
+    let first = audio.recv(&mut buf).unwrap();
+    assert_eq!(first, 12 + FRAMES * 2 * 3);
+    let start = Instant::now();
+    let mut previous_seq = u16::from_be_bytes(buf[2..4].try_into().unwrap());
+    let mut previous_ts = u32::from_be_bytes(buf[4..8].try_into().unwrap());
+    let mut packets = 0;
+    let mut irregular = 0;
+    let mut missing = 0_u64;
+    while start.elapsed() < Duration::from_secs(30) {
+        let length = audio
+            .recv(&mut buf)
+            .expect("unexpected RTP pause during 30-second pacing test");
+        assert_eq!(length, first);
+        let seq = u16::from_be_bytes(buf[2..4].try_into().unwrap());
+        let ts = u32::from_be_bytes(buf[4..8].try_into().unwrap());
+        missing += u64::from(seq.wrapping_sub(previous_seq).wrapping_sub(1));
+        irregular += u64::from(ts.wrapping_sub(previous_ts) != 48);
+        previous_seq = seq;
+        previous_ts = ts;
+        packets += 1;
+    }
+    let elapsed = start.elapsed().as_secs_f64();
+    let pps = f64::from(packets) / elapsed;
+    println!(
+        "{packets} RTP packets over {elapsed:.3}s = {pps:.3}pps, sequence gaps={missing}, abnormal timestamp steps={irregular}"
+    );
+    assert_eq!(missing, 0);
+    assert_eq!(irregular, 0);
+    assert!(pps >= 999.0, "{pps:.3}pps below minimum rate");
+    assert!(handle.poll().is_none(), "unexpected lifecycle event");
+    assert_eq!(unsafe { nsp_aes67_stop(handle.0, 1000) }, 0);
+}
+
+#[test]
 fn hardware_partial_init_and_start_timeout_release_all_local_ports() {
     let handle = Handle::new();
     let first = bind();

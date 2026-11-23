@@ -58,12 +58,13 @@ impl Ring {
         Some(Accepted { late })
     }
 
-    pub fn skip(&mut self, frames: u64) {
+    pub fn skip(&mut self, frames: u64) -> u64 {
         let discard = (self.frames() as u64).min(frames) as usize;
         self.samples.drain(..discard * self.channels);
         if let Some(head) = &mut self.head {
             *head = head.saturating_add(frames);
         }
+        discard as u64
     }
 
     /// Consumes one output interval and zero pads the portion currently missing.
