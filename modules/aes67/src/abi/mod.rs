@@ -1,9 +1,12 @@
 //! C interface. All pointed-to memory is caller-owned except the opaque session.
 use crate::{
     ptp,
+    ptp::PtpMode,
     rtp::{Encoding, Flow},
     session::{self, Config, Counters, Event, Session},
-    time::{PacketTiming, SUPPORTED_PACKET_TIMES_US, SUPPORTED_SAMPLE_RATES, TimestampMode},
+    time::{
+        NS_PER_MS, PacketTiming, SUPPORTED_PACKET_TIMES_US, SUPPORTED_SAMPLE_RATES, TimestampMode,
+    },
 };
 use std::{
     ffi::{CStr, c_char, c_void},
@@ -115,6 +118,62 @@ impl ConfigV2 {
     }
 }
 
+/// Third configuration revision (168 bytes). Appends the PTP topology fields
+/// (DESIGN-TOPO.md sections 1-2); 128- and 152-byte callers keep working with
+/// the pre-existing slave-mode defaults. Sender JSON keys (frozen, DESIGN
+/// audit D8) map to: aes67.ptp.mode -> ptp_mode, aes67.ptp.priority1/priority2
+/// -> ptp_priority1/ptp_priority2, aes67.ptp.announceTimeoutMs ->
+/// ptp_announce_timeout_ms, aes67.ptp.gmCapable -> ptp_gm_capable,
+/// aes67.ptp.gmUtcOffset -> ptp_gm_utc_offset.
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct ConfigV3 {
+    pub base: ConfigV2,
+    /// 1000..60000 ms; 0 selects 6000 (AES67 Annex A Table A.1
+    /// announceReceiptTimeout 3 x 2 s).
+    pub ptp_announce_timeout_ms: u32,
+    /// 0 slave (default), 1 auto, 2 gm, 3 local.
+    pub ptp_mode: u8,
+    /// 0..255; 0 selects 128 (AES67 Annex A Table A.1 defaults).
+    pub ptp_priority1: u8,
+    pub ptp_priority2: u8,
+    /// 0/1; gm mode implies capable.
+    pub ptp_gm_capable: u8,
+    /// -1 (0xFFFF as i16) selects "not configured" (ARB/ptpTimescale=0);
+    /// 0..=127 is the IEEE 1588-2008 8.2.3 currentUtcOffset in seconds
+    /// (full clause text absent locally: clause-number cite only).
+    pub ptp_gm_utc_offset: i16,
+    pub reserved: [u8; 6],
+}
+
+impl ConfigV3 {
+    #[allow(dead_code)]
+    fn cast(&self) -> *const ConfigV1 {
+        (self as *const ConfigV3).cast()
+    }
+}
+
+/// PTP mode/role/source snapshot. EXTENSION: the pre-existing Counters struct
+/// is ABI size-stable, so the topology-mode role is reported through this
+/// appended export (and the nsp_aes67 ptp diagnostics log line).
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct PtpStatusV1 {
+    pub mode: u32,
+    pub role: u32,
+    pub source: u32,
+    pub domain: u32,
+    pub time_traceable: u32,
+    pub ptp_timescale: u32,
+    pub gm_identity: [u8; 8],
+    pub reason: [u8; 32],
+    pub transitions: u64,
+    pub reserved: u32,
+}
+
+const NO_UTC_OFFSET: i16 = -1;
+const DEFAULT_ANNOUNCE_TIMEOUT_MS: u32 = 6_000;
+
 fn fallback<T: Default + PartialEq>(value: T, default: T) -> T {
     if value == T::default() {
         default
@@ -197,12 +256,46 @@ fn even_port(port: u16) -> bool {
 }
 unsafe fn config(raw: *const ConfigV1) -> Option<Config> {
     let size = unsafe { raw.cast::<u32>().read() } as usize;
-    let extended = size == mem::size_of::<ConfigV2>();
-    if !extended && size != mem::size_of::<ConfigV1>() {
-        return None;
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Revision {
+        V1,
+        V2,
+        V3,
     }
-    let (base, packet_time_us, sap_interval_ms, frames_per_packet, sap_address, bit_depth, port_policy) =
-        if extended {
+    let revision = if size == mem::size_of::<ConfigV3>() {
+        Revision::V3
+    } else if size == mem::size_of::<ConfigV2>() {
+        Revision::V2
+    } else if size == mem::size_of::<ConfigV1>() {
+        Revision::V1
+    } else {
+        return None;
+    };
+    let (
+        base,
+        packet_time_us,
+        sap_interval_ms,
+        frames_per_packet,
+        sap_address,
+        bit_depth,
+        port_policy,
+    ) = match revision {
+        Revision::V3 => {
+            let v3 = unsafe { &*raw.cast::<ConfigV3>() };
+            if v3.reserved != [0; 6] || v3.base.reserved != [0; 6] {
+                return None;
+            }
+            (
+                &v3.base.base,
+                v3.base.packet_time_us,
+                v3.base.sap_interval_ms,
+                v3.base.frames_per_packet,
+                v3.base.sap_address,
+                v3.base.bit_depth,
+                v3.base.port_policy,
+            )
+        }
+        Revision::V2 => {
             let v2 = unsafe { &*raw.cast::<ConfigV2>() };
             if v2.reserved != [0; 6] {
                 return None;
@@ -216,9 +309,31 @@ unsafe fn config(raw: *const ConfigV1) -> Option<Config> {
                 v2.bit_depth,
                 v2.port_policy,
             )
-        } else {
-            (unsafe { &*raw }, 0, 0, 0, DEFAULT_SAP_ADDRESS, 0, 0)
-        };
+        }
+        Revision::V1 => (unsafe { &*raw }, 0, 0, 0, DEFAULT_SAP_ADDRESS, 0, 0),
+    };
+    // PTP topology fields: only the 168-byte revision carries them.
+    let (
+        ptp_mode,
+        ptp_priority1,
+        ptp_priority2,
+        ptp_gm_capable,
+        ptp_gm_utc_offset,
+        ptp_announce_timeout_ms,
+    ) = match revision {
+        Revision::V3 => {
+            let v3 = unsafe { &*raw.cast::<ConfigV3>() };
+            (
+                v3.ptp_mode,
+                v3.ptp_priority1,
+                v3.ptp_priority2,
+                v3.ptp_gm_capable,
+                v3.ptp_gm_utc_offset,
+                v3.ptp_announce_timeout_ms,
+            )
+        }
+        _ => (0, 0, 0, 0, NO_UTC_OFFSET, 0),
+    };
 
     let channels = base.channels as usize;
     let inputs = fallback(base.input_channels, base.channels) as usize;
@@ -232,7 +347,22 @@ unsafe fn config(raw: *const ConfigV1) -> Option<Config> {
         || base.flow_mode > 2
         || base.redundant > 1
         || port_policy > 1
+        || ptp_gm_capable > 1
     {
+        return None;
+    }
+    let ptp_mode = match ptp_mode {
+        0 => PtpMode::Slave,
+        1 => PtpMode::Auto,
+        2 => PtpMode::Gm,
+        3 => PtpMode::Local,
+        _ => return None,
+    };
+    let ptp_announce_timeout_ms = fallback(ptp_announce_timeout_ms, DEFAULT_ANNOUNCE_TIMEOUT_MS);
+    if !(1_000..=60_000).contains(&ptp_announce_timeout_ms) {
+        return None;
+    }
+    if !(NO_UTC_OFFSET..=127).contains(&ptp_gm_utc_offset) {
         return None;
     }
     let encoding = Encoding::from_abi(bit_depth)?;
@@ -317,6 +447,13 @@ unsafe fn config(raw: *const ConfigV1) -> Option<Config> {
         general_port,
         local_event_port: base.ptp_local_event_port,
         local_general_port: base.ptp_local_general_port,
+        mode: ptp_mode,
+        priority1: fallback(ptp_priority1, ptp::gm::DEFAULT_PRIORITY),
+        priority2: fallback(ptp_priority2, ptp::gm::DEFAULT_PRIORITY),
+        gm_capable: ptp_mode == PtpMode::Gm || ptp_gm_capable == 1,
+        announce_timeout_ns: i128::from(ptp_announce_timeout_ms) * NS_PER_MS,
+        gm_utc_offset: (ptp_gm_utc_offset != NO_UTC_OFFSET).then_some(ptp_gm_utc_offset),
+        gm_identity: None,
     };
 
     let default_dest = Ipv4Addr::from(fallback(base.default_dest_ip, DEFAULT_DEST));
@@ -440,7 +577,10 @@ unsafe fn config(raw: *const ConfigV1) -> Option<Config> {
             {
                 return None;
             }
-            if covered[offset..offset + count].iter().any(|&claimed| claimed) {
+            if covered[offset..offset + count]
+                .iter()
+                .any(|&claimed| claimed)
+            {
                 return None;
             }
             covered[offset..offset + count].fill(true);
@@ -499,7 +639,10 @@ pub unsafe extern "C" fn nsp_aes67_configure(handle: *mut Session, raw: *const C
         return session::INVALID;
     }
     let size = unsafe { raw.cast::<u32>().read() } as usize;
-    if size != mem::size_of::<ConfigV1>() && size != mem::size_of::<ConfigV2>() {
+    if size != mem::size_of::<ConfigV1>()
+        && size != mem::size_of::<ConfigV2>()
+        && size != mem::size_of::<ConfigV3>()
+    {
         return session::INVALID;
     }
     let Some(config) = (unsafe { config(raw) }) else {
@@ -546,6 +689,38 @@ pub unsafe extern "C" fn nsp_aes67_counters(handle: *mut Session, out: *mut Coun
         return session::INVALID;
     }
     unsafe { out.write(handle.counters()) };
+    0
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nsp_aes67_ptp_status(handle: *mut Session, out: *mut PtpStatusV1) -> i32 {
+    let Some(handle) = (unsafe { handle.as_ref() }) else {
+        return session::INVALID;
+    };
+    if out.is_null() {
+        return session::INVALID;
+    }
+    let Some(status) = handle.ptp_status() else {
+        return session::STATE;
+    };
+    let mut reason = [0u8; 32];
+    let bytes = status.reason.as_bytes();
+    let len = bytes.len().min(reason.len() - 1);
+    reason[..len].copy_from_slice(&bytes[..len]);
+    unsafe {
+        out.write(PtpStatusV1 {
+            mode: status.mode.as_abi(),
+            role: status.role.as_abi(),
+            source: status.source.as_abi(),
+            domain: u32::from(status.domain),
+            time_traceable: u32::from(status.time_traceable),
+            ptp_timescale: u32::from(status.ptp_timescale),
+            gm_identity: status.gm.unwrap_or([0; 8]),
+            reason,
+            transitions: status.transitions,
+            reserved: 0,
+        })
+    };
     0
 }
 

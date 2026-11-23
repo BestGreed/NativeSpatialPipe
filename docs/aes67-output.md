@@ -38,7 +38,9 @@ Select AES67 in the playback configuration panel or set outputBackend to "aes67"
         "payloadType": 96,
         "ssrc": 0,
         "srcInterfaceIp": "192.0.2.1",
-        "ptp": {"domain": 0, "lockTimeoutMs": 5000, "timestamping": "auto"},
+        "ptp": {"mode": "slave", "domain": 0, "lockTimeoutMs": 5000, "timestamping": "auto",
+                "priority1": 128, "priority2": 128, "announceTimeoutMs": 6000,
+                "gmCapable": false, "gmUtcOffset": null},
         "ttl": 32,
         "sourceFilter": true,
         "ringPackets": 64,
@@ -72,15 +74,72 @@ The previous FLP01 sender carried 8ch flows on ports 5010/5012. AES67 uses one s
 
 portPolicy "explicit" exists only to keep a lab receiver working during a staged rollout; it is not the production configuration.
 
-## PTP and network discovery
+## PTP topology modes and network discovery
 
-| Setting | Accepted values | Default |
-| --- | --- | --- |
-| aes67.ptp.domain | 0-127 | 0 |
-| aes67.ptp.lockTimeoutMs | 100-120000 ms | 5000 ms |
-| aes67.ptp.timestamping | auto, software, hardware | auto |
+The sender supports four PTP topology modes (DESIGN-TOPO.md section 2). Key names are frozen per
+DESIGN audit D8: they live inside the nested aes67.ptp object.
 
-When the PTP block is omitted, an existing top-level ptpDomain still supplies the domain. Leave the legacy ptpGmid empty: the module derives the advertised clock identity from the locked grandmaster and never claims a=ts-refclk:ptp without a real PTP lock. Software timestamping uses Windows QPC at the socket boundaries. Auto uses software when hardware timestamping is unavailable; explicit hardware mode reports startup failure.
+| Setting | Accepted values | Default | Meaning |
+| --- | --- | --- | --- |
+| aes67.ptp.mode | slave, auto, gm, local | slave | slave: strict follower, fails/keeps DEGRADED exactly like before. auto: listen up to announceTimeoutMs, then follow an external GM or fall back to gm (when gmCapable) / local. gm: announce this sender as the grandmaster immediately. local: no PTP sockets; local media clock and a=ts-refclk:local. |
+| aes67.ptp.domain | 0-127 | 0 | AES67 Annex A Table A.1 default 0. |
+| aes67.ptp.lockTimeoutMs | 100-120000 ms | 5000 ms | Existing startup/lock deadline. |
+| aes67.ptp.timestamping | auto, software, hardware | auto | Windows has no PHC; explicit hardware still reports startup failure. |
+| aes67.ptp.priority1 | 0-255 | 128 | GM BMCA priority1 (AES67 Annex A Table A.1 default). |
+| aes67.ptp.priority2 | 0-255 | 128 | GM BMCA priority2 (AES67 Annex A Table A.1 default). |
+| aes67.ptp.announceTimeoutMs | 1000-60000 ms | 6000 | AUTO listening window and foreign-master receipt timeout (announceReceiptTimeout 3 x 2 s). |
+| aes67.ptp.gmCapable | boolean | false | auto mode may announce a GM when no external GM appears. gm mode implies true. |
+| aes67.ptp.gmUtcOffset | null or 0-127 s | null | null = ARB (ptpTimescale=0, offsetValid=0). 0-127 = IEEE 1588-2008 8.2.3 currentUtcOffset seconds, announced with ptpTimescale=1 and currentUtcOffsetValid=1. |
+
+When the PTP block is omitted, an existing top-level ptpDomain still supplies the domain and
+mode stays slave, so existing configurations are unchanged.
+
+### GM engine (modes auto/gm)
+
+- Clock identity is the EUI-64 of the interface MAC (MAC[0..3] || FF FE || MAC[3..6], IEEE
+  1588-2008 8.2.1). gm mode refuses to start with NSP_AES67_PTP_IDENTITY_UNAVAILABLE (-10) when the
+  MAC cannot be read; it never invents a random identity.
+- Announce every 2 s, Sync every 125 ms with the two-step flag, Follow_Up immediately after each
+  Sync, Delay_Resp for every in-domain Delay_Req. Domain filtering drops other domains. DSCP EF and
+  multicast TTL 16 match the validated board GM profile (TTL is a deployment/profile choice: RFC
+  1112 sec 6.1 only defaults an unspecified multicast TTL to 1, and RFC 5771 sec 5 places 224.0.1.129
+  in the Internetwork Control Block). Two-step and clockAccuracy 0xFE / offsetScaledLogVariance 0xFFFF
+  are IMPLEMENTATION CHOICES matching that profile, not AES67 numeric requirements.
+- Data set: clockClass 248 (AES67 Annex A Table A.2 default/ARB), stepsRemoved 0, timeSource 0xA0,
+  timeProperties ARB unless gmUtcOffset is configured. GM time is a monotonic anchor at activation
+  (ARB) or the Windows system UTC at activation plus the configured offset; there is no PHC, so the
+  hardware-timestamping path remains NOT_RUN and GM accuracy is software-grade.
+- BMCA-lite follows the IEEE 1588-2008 9.3.2 dataset comparison order (UNVERIFIED-LOCAL: the 1588
+  text is not in this workspace). A better foreign GM makes us stop announcing immediately (auto:
+  follow it as slave; gm: report passive). A worse foreign GM keeps us GM but arms a dual-GM
+  watchdog that yields after two announce intervals rather than run two GMs. A passive GM reclaims
+  after announceTimeoutMs without a foreign Announce.
+
+### Slave behavior and SDP
+
+The follower accepts ptpTimescale=0 (ARB) Announces for frequency-only locking. This is a documented
+DEVIATION from AES67 section 5 (the media and network clocks must share the TAI epoch); ARB locking
+therefore reports time_traceable=false and an arbitrary epoch. time_traceable comes from the
+TIME_TRACEABLE flag (0x0010) or a traceable clockClass (6/7/166/187), never from ptpTimescale
+(SPEC-REFS audit D3; the real board GM announces ptpTimescale=1 with timeTraceable=0).
+
+The announced SDP follows the role: locked slave or active GM emits a=clock-domain:PTPv2 <domain>,
+a=ts-refclk:ptp=IEEE1588-2008:<GMID>:<domain> and a=mediaclk:direct=0; local mode emits
+a=ts-refclk:local and a=mediaclk:direct=0 with no ptp and no localmac. Every role change raises the
+SDP version and re-announces, so receivers see a new o= version. Legacy ts-refclk:localmac is never
+emitted; receivers that still need it during migration must run their own strict=false mode
+(aes67_refclk_strict=false on the receiver side). mediaclk:sender is legal RFC 7273 but not
+AES67-conformant, so it is not emitted (reserved EXTENSION behind a future local_mediaclk setting);
+the default and only emitted form is a=mediaclk:direct=0.
+
+### Status reporting
+
+EXTENSION ABI export nsp_aes67_ptp_status (NspAes67PtpStatus) reports mode, role, source, domain,
+time_traceable, ptp_timescale, gm_identity, a reason tag and the transition counter; the counters
+struct stays size-compatible. The same data is written to the optional diagnostics log line
+(nsp_aes67 ptp unix_ns=... mode=... role=... source=... gm=... domain=... time_traceable=...
+ptp_timescale=... reason=...). Software timestamping uses Windows QPC at the socket boundaries; auto
+uses software when hardware timestamping is unavailable.
 
 The module supplies one SDP description per flow (RFC 4566, RFC 7273) while locked and during holdover, and enables SAP announcements for discovery (RFC 2974). SAP message identifiers are CRC-16 hashes of the SDP, so a version change is visible to browsers; deletions are repeated three times and announcements stop only when RTP stops. The NSP web interface retains the configuration panel. Static SDP can be exported through the ABI for HTTP or file delivery; the module does not run an HTTP/RTSP server.
 

@@ -12,6 +12,22 @@ use std::{
 
 const IP: Ipv4Addr = Ipv4Addr::LOCALHOST;
 const GM: [u8; 8] = [0x12; 8];
+
+/// Full Announce data set for the loopback mock GM (IEEE 1588-2008 13.3.1).
+fn codec_announce(grandmaster: [u8; 8]) -> ptp::codec::Announce {
+    ptp::codec::Announce {
+        origin_ns: 0,
+        current_utc_offset: 0,
+        priority1: 128,
+        clock_class: 248,
+        clock_accuracy: 0xfe,
+        offset_scaled_log_variance: 0xffff,
+        priority2: 128,
+        grandmaster,
+        steps_removed: 0,
+        time_source: 0xa0,
+    }
+}
 const EPOCH: i128 = 1_900_000_000_000_000_000;
 
 struct Handle(*mut Session);
@@ -30,6 +46,14 @@ impl Handle {
     }
     fn configure_v2(&self, config: &ConfigV2) -> i32 {
         unsafe { nsp_aes67_configure(self.0, config.cast()) }
+    }
+    fn configure_v3(&self, config: &ConfigV3) -> i32 {
+        unsafe { nsp_aes67_configure(self.0, config.cast()) }
+    }
+    fn ptp_status(&self) -> PtpStatusV1 {
+        let mut status = PtpStatusV1::default();
+        assert_eq!(unsafe { nsp_aes67_ptp_status(self.0, &mut status) }, 0);
+        status
     }
 }
 impl Drop for Handle {
@@ -69,7 +93,13 @@ fn config_base() -> ConfigV1 {
         ..ConfigV1::default()
     }
 }
-fn ptp_ports(config: &mut ConfigV1, event: u16, general: u16, local_event: u16, local_general: u16) {
+fn ptp_ports(
+    config: &mut ConfigV1,
+    event: u16,
+    general: u16,
+    local_event: u16,
+    local_general: u16,
+) {
     config.ptp_event_port = event;
     config.ptp_general_port = general;
     config.ptp_local_event_port = local_event;
@@ -131,7 +161,7 @@ impl Mock {
                             dest_general,
                             sequence,
                             PTP_TIMESCALE,
-                            Body::Announce { grandmaster: GM },
+                            Body::Announce(codec_announce(GM)),
                         );
                     }
                     let tx = stamp();
@@ -278,6 +308,17 @@ fn check_udp_mock_gm(version: u8) {
     let mut counters = Counters::default();
     assert_eq!(unsafe { nsp_aes67_counters(handle.0, &mut counters) }, 0);
     assert_eq!((counters.locked, counters.timestamping), (1, 1));
+    let status = handle.ptp_status();
+    assert_eq!(status.mode, ptp::PtpMode::Slave.as_abi());
+    assert_eq!(status.role, ptp::Role::Slave.as_abi());
+    assert_eq!(status.source, ptp::Source::ExternalGm.as_abi());
+    assert_eq!(status.gm_identity, GM);
+    assert_eq!(status.domain, 19);
+    assert_eq!(
+        status.time_traceable, 0,
+        "mock announce has no TIME_TRACEABLE"
+    );
+    assert_eq!(status.ptp_timescale, 1, "mock announce sets PTP_TIMESCALE");
     let size = unsafe { nsp_aes67_sdp(handle.0, 0, ptr::null_mut(), 0) };
     assert!(size > 0);
     let mut sdp = vec![0_u8; size as usize];
@@ -498,7 +539,10 @@ fn udp_pacing_30s_delivers_at_least_999_pps_without_timestamp_holes() {
     assert_eq!(irregular, 0);
     assert!(pps >= 999.0, "{pps:.3}pps below minimum rate");
     if let Some(event) = handle.poll() {
-        panic!("unexpected lifecycle event kind={} code={}", event.kind, event.code);
+        panic!(
+            "unexpected lifecycle event kind={} code={}",
+            event.kind, event.code
+        );
     }
     assert_eq!(unsafe { nsp_aes67_stop(handle.0, 1000) }, 0);
 }
@@ -679,8 +723,8 @@ fn sample_rate_whitelist_is_enforced() {
         let mut raw = config_base();
         raw.sample_rate = rate;
         raw.channels = 2;
-        let config = unsafe { super::config(&raw) }
-            .unwrap_or_else(|| panic!("rate {rate} rejected"));
+        let config =
+            unsafe { super::config(&raw) }.unwrap_or_else(|| panic!("rate {rate} rejected"));
         assert_eq!(config.timing.sample_rate(), rate);
     }
     for rate in [32_000, 352_800, 384_000, 22_050] {
@@ -758,10 +802,22 @@ fn auto_mode_splits_by_payload_budget_and_rejects_unservable_times() {
     // 48 kHz / 1 ms / 16ch / L24: 2 x 8ch (1152 B each).
     let config = unsafe { super::config((&auto_config(16, 48_000, 1_000, 0)).cast()) }.unwrap();
     assert_eq!(config.flows.len(), 2);
-    assert_eq!(config.flows.iter().map(|f| f.channels).collect::<Vec<_>>(), [8, 8]);
-    assert!(config.flows.iter().all(|flow| flow.destination.port() == 5004));
     assert_eq!(
-        config.flows.iter().map(|f| *f.destination.ip()).collect::<Vec<_>>(),
+        config.flows.iter().map(|f| f.channels).collect::<Vec<_>>(),
+        [8, 8]
+    );
+    assert!(
+        config
+            .flows
+            .iter()
+            .all(|flow| flow.destination.port() == 5004)
+    );
+    assert_eq!(
+        config
+            .flows
+            .iter()
+            .map(|f| *f.destination.ip())
+            .collect::<Vec<_>>(),
         [Ipv4Addr::new(239, 69, 0, 1), Ipv4Addr::new(239, 69, 0, 2)]
     );
 
@@ -790,7 +846,10 @@ fn auto_mode_splits_by_payload_budget_and_rejects_unservable_times() {
     assert!(unsafe { super::config((&auto_config(16, 192_000, 2_000, 0)).cast()) }.is_none());
     // 192 kHz / 1 ms / 8ch / L16: 3072 B -> 3 flows of 3/3/2 channels.
     let config = unsafe { super::config((&auto_config(8, 192_000, 1_000, 1)).cast()) }.unwrap();
-    assert_eq!(config.flows.iter().map(|f| f.channels).collect::<Vec<_>>(), [3, 3, 2]);
+    assert_eq!(
+        config.flows.iter().map(|f| f.channels).collect::<Vec<_>>(),
+        [3, 3, 2]
+    );
 }
 
 #[test]
@@ -806,7 +865,10 @@ fn single_flow_mode_is_capped_to_the_eight_channel_profile() {
     v2.base.flow_mode = 1;
     assert!(unsafe { super::config((&v2).cast()) }.is_none());
     v2.base.flow_mode = 0;
-    assert_eq!(unsafe { super::config((&v2).cast()) }.unwrap().flows.len(), 2);
+    assert_eq!(
+        unsafe { super::config((&v2).cast()) }.unwrap().flows.len(),
+        2
+    );
 }
 
 #[test]
@@ -816,7 +878,12 @@ fn sixty_four_channels_map_to_eight_eight_channel_flows() {
     let config = unsafe { super::config((&v2).cast()) }.unwrap();
     assert_eq!(config.flows.len(), 8);
     assert!(config.flows.iter().all(|flow| flow.channels == 8));
-    assert!(config.flows.iter().all(|flow| flow.destination.port() == 5004));
+    assert!(
+        config
+            .flows
+            .iter()
+            .all(|flow| flow.destination.port() == 5004)
+    );
 }
 
 fn flow_row(dest: [u8; 4], port: u16, offset: u32) -> FlowV1 {
@@ -833,18 +900,29 @@ fn flow_row(dest: [u8; 4], port: u16, offset: u32) -> FlowV1 {
 
 #[test]
 fn strict_ports_share_5004_and_reject_divergence() {
-    let rows = [flow_row([239, 1, 0, 1], 5004, 0), flow_row([239, 1, 0, 2], 5004, 4)];
+    let rows = [
+        flow_row([239, 1, 0, 1], 5004, 0),
+        flow_row([239, 1, 0, 2], 5004, 4),
+    ];
     let mut v2 = auto_config(8, 48_000, 1_000, 0);
     v2.base.flow_mode = 2;
     v2.base.flow_count = 2;
     v2.base.flows = rows.as_ptr();
     let config = unsafe { super::config((&v2).cast()) }.unwrap();
     assert_eq!(config.flows.len(), 2);
-    assert!(config.flows.iter().all(|flow| flow.destination.port() == 5004));
+    assert!(
+        config
+            .flows
+            .iter()
+            .all(|flow| flow.destination.port() == 5004)
+    );
 
     // Divergent per-flow port is a strict-mode error (legacy 5010/5012 plans
     // must migrate to 5004 + unique groups).
-    let divergent = [flow_row([239, 1, 0, 1], 5004, 0), flow_row([239, 1, 0, 2], 5006, 4)];
+    let divergent = [
+        flow_row([239, 1, 0, 1], 5004, 0),
+        flow_row([239, 1, 0, 2], 5006, 4),
+    ];
     v2.base.flows = divergent.as_ptr();
     assert!(unsafe { super::config((&v2).cast()) }.is_none());
 
@@ -857,7 +935,10 @@ fn strict_ports_share_5004_and_reject_divergence() {
     v2.base.flows = unicast.as_ptr();
     assert!(unsafe { super::config((&v2).cast()) }.is_some());
 
-    let odd = [flow_row([239, 1, 0, 1], 5005, 0), flow_row([239, 1, 0, 2], 5004, 4)];
+    let odd = [
+        flow_row([239, 1, 0, 1], 5005, 0),
+        flow_row([239, 1, 0, 2], 5004, 4),
+    ];
     v2.base.flows = odd.as_ptr();
     assert!(unsafe { super::config((&v2).cast()) }.is_none());
 }
@@ -955,4 +1036,230 @@ fn windows_product_dll_exports_and_loads() {
         assert_eq!(close(handle, 1000), 0);
         assert_ne!(FreeLibrary(module), 0);
     }
+}
+fn topology_config(
+    channels: u32,
+    rate: u32,
+    ptime: u32,
+    depth: u8,
+    mode: u8,
+    gm_capable: u8,
+) -> ConfigV3 {
+    let mut v3 = ConfigV3 {
+        ptp_mode: mode,
+        ptp_gm_capable: gm_capable,
+        ..ConfigV3::default()
+    };
+    v3.base = auto_config(channels, rate, ptime, depth);
+    v3.base.base.struct_size = mem::size_of::<ConfigV3>() as u32;
+    v3
+}
+
+#[test]
+fn ptp_topology_fields_parse_from_the_appended_abi() {
+    assert_eq!(mem::size_of::<ConfigV3>(), 168);
+    let mut v3 = topology_config(2, 48_000, 1_000, 0, 2, 1);
+    v3.ptp_priority1 = 10;
+    v3.ptp_priority2 = 20;
+    v3.ptp_announce_timeout_ms = 4_000;
+    v3.ptp_gm_utc_offset = 37;
+    let config = unsafe { super::config(v3.cast()) }.unwrap();
+    assert_eq!(config.ptp.mode, ptp::PtpMode::Gm);
+    assert_eq!(config.ptp.priority1, 10);
+    assert_eq!(config.ptp.priority2, 20);
+    assert!(config.ptp.gm_capable);
+    assert_eq!(config.ptp.announce_timeout_ns, 4_000 * NS_PER_MS);
+    assert_eq!(config.ptp.gm_utc_offset, Some(37));
+    assert_eq!(config.ptp.gm_identity, None);
+
+    // ARB: the -1 sentinel means "no UTC offset configured".
+    let mut arb = topology_config(2, 48_000, 1_000, 0, 1, 0);
+    arb.ptp_gm_utc_offset = -1;
+    let config = unsafe { super::config(arb.cast()) }.unwrap();
+    assert_eq!(config.ptp.mode, ptp::PtpMode::Auto);
+    assert_eq!(config.ptp.gm_utc_offset, None);
+    assert!(!config.ptp.gm_capable);
+    // Zero priority selects the AES67 default 128 ("unchanged" semantics).
+    assert_eq!(config.ptp.priority1, 128);
+    // Announce timeout zero selects the 6000 ms profile default.
+    let default_timeout = topology_config(2, 48_000, 1_000, 0, 1, 0);
+    let config = unsafe { super::config(default_timeout.cast()) }.unwrap();
+    assert_eq!(config.ptp.announce_timeout_ns, 6_000 * NS_PER_MS);
+
+    // Invalid ptp_mode values must be rejected (fail closed).
+    for mode in 4..=255u8 {
+        let mut invalid = topology_config(2, 48_000, 1_000, 0, 1, 0);
+        invalid.ptp_mode = mode;
+        assert!(
+            unsafe { super::config(invalid.cast()) }.is_none(),
+            "mode {mode}"
+        );
+    }
+    let mut bad_timeout = topology_config(2, 48_000, 1_000, 0, 1, 0);
+    bad_timeout.ptp_announce_timeout_ms = 999;
+    assert!(unsafe { super::config(bad_timeout.cast()) }.is_none());
+    let mut bad_offset = topology_config(2, 48_000, 1_000, 0, 2, 1);
+    bad_offset.ptp_gm_utc_offset = 128;
+    assert!(unsafe { super::config(bad_offset.cast()) }.is_none());
+    let mut bad_capable = topology_config(2, 48_000, 1_000, 0, 1, 0);
+    bad_capable.ptp_gm_capable = 2;
+    assert!(unsafe { super::config(bad_capable.cast()) }.is_none());
+    let mut bad_reserved = topology_config(2, 48_000, 1_000, 0, 1, 0);
+    bad_reserved.reserved = [1, 0, 0, 0, 0, 0];
+    assert!(unsafe { super::config(bad_reserved.cast()) }.is_none());
+}
+
+#[test]
+fn ptp_local_mode_starts_without_ptp_and_reports_local_sdp() {
+    let handle = Handle::new();
+    let v3 = topology_config(2, 48_000, 1_000, 0, 3, 0);
+    assert_eq!(handle.configure_v3(&v3), 0);
+    assert_eq!(unsafe { nsp_aes67_start(handle.0) }, 0);
+    assert_eq!(handle.poll().unwrap().kind, 1);
+    let status = handle.ptp_status();
+    assert_eq!(status.mode, ptp::PtpMode::Local.as_abi());
+    assert_eq!(status.role, ptp::Role::Local.as_abi());
+    assert_eq!(status.source, ptp::Source::Local.as_abi());
+    assert_eq!(status.time_traceable, 0);
+    assert_eq!(status.ptp_timescale, 0);
+    assert_eq!(status.gm_identity, [0; 8]);
+    let reason = CStr::from_bytes_until_nul(&status.reason)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_eq!(reason, "configured_local");
+    let mut counters = Counters::default();
+    assert_eq!(unsafe { nsp_aes67_counters(handle.0, &mut counters) }, 0);
+    assert_eq!(counters.locked, 0, "local mode never claims a PTP lock");
+    let size = unsafe { nsp_aes67_sdp(handle.0, 0, ptr::null_mut(), 0) };
+    assert!(size > 0, "local mode has an SDP immediately");
+    let mut sdp = vec![0_u8; size as usize];
+    assert_eq!(
+        unsafe { nsp_aes67_sdp(handle.0, 0, sdp.as_mut_ptr().cast(), sdp.len()) },
+        size
+    );
+    let text = CStr::from_bytes_with_nul(&sdp).unwrap().to_str().unwrap();
+    assert!(text.contains("a=ts-refclk:local\r\na=mediaclk:direct=0\r\n"));
+    assert!(!text.contains("ts-refclk:ptp"));
+    assert!(!text.contains("localmac"));
+    assert_eq!(unsafe { nsp_aes67_stop(handle.0, 1500) }, 0);
+}
+
+#[test]
+fn ptp_auto_without_a_gm_falls_back_to_local() {
+    let handle = Handle::new();
+    let mut v3 = topology_config(2, 48_000, 1_000, 0, 1, 0);
+    v3.ptp_announce_timeout_ms = 1_000;
+    assert_eq!(handle.configure_v3(&v3), 0);
+    let started = Instant::now();
+    assert_eq!(unsafe { nsp_aes67_start(handle.0) }, 0);
+    assert!(started.elapsed() >= Duration::from_millis(900));
+    let status = handle.ptp_status();
+    assert_eq!(status.mode, ptp::PtpMode::Auto.as_abi());
+    assert_eq!(status.role, ptp::Role::Local.as_abi());
+    assert_eq!(status.source, ptp::Source::Local.as_abi());
+    let reason = CStr::from_bytes_until_nul(&status.reason)
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_eq!(reason, "announce_timeout_local");
+    assert_eq!(unsafe { nsp_aes67_stop(handle.0, 1500) }, 0);
+}
+
+#[test]
+fn ptp_gm_mode_without_a_readable_identity_is_refused() {
+    let handle = Handle::new();
+    let v3 = topology_config(2, 48_000, 1_000, 0, 2, 1);
+    assert_eq!(handle.configure_v3(&v3), 0);
+    // The loopback adapter has no EUI-48 MAC; gm mode must refuse rather than
+    // invent an identity (DESIGN-TOPO.md section 3).
+    assert_eq!(unsafe { nsp_aes67_start(handle.0) }, session::PTP_IDENTITY);
+    let mut status = PtpStatusV1::default();
+    assert_eq!(
+        unsafe { nsp_aes67_ptp_status(handle.0, &mut status) },
+        session::STATE,
+        "no status snapshot without a running worker"
+    );
+}
+
+fn read_sdp(handle: &Handle) -> String {
+    let size = unsafe { nsp_aes67_sdp(handle.0, 0, ptr::null_mut(), 0) };
+    assert!(size > 0, "SDP available");
+    let mut sdp = vec![0_u8; size as usize];
+    assert_eq!(
+        unsafe { nsp_aes67_sdp(handle.0, 0, sdp.as_mut_ptr().cast(), sdp.len()) },
+        size
+    );
+    CStr::from_bytes_with_nul(&sdp)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// SDP session version from the o= line (o=- <session-id> <version> IN IP4 <addr>).
+fn sdp_version(sdp: &str) -> u64 {
+    let origin = sdp.lines().find(|line| line.starts_with("o=")).unwrap();
+    origin.split_whitespace().nth(2).unwrap().parse().unwrap()
+}
+
+#[test]
+fn role_switch_from_local_to_slave_raises_the_sdp_version() {
+    let audio = bind_even();
+    audio
+        .set_read_timeout(Some(Duration::from_millis(200)))
+        .unwrap();
+    let event = bind();
+    let general = bind();
+    let local_event = bind();
+    let local_general = bind();
+    let mut v3 = topology_config(2, 48_000, 1_000, 0, 1, 0);
+    v3.base.base.default_port = port(&audio);
+    v3.base.base.default_dest_ip = IP.octets();
+    v3.base.base.ptp_event_port = port(&event);
+    v3.base.base.ptp_general_port = port(&general);
+    v3.base.base.ptp_local_event_port = port(&local_event);
+    v3.base.base.ptp_local_general_port = port(&local_general);
+    v3.base.base.lock_timeout_ms = loopback_timeout();
+    v3.ptp_announce_timeout_ms = 1_000;
+    drop((local_event, local_general));
+    let handle = Handle::new();
+    assert_eq!(handle.configure_v3(&v3), 0);
+    assert_eq!(unsafe { nsp_aes67_start(handle.0) }, 0);
+    assert_eq!(handle.poll().unwrap().kind, 1);
+    // AUTO without a GM falls back to local first: SDP advertises ts-refclk:local.
+    let local = read_sdp(&handle);
+    assert!(local.contains("a=ts-refclk:local\r\n"));
+    assert!(!local.contains("ts-refclk:ptp"));
+    let local_version = sdp_version(&local);
+    // An external GM now appears: the role machine needs two consecutive
+    // Announces to leave local, then the follower needs a clock fit.
+    let gm = Mock::spawn(
+        event,
+        general,
+        v3.base.base.ptp_local_event_port,
+        v3.base.base.ptp_local_general_port,
+        0x12,
+    );
+    let deadline = Instant::now() + Duration::from_secs(6);
+    let mut ptp = String::new();
+    while Instant::now() < deadline {
+        let candidate = read_sdp(&handle);
+        if candidate.contains("a=ts-refclk:ptp=IEEE1588-2008:12-12-12-12-12-12-12-12:19") {
+            ptp = candidate;
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        !ptp.is_empty(),
+        "role switch to slave re-advertises ts-refclk:ptp"
+    );
+    assert!(
+        sdp_version(&ptp) > local_version,
+        "role change bumps the SDP version"
+    );
+    assert_eq!(handle.ptp_status().role, ptp::Role::Slave.as_abi());
+    assert_eq!(unsafe { nsp_aes67_stop(handle.0, 1500) }, 0);
+    drop(gm);
 }

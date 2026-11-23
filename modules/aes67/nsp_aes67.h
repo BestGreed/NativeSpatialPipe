@@ -21,6 +21,16 @@ enum { NSP_AES67_STARTED = 1, NSP_AES67_SENDER_EXITED = 2,
     NSP_AES67_STOP_COMPLETE = 3, NSP_AES67_PTP_LOST = 4 };
 /* bit_depth: 0 = L24 (default), 1 = L16. */
 enum { NSP_AES67_L24 = 0, NSP_AES67_L16 = 1 };
+/* PTP topology mode: 0 slave, 1 auto, 2 gm, 3 local (DESIGN-TOPO.md sec 2). */
+enum { NSP_AES67_PTP_MODE_SLAVE = 0, NSP_AES67_PTP_MODE_AUTO = 1,
+    NSP_AES67_PTP_MODE_GM = 2, NSP_AES67_PTP_MODE_LOCAL = 3 };
+/* Reported role: 0 init, 1 listening, 2 slave, 3 gm, 4 passive, 5 local. */
+enum { NSP_AES67_ROLE_INIT = 0, NSP_AES67_ROLE_LISTENING = 1, NSP_AES67_ROLE_SLAVE = 2,
+    NSP_AES67_ROLE_GM = 3, NSP_AES67_ROLE_PASSIVE = 4, NSP_AES67_ROLE_LOCAL = 5 };
+/* Reported source: 0 none, 1 external-gm, 2 self-gm, 3 local, 4 holdover, 5 passive. */
+enum { NSP_AES67_SOURCE_NONE = 0, NSP_AES67_SOURCE_EXTERNAL_GM = 1,
+    NSP_AES67_SOURCE_SELF_GM = 2, NSP_AES67_SOURCE_LOCAL = 3,
+    NSP_AES67_SOURCE_HOLDOVER = 4, NSP_AES67_SOURCE_PASSIVE = 5 };
 /* flow_mode: 0 = auto, 1 = single (<=8ch), 2 = multi (explicit). */
 enum { NSP_AES67_FLOW_AUTO = 0, NSP_AES67_FLOW_SINGLE = 1, NSP_AES67_FLOW_MULTI = 2 };
 /* port_policy: 0 = strict (all flows 5004), 1 = explicit per-flow ports. */
@@ -73,6 +83,17 @@ typedef struct NspAes67Config {
     uint8_t reserved[6];
 } NspAes67Config;
 typedef struct NspAes67Event { uint32_t kind; int32_t code, detail; } NspAes67Event;
+/* EXTENSION PTP mode/role/source snapshot (DESIGN-TOPO.md sec 6); the
+ * counters struct is ABI size-stable, so the role is reported here and in the
+ * nsp_aes67 ptp diagnostics log line. reason is a NUL-terminated stable tag. */
+typedef struct NspAes67PtpStatus {
+    uint32_t mode, role, source, domain;
+    uint32_t time_traceable, ptp_timescale;
+    uint8_t gm_identity[8];
+    char reason[32];
+    uint64_t transitions;
+    uint32_t reserved;
+} NspAes67PtpStatus;
 typedef struct NspAes67Counters {
     uint64_t packets, silent, dropped, late, errors, bytes;
     uint32_t locked, timestamping;
@@ -85,6 +106,7 @@ int nsp_aes67_start(NspAes67 *session);
 int nsp_aes67_stop(NspAes67 *session, uint32_t join_timeout_ms);
 int nsp_aes67_poll_lifecycle_event(NspAes67 *session, NspAes67Event *out);
 int nsp_aes67_counters(NspAes67 *session, NspAes67Counters *out);
+int nsp_aes67_ptp_status(NspAes67 *session, NspAes67PtpStatus *out);
 int nsp_aes67_sdp(NspAes67 *session, uint32_t flow_index, char *out, size_t capacity);
 int nsp_aes67_close(NspAes67 *session, uint32_t join_timeout_ms);
 int nsp_aes67_submit_leased(void *context, uint64_t first_frame, const float *pcm,
