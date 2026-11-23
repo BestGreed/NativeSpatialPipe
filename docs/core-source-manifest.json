@@ -40,18 +40,6 @@
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
     {
-      "path": "modules/zig-scheduler/aes67_mcast_tool.zig",
-      "sourcePath": "modules/zig-scheduler/aes67_mcast_tool.zig",
-      "sourceSha256": "85ae5b4df92d5d552b9bbc5f5be84260185e31865b9d7e9997923da79667e300",
-      "sha256": "85ae5b4df92d5d552b9bbc5f5be84260185e31865b9d7e9997923da79667e300"
-    },
-    {
-      "path": "modules/zig-scheduler/aes67_net_tool.zig",
-      "sourcePath": "modules/zig-scheduler/aes67_net_tool.zig",
-      "sourceSha256": "ea1e936794490c993e16aa54b84e0016918b7599e706f0d8756b7fd8897c10e1",
-      "sha256": "ea1e936794490c993e16aa54b84e0016918b7599e706f0d8756b7fd8897c10e1"
-    },
-    {
       "path": "modules/zig-scheduler/playback.aes67.16ch.example.json",
       "sourcePath": "modules/zig-scheduler/playback.aes67.16ch.example.json",
       "sourceSha256": "49cc22ac887b4e66e4556deaf9670af2c4bb16da2307a2da5f5853dbcd4aca15",
@@ -211,7 +199,7 @@
       "path": "docs/aes67-output.md",
       "sourcePath": "docs/aes67-output.md",
       "sourceSha256": "5fae9bafba7ad5484ba6d730e25b85c9acbc9d323f26301bf80c1e6db37ffff6",
-      "sha256": "5fae9bafba7ad5484ba6d730e25b85c9acbc9d323f26301bf80c1e6db37ffff6"
+      "sha256": "e82f4b5906eef260568b95e634cde62ccfa1a68bd447d8831b272b911ee546e5"
     },
     {
       "path": "docs/alpha-dev.md",
@@ -4669,7 +4657,7 @@
       "path": "modules/visualization-frontend/app.js",
       "sourcePath": "modules/visualization-frontend/app.js",
       "sourceSha256": "f75c8513cd185d0fdbeeb2a7c22f7b596c59664fc2cdc2beadda3c2305afb3da",
-      "sha256": "f75c8513cd185d0fdbeeb2a7c22f7b596c59664fc2cdc2beadda3c2305afb3da"
+      "sha256": "433aad28efa080f09a3233d95ae21621ba428db6efbd3f830c98a5a6606cb8a9"
     },
     {
       "path": "modules/visualization-frontend/assets/README.md",
@@ -4705,7 +4693,7 @@
       "path": "modules/visualization-frontend/configuration-model.js",
       "sourcePath": "modules/visualization-frontend/configuration-model.js",
       "sourceSha256": "c470682f2f6c27c0b7c4867deb315ca547c477a6a5c6b095706ab394091698c4",
-      "sha256": "c470682f2f6c27c0b7c4867deb315ca547c477a6a5c6b095706ab394091698c4"
+      "sha256": "6fcf888d1bfca6242add1787ebdafd2f5a8b6d418e690160691ce3c180a0b1cc"
     },
     {
       "path": "modules/visualization-frontend/configuration.css",
@@ -4723,7 +4711,7 @@
       "path": "modules/visualization-frontend/configuration.js",
       "sourcePath": "modules/visualization-frontend/configuration.js",
       "sourceSha256": "9155631774f6a45ce598fef329f54994a5705cede6b2031cdbc75e21b11e539f",
-      "sha256": "9155631774f6a45ce598fef329f54994a5705cede6b2031cdbc75e21b11e539f"
+      "sha256": "bddabcc7f63a991edba5e1c1af07aa059a20cba675c6d746ae11fe7c5a743083"
     },
     {
       "path": "modules/visualization-frontend/data.js",
@@ -4747,7 +4735,7 @@
       "path": "modules/visualization-frontend/i18n-en.js",
       "sourcePath": "modules/visualization-frontend/i18n-en.js",
       "sourceSha256": "2d5a291bf569d8eee26c48adb9bf4d961f79b3df73edc613fa170a60428988fe",
-      "sha256": "2d5a291bf569d8eee26c48adb9bf4d961f79b3df73edc613fa170a60428988fe"
+      "sha256": "01a5fa872aff337eda58993d564ad3857fa0e72c876c2f08399a0a1b51d54d91"
     },
     {
       "path": "modules/visualization-frontend/i18n.js",
@@ -4864,13 +4852,13 @@
       "path": "modules/visualization-frontend/test-configuration-page.js",
       "sourcePath": "modules/visualization-frontend/test-configuration-page.js",
       "sourceSha256": "5552783469ffb6b44b697f6c278e23cf1b033d46930caf597bc4102c48a80365",
-      "sha256": "5552783469ffb6b44b697f6c278e23cf1b033d46930caf597bc4102c48a80365"
+      "sha256": "3f54f0571794f26334a318be1587b76dbf34f3074bb68f84a4bf08c0d4ab8c14"
     },
     {
       "path": "modules/visualization-frontend/test-configuration.js",
       "sourcePath": "modules/visualization-frontend/test-configuration.js",
       "sourceSha256": "7da472a4495f17eca609bff7661cb09f316bab3d3bede02a4ee9c06810148d6c",
-      "sha256": "7da472a4495f17eca609bff7661cb09f316bab3d3bede02a4ee9c06810148d6c"
+      "sha256": "34e5d55ec34ab4b4943186e8993acd6d7fef113e6ba05843448c7391b7bafb5b"
     },
     {
       "path": "modules/visualization-frontend/test-data.js",
@@ -5032,7 +5020,7 @@
       "path": "modules/zig-scheduler/Build.ps1",
       "sourcePath": "modules/zig-scheduler/Build.ps1",
       "sourceSha256": "977653113a20b8c80dc40245ef806aa06b3d9142c4c6ad2bc90feebfe46677fc",
-      "sha256": "977653113a20b8c80dc40245ef806aa06b3d9142c4c6ad2bc90feebfe46677fc"
+      "sha256": "24656d1b897e299c825b7843a671806a96e2b990ac93bf2c92e7e69f193e6ace"
     },
     {
       "path": "modules/zig-scheduler/README.md",
@@ -5074,55 +5062,13 @@
       "path": "modules/zig-scheduler/aes67_config.zig",
       "sourcePath": "modules/zig-scheduler/aes67_config.zig",
       "sourceSha256": "6402ca0058bc5af780a40ae1828ffca7c6618e1f5dc3d0b3a8db9a0057327b1e",
-      "sha256": "7ae5b9a1f9392ed9a6c95c23e7f9e3cac4050c717211d5ae3d67bb07e3b54058"
+      "sha256": "1e1cf6bfbdcb92bfa3281939338653fc6328e60c05516dbb2f7f53ec8cfd3d11"
     },
     {
       "path": "modules/zig-scheduler/aes67_config_tests.zig",
       "sourcePath": "modules/zig-scheduler/aes67_config_tests.zig",
       "sourceSha256": "3f601e37dc8940c885bd81e4ed91f998a996062ae443997f0999382674346fa5",
-      "sha256": "3f601e37dc8940c885bd81e4ed91f998a996062ae443997f0999382674346fa5"
-    },
-    {
-      "path": "modules/zig-scheduler/aes67_control.zig",
-      "sourcePath": "modules/zig-scheduler/aes67_control.zig",
-      "sourceSha256": "b04faa97cf020b972482b77a09446174c3d39200c9750fa14083e9939c59b605",
-      "sha256": "b04faa97cf020b972482b77a09446174c3d39200c9750fa14083e9939c59b605"
-    },
-    {
-      "path": "modules/zig-scheduler/aes67_playback.zig",
-      "sourcePath": "modules/zig-scheduler/aes67_playback.zig",
-      "sourceSha256": "37b1ad14168ab46725640a1e4df2c072aa678d94bf69ff3daf0937506039386f",
-      "sha256": "37b1ad14168ab46725640a1e4df2c072aa678d94bf69ff3daf0937506039386f"
-    },
-    {
-      "path": "modules/zig-scheduler/aes67_route.zig",
-      "sourcePath": "modules/zig-scheduler/aes67_route.zig",
-      "sourceSha256": "f58c0368221dbb0648b25a0c74b3b55826612bd20027174b4b97b0dea6b1e42a",
-      "sha256": "f58c0368221dbb0648b25a0c74b3b55826612bd20027174b4b97b0dea6b1e42a"
-    },
-    {
-      "path": "modules/zig-scheduler/aes67_rtp.zig",
-      "sourcePath": "modules/zig-scheduler/aes67_rtp.zig",
-      "sourceSha256": "dc7d174c407bb10c70ee32af3f6c3e06dabf7716b4cc69aa85f42b4b0f1dd0d1",
-      "sha256": "5d28523a4c0abeb3576d23c990a99321be8374197f63d4426504c2167b48a948"
-    },
-    {
-      "path": "modules/zig-scheduler/aes67_rtp_tests.zig",
-      "sourcePath": "modules/zig-scheduler/aes67_rtp_tests.zig",
-      "sourceSha256": "d4454f2178cab26befbbbe314163aed73c41866ac1309b0812fa8ee04ac24459",
-      "sha256": "8770d3641a130cc4c4036655e9cfcb1a9e95b5a81724a4c96513c41901064445"
-    },
-    {
-      "path": "modules/zig-scheduler/aes67_tx.zig",
-      "sourcePath": "modules/zig-scheduler/aes67_tx.zig",
-      "sourceSha256": "cffa883a02397f07958e37ca72ac737d6cfaf3590365371d0cde87d13cfe0b4b",
-      "sha256": "cffa883a02397f07958e37ca72ac737d6cfaf3590365371d0cde87d13cfe0b4b"
-    },
-    {
-      "path": "modules/zig-scheduler/aes67_tx_tests.zig",
-      "sourcePath": "modules/zig-scheduler/aes67_tx_tests.zig",
-      "sourceSha256": "92d4ad7cdecced8b4ee2fb7295b45a1327a23ae8ab512e3487b7f7df38db6067",
-      "sha256": "92d4ad7cdecced8b4ee2fb7295b45a1327a23ae8ab512e3487b7f7df38db6067"
+      "sha256": "1bf843282cee0bfc8f10c12adc7f616419bb1e17c70f8563b3b81fd1f2247648"
     },
     {
       "path": "modules/zig-scheduler/aoip_config.zig",
@@ -5152,7 +5098,7 @@
       "path": "modules/zig-scheduler/backend.zig",
       "sourcePath": "modules/zig-scheduler/backend.zig",
       "sourceSha256": "8fa71b8e0e61b5fa1e3b511df0c330ce5494225b1f7b6da969d88a9bd95a4f8f",
-      "sha256": "8fa71b8e0e61b5fa1e3b511df0c330ce5494225b1f7b6da969d88a9bd95a4f8f"
+      "sha256": "96659cd19d938263b0711edcbbc629cdd64c54ce5f7f387a03ab489e3ff69c3d"
     },
     {
       "path": "modules/zig-scheduler/common.zig",
@@ -5170,7 +5116,7 @@
       "path": "modules/zig-scheduler/desktop_playback.zig",
       "sourcePath": "modules/zig-scheduler/desktop_playback.zig",
       "sourceSha256": "997634ac043cf59cf23403a36b21adba864f6d221abdb3aca66238ce583a5300",
-      "sha256": "997634ac043cf59cf23403a36b21adba864f6d221abdb3aca66238ce583a5300"
+      "sha256": "af864a3050152639d3e397560298e202bfe98eff2a26cb6acf7419663188264a"
     },
     {
       "path": "modules/zig-scheduler/desktop_playback_tests.zig",
@@ -5200,7 +5146,7 @@
       "path": "modules/zig-scheduler/host.zig",
       "sourcePath": "modules/zig-scheduler/host.zig",
       "sourceSha256": "98ef7a8a87220f8e6b5e6c2124fd2939067b80529c1f7a4a9faeb62fd8ae385a",
-      "sha256": "98ef7a8a87220f8e6b5e6c2124fd2939067b80529c1f7a4a9faeb62fd8ae385a"
+      "sha256": "d45aa4cbc23cb5c2ef7515fd9183306ef81c65c2b67edfb30b0ae228e0a2348d"
     },
     {
       "path": "modules/zig-scheduler/json_processing_probe.zig",
@@ -5218,7 +5164,7 @@
       "path": "modules/zig-scheduler/main.zig",
       "sourcePath": "modules/zig-scheduler/main.zig",
       "sourceSha256": "476c17bf52f9fbf4188bfbe9f5b954b43695c03bbd58a99337ab02ec0ea780b5",
-      "sha256": "476c17bf52f9fbf4188bfbe9f5b954b43695c03bbd58a99337ab02ec0ea780b5"
+      "sha256": "b59a08cd62dbd020eea91ed211de0a654771a291d4268d99e37a0a05c4f83a8c"
     },
     {
       "path": "modules/zig-scheduler/media_foundation.zig",
@@ -5230,7 +5176,7 @@
       "path": "modules/zig-scheduler/native.zig",
       "sourcePath": "modules/zig-scheduler/native.zig",
       "sourceSha256": "ad4d375936b10faa16b9f57890e032d03fd7c4fa4b57a39daab7efb9faef0b1e",
-      "sha256": "ad4d375936b10faa16b9f57890e032d03fd7c4fa4b57a39daab7efb9faef0b1e"
+      "sha256": "e6b98b03d0dfe49a29f59b70493cb3660bb73ac802aad850f8da4ba72e6883eb"
     },
     {
       "path": "modules/zig-scheduler/native_library.zig",
@@ -5302,7 +5248,7 @@
       "path": "modules/zig-scheduler/output_stream.zig",
       "sourcePath": "modules/zig-scheduler/output_stream.zig",
       "sourceSha256": "431457b597608a94e2ef9bafe5567fee7d1c976cf16ba36022e014ff58c7051c",
-      "sha256": "431457b597608a94e2ef9bafe5567fee7d1c976cf16ba36022e014ff58c7051c"
+      "sha256": "8ae9119c4abb257c269bc5330bab3caedce4e025edd70705146f9f576fdcbd4a"
     },
     {
       "path": "modules/zig-scheduler/output_stream_tests.zig",
@@ -5347,7 +5293,7 @@
       "path": "modules/zig-scheduler/playback.schema.json",
       "sourcePath": "modules/zig-scheduler/playback.schema.json",
       "sourceSha256": "763455f1e492e37bb570a606ddc6cdec417f8d4572c09adc053ad5c93d274e51",
-      "sha256": "763455f1e492e37bb570a606ddc6cdec417f8d4572c09adc053ad5c93d274e51"
+      "sha256": "78c217c8e37744c887a5812718352b2ef0a0ab91e01c55912c83ce640aa27233"
     },
     {
       "path": "modules/zig-scheduler/playback.wasapi.example.json",
@@ -5365,7 +5311,7 @@
       "path": "modules/zig-scheduler/playback_schema_tests.zig",
       "sourcePath": "modules/zig-scheduler/playback_schema_tests.zig",
       "sourceSha256": "789b93ea1ad57ae5d6b1974b8c226922d64e7792d1c066b53116c2d1c7d821f1",
-      "sha256": "789b93ea1ad57ae5d6b1974b8c226922d64e7792d1c066b53116c2d1c7d821f1"
+      "sha256": "221e66375c4903ae3ae546400e3fce5689d5a877d7ad88589cdca8ca2242b6e0"
     },
     {
       "path": "modules/zig-scheduler/primary_election.zig",
@@ -5443,7 +5389,7 @@
       "path": "tools/Build-Product.ps1",
       "sourcePath": "tools/Build-Product.ps1",
       "sourceSha256": "92f7dcab8f98edc5abe71c3524975ca717fcb240faf3dda9e1a6216e221b9ffd",
-      "sha256": "f0cfa529584340809a9c05469c4f0e7323d7dd756a1535dc26cd496bba0b42d6",
+      "sha256": "3028325107648096d2cfe6443399cdc9ddfce2189ce98a01f2ecaa3f0f0c9b58",
       "adaptations": [
         "Omit private AudioSrv enumeration build and reuse switch"
       ]
@@ -5741,6 +5687,114 @@
       "sourcePath": "tools/zig-scheduler/Confirm-EndpointRestore.ps1",
       "sourceSha256": "a328a03bd108046fef369176439ca4c2c4f0a793f8d716ad1697b537a2124560",
       "sha256": "a328a03bd108046fef369176439ca4c2c4f0a793f8d716ad1697b537a2124560"
+    },
+    {
+      "path": "modules/aes67/.gitignore",
+      "sourcePath": "modules/aes67/.gitignore",
+      "sourceSha256": "306fd52e74fca6746e12acc750f232de15e71da917756a1270d74c91f5eb7368",
+      "sha256": "306fd52e74fca6746e12acc750f232de15e71da917756a1270d74c91f5eb7368"
+    },
+    {
+      "path": "modules/aes67/Build.ps1",
+      "sourcePath": "modules/aes67/Build.ps1",
+      "sourceSha256": "a6a30ac59788e7a8e50773859d18ddb283cb63bfadc2e670f834775f6e6f72fe",
+      "sha256": "a6a30ac59788e7a8e50773859d18ddb283cb63bfadc2e670f834775f6e6f72fe"
+    },
+    {
+      "path": "modules/aes67/Cargo.lock",
+      "sourcePath": "modules/aes67/Cargo.lock",
+      "sourceSha256": "20f2e4eef8cea9c54eb69d85a5598037290d91a2128332286c5002afdd39dfc7",
+      "sha256": "20f2e4eef8cea9c54eb69d85a5598037290d91a2128332286c5002afdd39dfc7"
+    },
+    {
+      "path": "modules/aes67/Cargo.toml",
+      "sourcePath": "modules/aes67/Cargo.toml",
+      "sourceSha256": "2642bb302fa975122807ce7f3a18b91b30b07122e86b0a53f8c82aa03f183e3b",
+      "sha256": "2642bb302fa975122807ce7f3a18b91b30b07122e86b0a53f8c82aa03f183e3b"
+    },
+    {
+      "path": "modules/aes67/INTERFACE.md",
+      "sourcePath": "modules/aes67/INTERFACE.md",
+      "sourceSha256": "f571d4081790264d8f137dfec2e3651672a25ef835b6c761db48fc47b8c02bcd",
+      "sha256": "f571d4081790264d8f137dfec2e3651672a25ef835b6c761db48fc47b8c02bcd"
+    },
+    {
+      "path": "modules/aes67/nsp_aes67.h",
+      "sourcePath": "modules/aes67/nsp_aes67.h",
+      "sourceSha256": "253a3a0bc824d64ce98f8846f7f467486e6d1095c332764d0a6f142d469d4c88",
+      "sha256": "253a3a0bc824d64ce98f8846f7f467486e6d1095c332764d0a6f142d469d4c88"
+    },
+    {
+      "path": "modules/aes67/src/abi/mod.rs",
+      "sourcePath": "modules/aes67/src/abi/mod.rs",
+      "sourceSha256": "3bcd6f9c7b4f691af473cac55f9e0f9bc8ec33726f5ac94803f20427759b6fdb",
+      "sha256": "3bcd6f9c7b4f691af473cac55f9e0f9bc8ec33726f5ac94803f20427759b6fdb"
+    },
+    {
+      "path": "modules/aes67/src/abi/tests.rs",
+      "sourcePath": "modules/aes67/src/abi/tests.rs",
+      "sourceSha256": "72be6ddb220dac9598fe2d1c9822e893ceb079dcc0e466d9d37c16ae406ba254",
+      "sha256": "72be6ddb220dac9598fe2d1c9822e893ceb079dcc0e466d9d37c16ae406ba254"
+    },
+    {
+      "path": "modules/aes67/src/lib.rs",
+      "sourcePath": "modules/aes67/src/lib.rs",
+      "sourceSha256": "0390f49aae23ebe52c8cb9f53c31f14bf68a16486ecd264c3a700a5567414d70",
+      "sha256": "0390f49aae23ebe52c8cb9f53c31f14bf68a16486ecd264c3a700a5567414d70"
+    },
+    {
+      "path": "modules/aes67/src/net.rs",
+      "sourcePath": "modules/aes67/src/net.rs",
+      "sourceSha256": "d2f0244e2f7ff3c226bff3438e0c7c930222e536468eb3781ffc1269ef7d9319",
+      "sha256": "d2f0244e2f7ff3c226bff3438e0c7c930222e536468eb3781ffc1269ef7d9319"
+    },
+    {
+      "path": "modules/aes67/src/ptp/codec.rs",
+      "sourcePath": "modules/aes67/src/ptp/codec.rs",
+      "sourceSha256": "b9d814e16c861ed6f92d7ae9faad72f1f0305319b2e19b39f89b75bd90711cfd",
+      "sha256": "b9d814e16c861ed6f92d7ae9faad72f1f0305319b2e19b39f89b75bd90711cfd"
+    },
+    {
+      "path": "modules/aes67/src/ptp/mod.rs",
+      "sourcePath": "modules/aes67/src/ptp/mod.rs",
+      "sourceSha256": "733554e3d145f159653d49570d2907eaa5af2d64dec0427e97f411556d98d7ff",
+      "sha256": "733554e3d145f159653d49570d2907eaa5af2d64dec0427e97f411556d98d7ff"
+    },
+    {
+      "path": "modules/aes67/src/rtp/mod.rs",
+      "sourcePath": "modules/aes67/src/rtp/mod.rs",
+      "sourceSha256": "8c229d411a3d8da7102e8643e57195c3dfe2cfb1d545dd80158753de2b885de8",
+      "sha256": "8c229d411a3d8da7102e8643e57195c3dfe2cfb1d545dd80158753de2b885de8"
+    },
+    {
+      "path": "modules/aes67/src/rtp/ring.rs",
+      "sourcePath": "modules/aes67/src/rtp/ring.rs",
+      "sourceSha256": "76260bd6d529aa2159df88f984280128210a566b78135a52d3fafa4ca7b56836",
+      "sha256": "76260bd6d529aa2159df88f984280128210a566b78135a52d3fafa4ca7b56836"
+    },
+    {
+      "path": "modules/aes67/src/sdp/mod.rs",
+      "sourcePath": "modules/aes67/src/sdp/mod.rs",
+      "sourceSha256": "da20c46e40eeeb70a9940d20e42993cc4efe2514e7ec0a938490b21af7acbc28",
+      "sha256": "da20c46e40eeeb70a9940d20e42993cc4efe2514e7ec0a938490b21af7acbc28"
+    },
+    {
+      "path": "modules/aes67/src/session/mod.rs",
+      "sourcePath": "modules/aes67/src/session/mod.rs",
+      "sourceSha256": "fc4ed7eda6aa7306b9d174161bc466b2e8d70ef9bd6371f245d78651dd8d98d9",
+      "sha256": "fc4ed7eda6aa7306b9d174161bc466b2e8d70ef9bd6371f245d78651dd8d98d9"
+    },
+    {
+      "path": "modules/aes67/src/time/mod.rs",
+      "sourcePath": "modules/aes67/src/time/mod.rs",
+      "sourceSha256": "4d2a22ac85238d70709d1ed460ca0616cc933892e83ed6b981a4d4ac39a85ca6",
+      "sha256": "4d2a22ac85238d70709d1ed460ca0616cc933892e83ed6b981a4d4ac39a85ca6"
+    },
+    {
+      "path": "modules/zig-scheduler/aes67_module.zig",
+      "sourcePath": "modules/zig-scheduler/aes67_module.zig",
+      "sourceSha256": "18ef073b2310d8fcdce769fb6c4962f285443596e94b48c079ee2b971d8d8803",
+      "sha256": "18ef073b2310d8fcdce769fb6c4962f285443596e94b48c079ee2b971d8d8803"
     }
   ]
 }
