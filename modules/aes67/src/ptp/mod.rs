@@ -64,6 +64,7 @@ struct State {
     port: PortId,
     master: Option<Master>,
     announce_at: i128,
+    selected_at: i128,
     last_good: Option<i128>,
     sync_pairs: VecDeque<(u16, SyncPair)>,
     latest_sync: Option<SyncSample>,
@@ -82,6 +83,7 @@ impl State {
             port,
             master: None,
             announce_at: 0,
+            selected_at: 0,
             last_good: None,
             sync_pairs: VecDeque::with_capacity(SYNC_HISTORY),
             latest_sync: None,
@@ -105,7 +107,7 @@ impl State {
     fn expire(&mut self, now: i128) {
         if self.master.is_some()
             && (now - self.announce_at > self.loss_ns
-                || self.last_good.is_some_and(|good| now - good > self.loss_ns))
+                || now - self.last_good.unwrap_or(self.selected_at) > self.loss_ns)
         {
             self.clear();
         }
@@ -139,6 +141,9 @@ impl State {
                 if existing != master {
                     self.clear();
                 }
+            }
+            if self.master.is_none() {
+                self.selected_at = now;
             }
             self.master = Some(master);
             self.announce_at = now;
@@ -263,7 +268,7 @@ impl State {
         let inferred = received - sync.remote_scaled_ns;
         let expected =
             elapsed + (elapsed as f64 * self.clock.fit().map_or(0.0, |f| f.rate_ppm) / 1e6) as i128;
-        let round_trip = expected - (inferred >> 16);
+        let round_trip = (inferred >> 16) - expected;
         if !(-1_000_000..=MAX_ROUND_TRIP).contains(&round_trip) {
             return;
         }
