@@ -1,19 +1,20 @@
-use crate::{
-    net::multicast_interface,
-    ptp::codec::ClockId,
-    rtp::Output,
-    time::PacketTiming,
-};
+use crate::{net::multicast_interface, ptp::codec::ClockId, rtp::Output, time::PacketTiming};
 use std::{
     fmt::Write,
     io,
     net::{Ipv4Addr, UdpSocket},
 };
 
-#[derive(Clone, Copy, Debug)]
-pub struct Reference {
-    pub gm: ClockId,
-    pub domain: u8,
+/// Clock reference signalled for a stream (DESIGN-TOPO.md section 5).
+///
+/// Ptp: a=clock-domain:PTPv2 <domain> + a=ts-refclk:ptp=IEEE1588-2008:<GMID>:<domain>
+/// + a=mediaclk:direct=0. Local: a=ts-refclk:local + a=mediaclk:direct=0 (mode C
+/// or an auto/gm fallback before PTP; RFC 7273 4.6/4.8, a local reference is
+/// rate-only, no time-sync assurance). ts-refclk:localmac is never emitted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reference {
+    Ptp { gm: ClockId, domain: u8 },
+    Local,
 }
 
 /// 16-bit CRC used as the SAP message identifier hash. The arithmetic matches
@@ -25,10 +26,7 @@ pub fn crc16(bytes: &[u8]) -> u16 {
     for &byte in bytes {
         let mut value = (crc >> 8) as u8 ^ byte;
         value ^= value >> 4;
-        crc = (crc << 8)
-            ^ (u16::from(value) << 12)
-            ^ (u16::from(value) << 5)
-            ^ u16::from(value);
+        crc = (crc << 8) ^ (u16::from(value) << 12) ^ (u16::from(value) << 5) ^ u16::from(value);
     }
     crc
 }
@@ -90,16 +88,28 @@ fn media_block(
     // ST 2110 attribute, emitted here as an extension.
     s.push_str("a=sync-time:0\r\n");
     let _ = write!(s, "a=framecount:{}\r\n", timing.samples_per_packet());
-    if let Some(r) = reference {
-        let _ = write!(s, "a=clock-domain:PTPv2 {}\r\n", r.domain);
-        s.push_str("a=ts-refclk:ptp=IEEE1588-2008:");
-        for (i, octet) in r.gm.into_iter().enumerate() {
-            if i != 0 {
-                s.push('-');
+    match reference {
+        // AES67-2023 sec 8.2 line 1784-1786: when a specific GM is indicated,
+        // both GMID and PTP domain are signalled. The epoch is shared, so the
+        // media clock is direct=0 (AES67 sec 8.3 line 1807-1809).
+        Some(Reference::Ptp { gm, domain }) => {
+            let _ = write!(s, "a=clock-domain:PTPv2 {domain}\r\n");
+            s.push_str("a=ts-refclk:ptp=IEEE1588-2008:");
+            for (i, octet) in gm.into_iter().enumerate() {
+                if i != 0 {
+                    s.push('-');
+                }
+                let _ = write!(s, "{octet:02X}");
             }
-            let _ = write!(s, "{octet:02X}");
+            let _ = write!(s, ":{domain}\r\na=mediaclk:direct=0\r\n");
         }
-        let _ = write!(s, ":{}\r\na=mediaclk:direct=0\r\n", r.domain);
+        // RFC 7273 sec 4.6/4.8 (line 429-436) and sec 6 (line 1076-1078): a
+        // local reference clock means rate synchronisation only. This is the
+        // deliberate mode-C EXTENSION deviation from AES67 sec 4/5.
+        Some(Reference::Local) => {
+            s.push_str("a=ts-refclk:local\r\na=mediaclk:direct=0\r\n");
+        }
+        None => {}
     }
     if let Some(mid) = mid {
         let _ = write!(s, "a=mid:{mid}\r\n");
@@ -233,7 +243,7 @@ mod tests {
     }
 
     fn reference() -> Option<Reference> {
-        Some(Reference {
+        Some(Reference::Ptp {
             gm: [0xab; 8],
             domain: 42,
         })
@@ -247,7 +257,17 @@ mod tests {
         let unlocked = describe("test", &output, 0, &labels, None, 15, 1, timing, None);
         assert!(!unlocked.contains("a=ts-refclk:"));
         assert!(!unlocked.contains("a=clock-domain:"));
-        let s = describe("test", &output, 0, &labels, reference(), 15, 1, timing, None);
+        let s = describe(
+            "test",
+            &output,
+            0,
+            &labels,
+            reference(),
+            15,
+            1,
+            timing,
+            None,
+        );
         assert_eq!(s.matches("v=0\r\n").count(), 1);
         assert!(s.contains("m=audio 5004 RTP/AVP 110\r\n"));
         assert!(s.contains("a=rtpmap:110 L24/48000/2\r\n"));
@@ -279,10 +299,26 @@ mod tests {
             (48_000, 500, Encoding::L24, 8, "L24/48000/8", "0.5", "24"),
             (48_000, 2_000, Encoding::L24, 8, "L24/48000/8", "2", "96"),
             (48_000, 4_000, Encoding::L24, 8, "L24/48000/8", "4", "192"),
-            (48_000, 333, Encoding::L24, 8, "L24/48000/8", "0.333333", "16"),
+            (
+                48_000,
+                333,
+                Encoding::L24,
+                8,
+                "L24/48000/8",
+                "0.333333",
+                "16",
+            ),
             (44_100, 333, Encoding::L16, 8, "L16/44100/8", "0.36", "16"),
             (44_100, 1_000, Encoding::L16, 8, "L16/44100/8", "1.09", "48"),
-            (44_100, 4_000, Encoding::L16, 8, "L16/44100/8", "4.35", "192"),
+            (
+                44_100,
+                4_000,
+                Encoding::L16,
+                8,
+                "L16/44100/8",
+                "4.35",
+                "192",
+            ),
             (96_000, 1_000, Encoding::L24, 8, "L24/96000/8", "1", "96"),
             (96_000, 125, Encoding::L24, 8, "L24/96000/8", "0.125", "12"),
             (192_000, 125, Encoding::L24, 16, "L24/192000/16", "0.125", "24"),
@@ -295,7 +331,17 @@ mod tests {
         for (rate, ptime, encoding, channels, rtpmap, ptime_text, framecount) in cases {
             let timing = PacketTiming::new(rate, ptime).unwrap();
             let output = output(5004, channels, encoding, false);
-            let s = describe("test", &output, 0, &vec!["CH".into(); channels + 1], reference(), 1, 1, timing, None);
+            let s = describe(
+                "test",
+                &output,
+                0,
+                &vec!["CH".into(); channels + 1],
+                reference(),
+                1,
+                1,
+                timing,
+                None,
+            );
             assert!(
                 s.contains(&format!("a=rtpmap:110 {rtpmap}\r\n")),
                 "{rate}/{ptime}/{encoding:?}: {s}"
@@ -316,7 +362,17 @@ mod tests {
         let timing = PacketTiming::new(48_000, 1_000).unwrap();
         let output = output(5004, 8, Encoding::L24, false);
         let labels = vec!["CH".to_owned(); 9];
-        let s = describe("test", &output, 0, &labels, reference(), 1, 1, timing, Some(5006));
+        let s = describe(
+            "test",
+            &output,
+            0,
+            &labels,
+            reference(),
+            1,
+            1,
+            timing,
+            Some(5006),
+        );
         assert!(s.contains("a=group:DUP 1 2\r\n"));
         assert!(s.contains("m=audio 5004 RTP/AVP 110\r\n"));
         assert!(s.contains("m=audio 5006 RTP/AVP 110\r\n"));
@@ -343,7 +399,17 @@ mod tests {
             Encoding::L24,
         )
         .unwrap();
-        let s = describe("test", &output, 0, &["L".into(), "R".into()], reference(), 1, 1, timing, None);
+        let s = describe(
+            "test",
+            &output,
+            0,
+            &["L".into(), "R".into()],
+            reference(),
+            1,
+            1,
+            timing,
+            None,
+        );
         assert!(s.contains("c=IN IP4 239.69.0.1/32\r\n"));
         assert!(s.contains("a=source-filter: incl IN IP4 239.69.0.1 127.0.0.1\r\n"));
     }
@@ -359,5 +425,48 @@ mod tests {
         let second = describe("test", &output, 0, &labels, reference(), 1, 2, timing, None);
         assert_ne!(crc16(first.as_bytes()), crc16(second.as_bytes()));
         assert_ne!(crc16(first.as_bytes()), 0);
+    }
+
+    #[test]
+    fn clock_reference_lines_are_exact_per_role() {
+        let timing = PacketTiming::new(48_000, 1_000).unwrap();
+        let output = output(5004, 2, Encoding::L24, false);
+        let labels = ["other".to_owned(), "FL".to_owned(), "FR".to_owned()];
+        // DESIGN-TOPO.md section 7.5: slave-locked / gm-active exact lines.
+        let gm = [0xae, 0x6f, 0x0d, 0xff, 0xfe, 0x8e, 0x86, 0xfc];
+        let ptp = describe(
+            "test",
+            &output,
+            0,
+            &labels,
+            Some(Reference::Ptp { gm, domain: 19 }),
+            1,
+            1,
+            timing,
+            None,
+        );
+        assert!(ptp.contains(
+            "a=clock-domain:PTPv2 19\r\na=ts-refclk:ptp=IEEE1588-2008:AE-6F-0D-FF-FE-8E-86-FC:19\r\na=mediaclk:direct=0\r\n"
+        ));
+        // Local mode: ts-refclk:local only; never ptp and never localmac.
+        let local = describe(
+            "test",
+            &output,
+            0,
+            &labels,
+            Some(Reference::Local),
+            1,
+            1,
+            timing,
+            None,
+        );
+        assert!(local.contains("a=ts-refclk:local\r\na=mediaclk:direct=0\r\n"));
+        assert!(!local.contains("ts-refclk:ptp"));
+        assert!(!local.contains("localmac"));
+        assert!(!local.contains("a=clock-domain:"));
+        // Unlocked cold start emits no clock reference at all.
+        let none = describe("test", &output, 0, &labels, None, 1, 1, timing, None);
+        assert!(!none.contains("a=ts-refclk:"));
+        assert!(!none.contains("a=mediaclk:"));
     }
 }

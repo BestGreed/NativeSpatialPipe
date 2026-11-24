@@ -14,6 +14,17 @@
     "ssrc": 0,
     "srcInterfaceIp": "192.0.2.1",
     "ptpDomain": 0,
+    "ptp": {
+      "mode": "slave",
+      "domain": 0,
+      "lockTimeoutMs": 5000,
+      "timestamping": "software",
+      "priority1": 128,
+      "priority2": 128,
+      "announceTimeoutMs": 6000,
+      "gmCapable": false,
+      "gmUtcOffset": null
+    },
     "ttl": 32,
     "sourceFilter": true,
     "ringPackets": 64,

@@ -332,3 +332,90 @@ test "unknown AES67 fields still fail closed" {
         playback.parse(allocator, "{\"bridgeDll\":\"C:/fixture/bridge.dll\",\"outputBackend\":\"aes67\",\"aes67\":{\"groupBase\":\"239.1.0.1\",\"flowMode\":\"other\"}}"),
     );
 }
+fn ptpJson(allocator: std.mem.Allocator, ptp: []const u8) ![]u8 {
+    const prefix = "{\"bridgeDll\":\"C:/fixture/bridge.dll\",\"outputBackend\":\"aes67\",\"outputLayout\":\"7.1.4\",\"sampleRate\":48000,\"aes67\":{\"sampleRate\":48000,\"ptimeUs\":1000,\"codec\":\"L24\",\"flowMode\":\"auto\",\"groupBase\":\"239.69.0.1\",\"srcInterfaceIp\":\"192.0.2.63\",\"ptp\":";
+    return std.mem.concat(allocator, u8, &.{ prefix, ptp, "}}" });
+}
+
+test "sender ptp topology modes parse, validate and map to the appended ABI" {
+    const allocator = std.testing.allocator;
+    const Case = struct {
+        json: []const u8,
+        mode: cfg.PtpMode,
+        abiMode: u8,
+        priority1: u8,
+        gmCapable: u8,
+        utcOffset: i16,
+        announceTimeoutMs: u32,
+    };
+    const cases = [_]Case{
+        .{ .json = "{\"mode\":\"slave\"}", .mode = .slave, .abiMode = 0, .priority1 = 128, .gmCapable = 0, .utcOffset = -1, .announceTimeoutMs = 6000 },
+        .{ .json = "{\"mode\":\"auto\",\"gmCapable\":true,\"announceTimeoutMs\":4000}", .mode = .auto, .abiMode = 1, .priority1 = 128, .gmCapable = 1, .utcOffset = -1, .announceTimeoutMs = 4000 },
+        .{ .json = "{\"mode\":\"gm\",\"priority1\":10,\"priority2\":20,\"gmUtcOffset\":37}", .mode = .gm, .abiMode = 2, .priority1 = 10, .gmCapable = 1, .utcOffset = 37, .announceTimeoutMs = 6000 },
+        .{ .json = "{\"mode\":\"local\",\"domain\":19}", .mode = .local, .abiMode = 3, .priority1 = 128, .gmCapable = 0, .utcOffset = -1, .announceTimeoutMs = 6000 },
+    };
+    for (cases) |case| {
+        const text = try ptpJson(allocator, case.json);
+        defer allocator.free(text);
+        var parsed = try playback.parse(allocator, text);
+        defer parsed.deinit();
+        try parsed.value.validate();
+        const ptp = parsed.value.aes67.?.ptp orelse return error.TestExpectedPtp;
+        try std.testing.expectEqual(case.mode, ptp.mode);
+        try std.testing.expectEqual(case.abiMode, ptp.abiMode());
+        try std.testing.expectEqual(case.priority1, ptp.priority1);
+        try std.testing.expectEqual(case.gmCapable, ptp.abiGmCapable());
+        try std.testing.expectEqual(case.utcOffset, ptp.abiUtcOffset());
+        try std.testing.expectEqual(case.announceTimeoutMs, ptp.announceTimeoutMs);
+        // The PTP topology keys never change the transport plan.
+        const prepared = try cfg.prepare(parsed.value.aes67.?, parsed.value.channelCount());
+        try std.testing.expectEqual(@as(u16, 5004), prepared.port);
+    }
+
+    // Omitting the ptp block keeps the pre-existing slave default.
+    const plain = try ptpJson(allocator, "{\"domain\":0}");
+    defer allocator.free(plain);
+    var parsed = try playback.parse(allocator, plain);
+    defer parsed.deinit();
+    try parsed.value.validate();
+    const ptp = parsed.value.aes67.?.ptp.?;
+    try std.testing.expectEqual(cfg.PtpMode.slave, ptp.mode);
+    try std.testing.expectEqual(@as(i16, -1), ptp.abiUtcOffset());
+}
+
+test "invalid sender ptp topology values fail closed" {
+    const allocator = std.testing.allocator;
+    // Unknown mode string is rejected at parse time by the enum.
+    const badMode = try ptpJson(allocator, "{\"mode\":\"grandmaster\"}");
+    defer allocator.free(badMode);
+    var parseFailed = false;
+    if (playback.parse(allocator, badMode)) |ok| {
+        var parsed = ok;
+        parsed.deinit();
+    } else |_| {
+        parseFailed = true;
+    }
+    try std.testing.expect(parseFailed);
+
+    // playback.parse runs validation, so the bounds are enforced on load.
+    const badTimeout = try ptpJson(allocator, "{\"mode\":\"auto\",\"announceTimeoutMs\":999}");
+    defer allocator.free(badTimeout);
+    try std.testing.expectError(
+        error.InvalidAes67PtpAnnounceTimeout,
+        playback.parse(allocator, badTimeout),
+    );
+
+    const badOffset = try ptpJson(allocator, "{\"mode\":\"gm\",\"gmUtcOffset\":200}");
+    defer allocator.free(badOffset);
+    try std.testing.expectError(
+        error.InvalidAes67PtpUtcOffset,
+        playback.parse(allocator, badOffset),
+    );
+
+    const badDomain = try ptpJson(allocator, "{\"domain\":128}");
+    defer allocator.free(badDomain);
+    try std.testing.expectError(
+        error.InvalidAes67PtpDomain,
+        playback.parse(allocator, badDomain),
+    );
+}
