@@ -107,7 +107,7 @@ assert.equal(deviceChannels({outputBackend:'aes67',outputLayout:'7.1.4'}).length
 // Legacy mirror keys are preserved for explicit repair and rejected on save.
 const legacy={...aes67Defaults,destIp:'192.0.2.20',port:5006,ringPackets:256};
 const kept=prepare({...asioBase,aes67:legacy},'playback');
-const expectedLegacy={...legacy,ptp:{domain:0,lockTimeoutMs:5000,timestamping:'auto'}};
+const expectedLegacy={...legacy,ptp:{domain:0,lockTimeoutMs:5000,timestamping:'auto',mode:'slave',priority1:128,priority2:128,announceTimeoutMs:6000,gmCapable:false,gmUtcOffset:null}};
 assert.deepEqual(kept.aes67,expectedLegacy);
 assert.deepEqual(finish(kept).aes67,expectedLegacy);
 assert.ok(validateAes67(kept).some(problem=>problem.path==='aes67.destIp'));

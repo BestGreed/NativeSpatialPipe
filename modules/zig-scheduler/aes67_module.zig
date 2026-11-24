@@ -60,9 +60,17 @@ const Config = extern struct {
     bit_depth: u8 = 0,
     port_policy: u8 = 0,
     reserved: [6]u8 = .{0} ** 6,
+    // Appended 168-byte revision: PTP topology mode (DESIGN-TOPO.md).
+    ptp_announce_timeout_ms: u32 = 6000,
+    ptp_mode: u8 = 0,
+    ptp_priority1: u8 = 128,
+    ptp_priority2: u8 = 128,
+    ptp_gm_capable: u8 = 0,
+    ptp_gm_utc_offset: i16 = -1,
+    reserved2: [6]u8 = .{0} ** 6,
 };
 comptime {
-    if (@sizeOf(Config) != 152) @compileError("AES67 ABI Config mirror must stay 152 bytes");
+    if (@sizeOf(Config) != 168) @compileError("AES67 ABI Config mirror must stay 168 bytes");
 }
 
 const Event = extern struct { kind: u32, code: i32, detail: i32 };
@@ -148,6 +156,12 @@ pub const Session = struct {
             .sap_address = prepared.sap_address,
             .bit_depth = @intFromEnum(prepared.bit_depth),
             .port_policy = @intFromEnum(prepared.port_policy),
+            .ptp_announce_timeout_ms = ptp.announceTimeoutMs,
+            .ptp_mode = ptp.abiMode(),
+            .ptp_priority1 = ptp.priority1,
+            .ptp_priority2 = ptp.priority2,
+            .ptp_gm_capable = ptp.abiGmCapable(),
+            .ptp_gm_utc_offset = ptp.abiUtcOffset(),
         };
         const path = try u.join(&.{ root, @import("native.zig").default_aes67_module });
         defer u.a.free(path);
@@ -228,6 +242,8 @@ fn check(operation: []const u8, code: c_int) !void {
         -3 => error.Aes67NetworkIo,
         -4 => error.Aes67TimestampUnavailable,
         -5 => error.Aes67LockTimeout,
+        // EXTENSION: gm mode requested without a readable interface MAC.
+        -10 => error.Aes67PtpIdentityUnavailable,
         join_timeout => error.Aes67JoinTimeout,
         else => error.Aes67ModuleFailure,
     };

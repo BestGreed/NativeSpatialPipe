@@ -78,8 +78,8 @@ export function prepare(config,id){
   // selected, so normalise it in place instead of dropping or recreating it.
   if(value.aes67&&typeof value.aes67==='object')value.aes67={...aes67Defaults,...value.aes67};
   else if(value.outputBackend==='aes67')value.aes67={...aes67Defaults,flows:proposeAes67Flows(layoutFor(value.outputLayout).channels.length)};
-  if(value.aes67?.ptp==null&&value.aes67)value.aes67.ptp={domain:value.aes67.ptpDomain,lockTimeoutMs:5000,timestamping:'auto'};
-  else if(value.aes67?.ptp&&typeof value.aes67.ptp==='object'&&!Array.isArray(value.aes67.ptp))value.aes67.ptp={domain:0,lockTimeoutMs:5000,timestamping:'auto',...value.aes67.ptp};
+  if(value.aes67?.ptp==null&&value.aes67)value.aes67.ptp={domain:value.aes67.ptpDomain,lockTimeoutMs:5000,timestamping:'auto',mode:'slave',priority1:128,priority2:128,announceTimeoutMs:6000,gmCapable:false,gmUtcOffset:null};
+  else if(value.aes67?.ptp&&typeof value.aes67.ptp==='object'&&!Array.isArray(value.aes67.ptp))value.aes67.ptp={domain:0,lockTimeoutMs:5000,timestamping:'auto',mode:'slave',priority1:128,priority2:128,announceTimeoutMs:6000,gmCapable:false,gmUtcOffset:null,...value.aes67.ptp};
   value.recording??={};value.recording.pcm??=false;value.recording.telemetrySnapshots??=false;value.recording.rawStreamStats??=false;
   if(value.notebookFilterFile&&!value.lsac){
    value.lsac={enabled:true,filterFile:value.notebookFilterFile,virtualBass:value.notebookVirtualBass,loudness:value.outputProcessing?.loudness};
@@ -214,6 +214,12 @@ export function aes67BlockProblems(aes,channels){
    if(Object.hasOwn(ptp,'domain')&&!intRange(ptp.domain,0,127))problems.push({path:'aes67.ptp.domain',message:'AES67 PTP domain 必须在 0–127'});
    if(Object.hasOwn(ptp,'lockTimeoutMs')&&!intRange(ptp.lockTimeoutMs,100,120000))problems.push({path:'aes67.ptp.lockTimeoutMs',message:'AES67 PTP 锁定超时必须在 100–120000 ms'});
    if(Object.hasOwn(ptp,'timestamping')&&!['auto','software','hardware'].includes(ptp.timestamping))problems.push({path:'aes67.ptp.timestamping',message:'AES67 PTP 时间戳模式必须是 auto、software 或 hardware'});
+   if(Object.hasOwn(ptp,'mode')&&!['slave','auto','gm','local'].includes(ptp.mode))problems.push({path:'aes67.ptp.mode',message:'AES67 PTP 模式必须是 slave、auto、gm 或 local'});
+   if(Object.hasOwn(ptp,'priority1')&&!intRange(ptp.priority1,0,255))problems.push({path:'aes67.ptp.priority1',message:'AES67 PTP priority1 必须在 0–255'});
+   if(Object.hasOwn(ptp,'priority2')&&!intRange(ptp.priority2,0,255))problems.push({path:'aes67.ptp.priority2',message:'AES67 PTP priority2 必须在 0–255'});
+   if(Object.hasOwn(ptp,'announceTimeoutMs')&&!intRange(ptp.announceTimeoutMs,1000,60000))problems.push({path:'aes67.ptp.announceTimeoutMs',message:'AES67 PTP announce 超时必须在 1000–60000 ms'});
+   if(Object.hasOwn(ptp,'gmCapable')&&typeof ptp.gmCapable!=='boolean')problems.push({path:'aes67.ptp.gmCapable',message:'AES67 PTP gmCapable 必须是布尔值'});
+   if(Object.hasOwn(ptp,'gmUtcOffset')&&ptp.gmUtcOffset!==null&&!intRange(ptp.gmUtcOffset,0,127))problems.push({path:'aes67.ptp.gmUtcOffset',message:'AES67 PTP gmUtcOffset 必须为 null 或 0–127'});
   }
  }
  if(!intRange(aes?.ringPackets,8,1024))problems.push({path:'aes67.ringPackets',message:'AES67 环形缓冲包数必须在 8–1024'});

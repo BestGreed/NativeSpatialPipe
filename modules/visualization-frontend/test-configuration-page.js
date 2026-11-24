@@ -153,6 +153,11 @@ try{
  assert.equal(input('aes67.ptp.domain').value,'0');
  assert.equal(input('aes67.ptp.lockTimeoutMs').value,'5000');
  assert.equal(input('aes67.ptp.timestamping').value,'auto');
+ assert.equal(input('aes67.ptp.mode').value,'slave');
+ assert.equal(input('aes67.ptp.announceTimeoutMs').value,'6000');
+ assert.equal(input('aes67.ptp.priority1').value,'128');
+ assert.equal(input('aes67.ptp.priority2').value,'128');
+ assert.equal(input('aes67.ptp.gmUtcOffset').value,'');
  const blocked=saves;await element('configForm').listeners.submit({preventDefault(){}});
  assert.equal(saves,blocked,'invalid empty AES67 destination must not be saved');
  assert.match(element('result').textContent,/(校验未通过|validation failed)/i);

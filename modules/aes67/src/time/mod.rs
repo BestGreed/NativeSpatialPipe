@@ -234,6 +234,18 @@ pub struct ClockFit {
     pub rms_ns: f64,
 }
 impl ClockFit {
+    /// A synthetic mapping for clocks we own rather than follow: a GM or local
+    /// epoch whose time equals the injected monotonic clock plus a constant.
+    /// rate_ppm 0 and rms 0 because the same oscillator drives both sides.
+    pub fn anchored(local_ns: i128, remote_ns: i128) -> Self {
+        Self {
+            local_ns,
+            remote_ns,
+            rate_ppm: 0.0,
+            rms_ns: 0.0,
+        }
+    }
+
     /// Epoch arithmetic is integer; only the small local delta is converted to float.
     pub fn ptp_ns(self, local_ns: i128) -> i128 {
         let elapsed = local_ns - self.local_ns;
@@ -419,7 +431,11 @@ mod tests {
         ];
         for (rate, ptime, samples) in cases {
             let timing = PacketTiming::new(rate, ptime).unwrap();
-            assert_eq!(timing.samples_per_packet(), samples, "{rate} Hz / {ptime} us");
+            assert_eq!(
+                timing.samples_per_packet(),
+                samples,
+                "{rate} Hz / {ptime} us"
+            );
         }
         // The 44.1 kHz 1 ms packet is 48/44100 s, not 1.000 ms.
         let timing = PacketTiming::new(44_100, 1_000).unwrap();
