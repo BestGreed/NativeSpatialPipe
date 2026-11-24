@@ -68,19 +68,32 @@ test "96 kHz 1ms L24 fits five channels per flow, so 8ch needs two flows" {
     try std.testing.expectEqual(@as(u16, 8), prepared.flows[0].channels + prepared.flows[1].channels);
 }
 
-test "short packet times scale samples and never emit a 16ch single flow" {
+test "short packet times scale samples and standard/extension differ" {
     var file = multicastFile();
     file.ptimeUs = 125;
+    // standard keeps the AES67 1-8 profile: 16ch = 2 x 8ch.
     var prepared = try cfg.prepare(file, 16);
     try std.testing.expectEqual(@as(u16, 6), prepared.frames_per_packet);
     try std.testing.expectEqual(@as(u8, 2), prepared.flow_count);
-
+    try std.testing.expectEqual(@as(u16, 8), prepared.flows[0].channels);
+    // extension packs to the 1440 B payload limit: 16ch x 6 x 3 = 288 B single.
+    file.flowMode = .extension;
+    prepared = try cfg.prepare(file, 16);
+    try std.testing.expectEqual(@as(u8, 1), prepared.flow_count);
+    try std.testing.expectEqual(@as(u16, 16), prepared.flows[0].channels);
+    try std.testing.expectEqual(@as(u8, 1), prepared.abi_flow_mode);
+    // 192k/125us L24: 16 x 24 x 3 = 1152 B single flow in extension.
     file.sampleRate = 192_000;
     prepared = try cfg.prepare(file, 16);
     try std.testing.expectEqual(@as(u16, 24), prepared.frames_per_packet);
+    try std.testing.expectEqual(@as(u8, 1), prepared.flow_count);
+    try std.testing.expectEqual(@as(u16, 16), prepared.flows[0].channels);
+    // standard splits the same mode into 2 x 8ch.
+    file.flowMode = .standard;
+    prepared = try cfg.prepare(file, 16);
     try std.testing.expectEqual(@as(u8, 2), prepared.flow_count);
-    try std.testing.expectEqual(@as(u16, 8), prepared.flows[0].channels);
-
+    try std.testing.expectEqual(@as(u8, 0), prepared.abi_flow_mode);
+    // 333 us sample count and ptime formatting are independent of mode.
     file.ptimeUs = 333;
     file.sampleRate = 48_000;
     prepared = try cfg.prepare(file, 16);
@@ -94,9 +107,9 @@ test "short packet times scale samples and never emit a 16ch single flow" {
 test "unservable rate/ptime/channel combinations are rejected" {
     var file = multicastFile();
     file.sampleRate = 192_000;
-    // 192k/1ms 16ch L24 = 9216 B total: 2ch per flow, 8 flows is the maximum
-    // aggregation; 2 ms would need 16 flows and is rejected.
+    // 192k/1ms 16ch L24: 2ch per flow, 8 flows is the maximum aggregation.
     _ = try cfg.prepare(file, 16);
+    // 2 ms -> 1ch per flow -> 16 flows (> 8): reject.
     file.ptimeUs = 2_000;
     try std.testing.expectError(error.Aes67PayloadTooLarge, cfg.prepare(file, 16));
     file.ptimeUs = 1_000;
@@ -107,13 +120,53 @@ test "unservable rate/ptime/channel combinations are rejected" {
     try std.testing.expectError(error.InvalidAes67Ptime, cfg.prepare(file, 2));
 }
 
-test "single flow mode is capped at eight channels" {
-    var file = multicastFile();
-    file.flowMode = .single;
-    const eight = try cfg.prepare(file, 8);
-    try std.testing.expectEqual(@as(u8, 1), eight.flow_count);
-    try std.testing.expectEqual(@as(u8, 1), eight.abi_flow_mode);
-    try std.testing.expectError(error.InvalidAes67FlowChannels, cfg.prepare(file, 16));
+test "standard and extension modes pick flow counts from the 1440B budget" {
+    // (rate, ptime, codec, channels): standard plan vs extension plan.
+    const Case = struct {
+        rate: u32,
+        ptime: u16,
+        codec: cfg.BitDepth,
+        channels: usize,
+        standard: []const u16,
+        extension: []const u16,
+    };
+    const cases = [_]Case{
+        // 48k/250us L24: 16ch x 12 x 3 = 576 B -> extension single, standard 2x8.
+        .{ .rate = 48_000, .ptime = 250, .codec = .L24, .channels = 16, .standard = &.{ 8, 8 }, .extension = &.{16} },
+        // 48k/1ms L24: 16ch x 48 x 3 = 2304 B -> both split at 8/10 channels.
+        .{ .rate = 48_000, .ptime = 1_000, .codec = .L24, .channels = 16, .standard = &.{ 8, 8 }, .extension = &.{ 8, 8 } },
+        // 192k/125us L24: 16ch x 24 x 3 = 1152 B -> extension single.
+        .{ .rate = 192_000, .ptime = 125, .codec = .L24, .channels = 16, .standard = &.{ 8, 8 }, .extension = &.{16} },
+        // 48k/125us L24: 16ch x 6 x 3 = 288 B -> extension single.
+        .{ .rate = 48_000, .ptime = 125, .codec = .L24, .channels = 16, .standard = &.{ 8, 8 }, .extension = &.{16} },
+        // 192k/1ms L24: 2ch per flow -> 8 x 2ch in both modes.
+        .{ .rate = 192_000, .ptime = 1_000, .codec = .L24, .channels = 16, .standard = &.{ 2, 2, 2, 2, 2, 2, 2, 2 }, .extension = &.{ 2, 2, 2, 2, 2, 2, 2, 2 } },
+        // 48k/1ms L16: 16ch x 48 x 2 = 1536 B -> 2 x 8 in both modes.
+        .{ .rate = 48_000, .ptime = 1_000, .codec = .L16, .channels = 16, .standard = &.{ 8, 8 }, .extension = &.{ 8, 8 } },
+    };
+    for (cases) |case| {
+        var file = multicastFile();
+        file.sampleRate = case.rate;
+        file.ptimeUs = case.ptime;
+        file.codec = case.codec;
+        file.flowMode = .standard;
+        const standard = try cfg.prepare(file, case.channels);
+        try std.testing.expectEqual(case.standard.len, standard.flow_count);
+        for (case.standard, standard.flows[0..standard.flow_count]) |expected, flow| {
+            try std.testing.expectEqual(expected, flow.channels);
+            try std.testing.expect(@as(usize, flow.channels) * standard.frames_per_packet * standard.bytes_per_sample <= cfg.max_payload_bytes);
+        }
+        try std.testing.expectEqual(@as(u8, 0), standard.abi_flow_mode);
+
+        file.flowMode = .extension;
+        const extension = try cfg.prepare(file, case.channels);
+        try std.testing.expectEqual(case.extension.len, extension.flow_count);
+        for (case.extension, extension.flows[0..extension.flow_count]) |expected, flow| {
+            try std.testing.expectEqual(expected, flow.channels);
+            try std.testing.expect(@as(usize, flow.channels) * extension.frames_per_packet * extension.bytes_per_sample <= cfg.max_payload_bytes);
+        }
+        try std.testing.expectEqual(@as(u8, 1), extension.abi_flow_mode);
+    }
 }
 
 test "strict ports share 5004; legacy per-flow ports need explicit policy" {
@@ -123,7 +176,7 @@ test "strict ports share 5004; legacy per-flow ports need explicit policy" {
             .{ .destIp = "239.1.0.2", .channels = 8, .channelOffset = 8 },
         },
         .srcInterfaceIp = "192.0.2.63",
-        .flowMode = .multi,
+        .flowMode = .standard,
     };
     const prepared = try cfg.prepare(file, 16);
     try std.testing.expectEqual(@as(u16, 5004), prepared.flows[0].port);
@@ -161,7 +214,7 @@ test "legacy mirror format is rejected but its flow rows survive" {
 test "multicast requires an explicit egress interface and unique groups" {
     var file = cfg.File{
         .groupBase = "239.1.0.1",
-        .flowMode = .auto,
+        .flowMode = .standard,
     };
     _ = cfg.prepare(file, 8) catch |err| {
         try std.testing.expectEqual(error.Aes67MulticastRequiresSourceInterface, err);
@@ -173,7 +226,7 @@ test "multicast requires an explicit egress interface and unique groups" {
         .{ .destIp = "239.1.0.1", .channels = 8, .channelOffset = 8 },
     };
     file.flows = &duplicate_rows;
-    file.flowMode = .multi;
+    file.flowMode = .standard;
     file.portPolicy = .explicit;
     duplicate_rows[1].port = 5006;
     try std.testing.expectError(error.Aes67DuplicateFlowGroup, cfg.prepare(file, 16));
@@ -215,11 +268,18 @@ test "codec selection and frames-per-packet cross checks" {
     var mono = multicastFile();
     mono.sampleRate = 48_000;
     mono.ptimeUs = 1_000;
-    // Explicit 10ch L24 single flow would be 1440 B but is >8ch profile.
+    // Explicit 10ch L24 at 1 ms is exactly 1440 B: allowed in extension mode,
+    // rejected by the standard 8-channel profile.
     mono.flows = &.{.{ .destIp = "239.1.0.1", .channels = 10, .channelOffset = 0 }};
-    mono.flowMode = .single;
+    mono.flowMode = .extension;
     mono.srcInterfaceIp = "192.0.2.63";
+    _ = try cfg.prepare(mono, 10);
+    mono.flowMode = .standard;
     try std.testing.expectError(error.InvalidAes67FlowChannels, cfg.prepare(mono, 10));
+    // 11ch exceeds even the 1440 B payload budget.
+    mono.flows = &.{.{ .destIp = "239.1.0.1", .channels = 11, .channelOffset = 0 }};
+    mono.flowMode = .extension;
+    try std.testing.expectError(error.InvalidAes67FlowChannels, cfg.prepare(mono, 11));
 }
 
 test "channel map must be a permutation" {
@@ -249,7 +309,7 @@ test "playback JSON carries the new transport fields and validates" {
     const text =
         "{\"bridgeDll\":\"C:/fixture/bridge.dll\",\"outputBackend\":\"aes67\",\"outputLayout\":\"9.1.6\"," ++
         "\"sampleRate\":96000,\"aes67\":{\"sampleRate\":96000,\"ptimeUs\":500,\"codec\":\"L24\"," ++
-        "\"flowMode\":\"auto\",\"basePort\":5004,\"groupBase\":\"239.69.0.1\"," ++
+        "\"flowMode\":\"standard\",\"basePort\":5004,\"groupBase\":\"239.69.0.1\"," ++
         "\"sapAddress\":\"224.2.127.254\",\"sapIntervalMs\":30000,\"srcInterfaceIp\":\"192.0.2.63\"}}";
     var parsed = try playback.parse(allocator, text);
     defer parsed.deinit();

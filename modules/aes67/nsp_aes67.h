@@ -21,7 +21,7 @@ enum { NSP_AES67_STARTED = 1, NSP_AES67_SENDER_EXITED = 2,
     NSP_AES67_STOP_COMPLETE = 3, NSP_AES67_PTP_LOST = 4 };
 /* bit_depth: 0 = L24 (default), 1 = L16. */
 enum { NSP_AES67_L24 = 0, NSP_AES67_L16 = 1 };
-/* flow_mode: 0 = auto, 1 = single (<=8ch), 2 = multi (explicit). */
+/* flow_mode: 0 = standard (<=8ch/flow), 1 = extension (pack to 1440B; may be a single 16/64ch flow). */
 enum { NSP_AES67_FLOW_AUTO = 0, NSP_AES67_FLOW_SINGLE = 1, NSP_AES67_FLOW_MULTI = 2 };
 /* port_policy: 0 = strict (all flows 5004), 1 = explicit per-flow ports. */
 enum { NSP_AES67_PORT_STRICT = 0, NSP_AES67_PORT_EXPLICIT = 1 };

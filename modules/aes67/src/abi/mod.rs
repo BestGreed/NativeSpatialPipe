@@ -14,13 +14,13 @@ use std::{
 };
 
 /// AES67 media-profile convention: a sender offers streams of 1-8 channels
-/// (AES67-2023 sec 7.3 line 1556-1558); larger streams are an extension.
+/// (AES67-2023 sec 7.3 line 1556-1558). flow_mode=standard enforces this;
+/// flow_mode=extension allows a wider single flow as an explicit EXTENSION.
 const STANDARD_FLOW_CHANNELS: usize = 8;
-/// One flow per 8 channels at most (AES67 media profile): 16ch = 2 x 8ch,
-/// 64ch = 8 x 8ch. No 16-channel single flow is emitted (Lead decision
-/// 2026-11-23); the per-flow 1440-byte payload budget is the hard limit.
-/// Total per-session channel ceiling. Individual flows are separately capped
-/// at MAX_FLOW_CHANNELS (64) and by the 1440-byte payload budget.
+/// Hard per-flow ceiling for extension mode. 64 is the RAVENNA LKM ceiling;
+/// the 1440-byte payload budget normally binds earlier.
+const EXTENSION_FLOW_CHANNELS: usize = 64;
+/// Total per-session channel ceiling.
 const MAX_CHANNELS: usize = 256;
 const MAX_FLOWS: usize = 8;
 const DEFAULT_PORT: u16 = 5004;
@@ -48,8 +48,8 @@ pub struct FlowV1 {
 }
 
 /// Original 128-byte configuration. The two former reserved bytes now select
-/// the flow mode (0 auto, 1 single, 2 multi) and ST 2022-7 redundancy
-/// (0/1); old callers passed zero, which selects the AES67 baseline.
+/// the flow mode (0 standard, 1 extension) and ST 2022-7 redundancy
+/// (0/1); old callers passed zero, which selects the standard AES67 profile.
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct ConfigV1 {
@@ -156,16 +156,16 @@ unsafe fn text(ptr: *const c_char, max_len: usize, label: bool) -> Option<String
     Some(value.to_owned())
 }
 
-/// Auto-mode flow plan: a single flow when the whole layout fits the AES67
-/// payload budget (16 channels at 192 kHz / 125 us = 1152 B is a legal
-/// extension), otherwise balanced standard-size flows of at most 8 channels
-/// and at most 4 flows. Longer packet times that would need more than four
-/// flows are rejected so the caller can ask for a shorter ptime.
-fn auto_plan(channels: usize, fit: usize) -> Option<Vec<usize>> {
+/// Balanced flow plan: one flow when the whole layout fits the per-flow
+/// channel cap and the 1440-byte payload budget, otherwise balanced flows.
+/// standard passes cap = min(8, fit); extension passes cap = min(64, fit),
+/// so extension packs as much as the 1440-byte payload allows and only splits
+/// when the payload does not fit.
+fn plan_flows(channels: usize, fit: usize, cap_limit: usize) -> Option<Vec<usize>> {
     if channels == 0 {
         return None;
     }
-    let cap = STANDARD_FLOW_CHANNELS.min(fit);
+    let cap = cap_limit.min(fit);
     if cap == 0 {
         return None;
     }
@@ -229,7 +229,7 @@ unsafe fn config(raw: *const ConfigV1) -> Option<Config> {
         || base.sap > 1
         || base.ptp_domain > 127
         || base.default_source_filter > 1
-        || base.flow_mode > 2
+        || base.flow_mode > 1
         || base.redundant > 1
         || port_policy > 1
     {
@@ -340,7 +340,15 @@ unsafe fn config(raw: *const ConfigV1) -> Option<Config> {
     if fit == 0 {
         return None;
     }
-    let flow_cap = STANDARD_FLOW_CHANNELS.min(fit);
+    // flow_mode: 0 = standard (AES67 1-8 channels per flow), 1 = extension
+    // (fill each flow to the 1440-byte payload limit, then split).
+    let standard_cap = STANDARD_FLOW_CHANNELS.min(fit);
+    let extension_cap = EXTENSION_FLOW_CHANNELS.min(fit);
+    let flow_cap = if flow_mode == 1 {
+        extension_cap
+    } else {
+        standard_cap
+    };
     let base_ssrc = if base.ssrc_base == 0 {
         random_ssrc_base()
     } else {
@@ -350,16 +358,13 @@ unsafe fn config(raw: *const ConfigV1) -> Option<Config> {
 
     let mut flows: Vec<Flow> = Vec::with_capacity(MAX_FLOWS);
     if flow_count == 0 {
-        // Module-derived plan. Single mode always derives one flow; auto
-        // derives the MTU-minimal plan; multi requires explicit rows.
+        // Module-derived plan: standard keeps 1-8 channels per flow; extension
+        // packs to the 1440-byte payload ceiling and only splits when needed.
         let plan = match flow_mode {
-            0 => auto_plan(channels, fit)?,
-            1 => {
-                if channels > flow_cap {
-                    return None;
-                }
-                vec![channels]
-            }
+            0 => plan_flows(channels, fit, standard_cap)?,
+             // Explicit single-flow extension mode: up to 16 channels in one
+            // flow, still gated by the 1440-byte payload budget (fit).
+            1 => plan_flows(channels, fit, extension_cap)?,
             _ => return None,
         };
         if plan.len() > MAX_FLOWS {
@@ -396,9 +401,6 @@ unsafe fn config(raw: *const ConfigV1) -> Option<Config> {
         }
     } else {
         if flow_count > MAX_FLOWS || base.flows.is_null() {
-            return None;
-        }
-        if flow_mode == 1 && flow_count != 1 {
             return None;
         }
         let raw_flows = unsafe { slice::from_raw_parts(base.flows, flow_count) };

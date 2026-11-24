@@ -12,7 +12,8 @@ AES67 is a session-scoped output backend. The standalone module owns the PCM rin
 | Tier 0 | SDP over ABI (static export) and RFC 2974 SAP with CRC-16 hash/TTL 255/30 s interval/deletion x3 | Supported |
 | Tier 0 | DSCP AF41 for media, EF for PTP; media-clock pacing (bounded catch-up) | Supported |
 | Tier 0 | Receiver side (IGMP join, jitter buffer, L16/L24 receive, 16ch aggregation) | Not in this branch (receiver lives in TSPI / aoip-aes67) |
-| Tier 0 | 16-channel layout delivered as 2 x 8ch | Supported (single 16ch flow is deliberately not emitted) |
+| Tier 0 | 16-channel layout delivered as 2 x 8ch | Supported by flowMode=standard (default) |
+| EXTENSION | 16/64-channel single flow (flowMode=extension) | Automatic in extension mode when samples x bytes x channels <= 1440 B; not AES67 media-profile conformance |
 | Tier 1 | 44.1 / 96 kHz | Supported (44.1 kHz uses 48 samples per packet, L16 default) |
 | Tier 1 | 125/250/333 us and 2/4 ms packet times | Supported |
 | Tier 1 | HTTP/RTSP SDP service, mDNS advertisement/browse, 64ch as 8 x 8ch | 64ch splitting supported; HTTP/RTSP/mDNS not in this branch |
@@ -53,8 +54,8 @@ The playback schema and the 12-channel and 16-channel examples under modules/zig
 - sampleRate: 44100, 48000, 88200, 96000, 176400, 192000. Default 48000.
 - ptimeUs: 125, 250, 333, 500, 1000, 2000, 4000. Default 1000. Samples per packet follow AES67-2023 Table 2: 6/12/16/24/48/96/192 at the 1FS rate of the sampling-rate family. The 1 ms profile is 48 samples at both 48 kHz and 44.1 kHz, so the 44.1 kHz packet lasts 1.088 ms (SDP a=ptime:1.09, 918.75 packets/s, timestamp step 48).
 - codec: "L16" (2 bytes/sample) or "L24" (3 bytes/sample), both big-endian. Omitted selects L16 for the 44.1 kHz family (AES67 requirement) and L24 otherwise. framesPerPacket remains accepted as a legacy cross-check but must equal the derived sample count.
-- flowMode: "auto" (default) derives the MTU-minimal plan, "single" forces one flow of at most 8 channels, "multi" requires explicit flows. 16 channels are always sent as 2 x 8; 64 channels as 8 x 8. A flow wider than 8 channels is rejected.
-- Provide either groupBase (auto/single derivation: flow k = base + k) or explicit flows. Each flow carries 1-8 channels; offsets are contiguous from zero and must cover the layout exactly. An optional channelMap supplies the wire order.
+- flowMode: "standard" (default) keeps the AES67 1-8 channel profile (16ch = 2 x 8, 64ch = 8 x 8) and rejects a split that needs more than 8 flows or overflows 1440 B per flow. "extension" packs each flow to the 1440-byte payload limit first: max_ch = floor(1440 / (samples x bytes)), flow_count = ceil(total / max_ch), so a single 16ch flow is used when it fits (48k/250us/16ch L24 = 576 B, 48k/125us/16ch L24 = 288 B, 192k/125us/16ch L24 = 1152 B) and oversized payloads split (48k/1ms/16ch L24 = 2304 B -> 2 x 8ch). Flows wider than 8 channels are a product EXTENSION, not AES67 conformance; use standard for third-party interop.
+- Provide either groupBase (derived planning: flow k = base + k) or explicit flows. standard flows carry 1-8 channels; extension may carry more (up to the product 16-channel layout) when the payload fits. Offsets are contiguous from zero and must cover the layout exactly. An optional channelMap supplies the wire order.
 - Standard ports: every flow uses RTP port 5004; flows are distinguished by unique multicast groups. ST 2022-7 redundancy uses 5006 (primary + 2). portPolicy "explicit" allows even per-flow ports for migration/lab use; strict mode rejects them.
 - ringPackets controls capacity in 1 ms packets. prebufferFrames must fit inside the ring and is at least one packet.
 - SSRC 0 selects a random per-session base; flow k uses base + k unless a row sets its own.

@@ -286,6 +286,10 @@ mod tests {
             (96_000, 1_000, Encoding::L24, 8, "L24/96000/8", "1", "96"),
             (96_000, 125, Encoding::L24, 8, "L24/96000/8", "0.125", "12"),
             (192_000, 125, Encoding::L24, 16, "L24/192000/16", "0.125", "24"),
+            // Extension mode single-flow 16ch at short packet times: rtpmap
+            // carries the actual channel count and ptime the actual duration.
+            (48_000, 125, Encoding::L24, 16, "L24/48000/16", "0.125", "6"),
+            (48_000, 250, Encoding::L24, 16, "L24/48000/16", "0.25", "12"),
             (192_000, 1_000, Encoding::L16, 2, "L16/192000/2", "1", "192"),
         ];
         for (rate, ptime, encoding, channels, rtpmap, ptime_text, framecount) in cases {

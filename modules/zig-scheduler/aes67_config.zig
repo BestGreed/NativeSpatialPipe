@@ -12,9 +12,13 @@ const std = @import("std");
 pub const max_channels: u16 = 16;
 pub const max_flows: u8 = 8;
 /// AES67 media profile: senders offer streams of 1-8 channels (sec 7.3 line
-/// 1556-1558). Larger flows are an extension used only when the MTU permits.
+/// 1556-1558). Larger flows are an explicit extension used only when the MTU
+/// permits (flowMode = extension, an explicit product extension).
 pub const standard_flow_channels: u16 = 8;
-pub const max_flow_channels: u16 = 16;
+/// Explicit single-flow extension: one flow may carry up to 16 channels when
+/// the 1440-byte AES67 payload budget permits it. Not the AES67 profile.
+pub const single_flow_channels: u16 = 16;
+pub const max_flow_channels: u16 = single_flow_channels;
 /// AES67-2023 sec 6.3 line 1364-1366: maximum RTP payload is 1440 bytes.
 pub const max_payload_bytes: usize = 1440;
 pub const default_port: u16 = 5004;
@@ -53,7 +57,11 @@ pub const BitDepth = enum(u8) {
     }
 };
 
-pub const FlowMode = enum(u8) { auto = 0, single = 1, multi = 2 };
+/// Flow packing mode. standard keeps the AES67 1-8 channel profile; extension
+/// packs each flow to the 1440-byte payload limit (a single 16/64-channel flow
+/// is possible) and only splits when the payload does not fit. Extension flows
+/// wider than 8 channels are a product EXTENSION, not AES67 conformance.
+pub const FlowMode = enum(u8) { standard = 0, extension = 1 };
 pub const PortPolicy = enum(u8) { strict = 0, explicit = 1 };
 
 fn familyBase(rate: u32) ?u32 {
@@ -137,9 +145,9 @@ pub const File = struct {
     ptimeUs: u16 = 1_000,
     /// null selects defaultBitDepth(rate): L16 for 44.1 kHz, L24 for 48 kHz.
     codec: ?BitDepth = null,
-    /// auto derives the MTU-minimal flow plan, single forces one extension
-    /// flow, multi requires explicit flows.
-    flowMode: FlowMode = .auto,
+    /// standard (default) splits to at most 8 channels per flow (AES67 media
+    /// profile); extension packs to the 1440-byte payload limit first.
+    flowMode: FlowMode = .standard,
     /// strict enforces the standard shared 5004 port; explicit allows 5004/5006
     /// style per-flow ports for migration and lab use.
     portPolicy: PortPolicy = .strict,
@@ -296,7 +304,7 @@ pub const Prepared = struct {
     sap_interval_ms: u32 = default_sap_interval_ms,
     sap_address: [4]u8 = .{ 224, 2, 127, 254 },
     port_policy: PortPolicy = .strict,
-    /// Resolved ABI flow mode: 1 = single explicit flow, 2 = multi explicit.
+    /// Resolved ABI flow mode: 0 = standard, 1 = extension.
     abi_flow_mode: u8 = 2,
 
     pub fn ptimeMilliseconds(self: Prepared) f64 {
@@ -367,7 +375,11 @@ pub fn prepare(file: File, channels: usize) !Prepared {
         if (frames_per_packet != samples) return error.UnsupportedAes67PacketFrames;
     }
     const fit = maxChannelsPerFlow(samples, bytes_per_sample);
-    const flow_cap = @min(standard_flow_channels, fit);
+    const standard_cap = @min(standard_flow_channels, fit);
+    const extension_cap = @min(max_flow_channels, fit);
+    // standard keeps the AES67 1-8 channel profile; extension fills each flow
+    // to the 1440-byte payload limit and only splits when it does not fit.
+    const flow_cap = if (file.flowMode == .extension) extension_cap else standard_cap;
     if (flow_cap == 0) return error.Aes67PayloadTooLarge;
 
     if (file.basePort == 0 or file.basePort < 1024 or file.basePort % 2 != 0)
@@ -438,7 +450,6 @@ pub fn prepare(file: File, channels: usize) !Prepared {
     var count: usize = 0;
     if (file.flows) |flows| {
         if (flows.len == 0 or flows.len > max_flows) return error.InvalidAes67FlowCount;
-        if (file.flowMode == .single and flows.len != 1) return error.InvalidAes67FlowCount;
         for (flows, 0..) |flow, index| {
             if (flow.channels == 0 or flow.channels > flow_cap) return error.InvalidAes67FlowChannels;
             if (flow.channels > total -| offset) return error.InvalidAes67FlowChannels;
@@ -466,13 +477,11 @@ pub fn prepare(file: File, channels: usize) !Prepared {
             count += 1;
         }
     } else {
-        if (file.flowMode == .multi) return error.Aes67RequiresFlows;
+        // Both modes derive a plan when flows are omitted; explicit rows are
+        // optional in either mode.
         var counts = [_]u16{0} ** max_flows;
         var flow_count: u8 = 1;
-        if (file.flowMode == .single) {
-            if (total > flow_cap) return error.InvalidAes67FlowChannels;
-            counts[0] = total;
-        } else if (total <= flow_cap) {
+        if (total <= flow_cap) {
             counts[0] = total;
         } else {
             const target = flow_cap;
@@ -498,7 +507,7 @@ pub fn prepare(file: File, channels: usize) !Prepared {
     }
     if (offset != total or count == 0) return error.InvalidAes67FlowChannels;
     prepared.flow_count = @intCast(count);
-    prepared.abi_flow_mode = if (file.flowMode == .single) 1 else 2;
+    prepared.abi_flow_mode = @intFromEnum(file.flowMode);
     prepared.dest_ip = prepared.flows[0].dest_ip;
     prepared.dest_text = prepared.flows[0].dest_text;
     prepared.port = prepared.flows[0].port;

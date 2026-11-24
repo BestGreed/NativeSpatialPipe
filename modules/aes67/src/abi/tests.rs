@@ -753,12 +753,32 @@ fn auto_config(channels: u32, rate: u32, ptime: u32, depth: u8) -> ConfigV2 {
     v2
 }
 
+fn mode_config(channels: u32, rate: u32, ptime: u32, depth: u8, flow_mode: u8) -> ConfigV2 {
+    let mut v2 = auto_config(channels, rate, ptime, depth);
+    v2.base.flow_mode = flow_mode;
+    v2
+}
+
+fn flows_of(config: &Config) -> Vec<u16> {
+    config.flows.iter().map(|flow| flow.channels as u16).collect()
+}
+
+fn payload_per_flow(config: &Config) -> Vec<usize> {
+    let samples = config.timing.samples_per_packet() as usize;
+    let bytes = config.encoding.bytes();
+    config
+        .flows
+        .iter()
+        .map(|flow| samples * flow.channels * bytes)
+        .collect()
+}
+
 #[test]
-fn auto_mode_splits_by_payload_budget_and_rejects_unservable_times() {
-    // 48 kHz / 1 ms / 16ch / L24: 2 x 8ch (1152 B each).
-    let config = unsafe { super::config((&auto_config(16, 48_000, 1_000, 0)).cast()) }.unwrap();
-    assert_eq!(config.flows.len(), 2);
-    assert_eq!(config.flows.iter().map(|f| f.channels).collect::<Vec<_>>(), [8, 8]);
+fn standard_mode_keeps_eight_channel_flows_and_mtu_checks() {
+    // 48 kHz / 1 ms / 16ch / L24: 2 x 8ch (1152 B each), shared port 5004.
+    let config = unsafe { super::config((&mode_config(16, 48_000, 1_000, 0, 0)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [8, 8]);
+    assert_eq!(payload_per_flow(&config), [1152, 1152]);
     assert!(config.flows.iter().all(|flow| flow.destination.port() == 5004));
     assert_eq!(
         config.flows.iter().map(|f| *f.destination.ip()).collect::<Vec<_>>(),
@@ -766,47 +786,109 @@ fn auto_mode_splits_by_payload_budget_and_rejects_unservable_times() {
     );
 
     // 48 kHz / 1 ms / 16ch / L16: 16 x 48 x 2 = 1536 B, still 2 x 8ch (768 B).
-    let config = unsafe { super::config((&auto_config(16, 48_000, 1_000, 1)).cast()) }.unwrap();
-    assert_eq!(config.flows.len(), 2);
+    let config = unsafe { super::config((&mode_config(16, 48_000, 1_000, 1, 0)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [8, 8]);
+    assert_eq!(payload_per_flow(&config), [768, 768]);
 
-    // 192 kHz / 125 us / 16ch / L24: payload would fit one 1152 B flow, but
-    // AES67 sends at most 8 channels per flow, so 16ch = 2 x 8ch.
-    let config = unsafe { super::config((&auto_config(16, 192_000, 125, 0)).cast()) }.unwrap();
-    assert_eq!(config.flows.len(), 2);
-    assert!(config.flows.iter().all(|flow| flow.channels == 8));
+    // Standard mode always splits to <=8 channels, even when a wider flow
+    // would fit the payload budget (192k/125us 16ch L24 = 1152 B in one flow).
+    let config = unsafe { super::config((&mode_config(16, 192_000, 125, 0, 0)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [8, 8]);
+    assert_eq!(payload_per_flow(&config), [576, 576]);
+    let config = unsafe { super::config((&mode_config(16, 48_000, 250, 0, 0)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [8, 8]);
 
-    // 192 kHz / 500 us / 16ch / L24: 96 samples -> 4ch per flow, 4 flows.
-    let config = unsafe { super::config((&auto_config(16, 192_000, 500, 0)).cast()) }.unwrap();
-    assert_eq!(config.flows.len(), 4);
-    assert!(config.flows.iter().all(|flow| flow.channels == 4));
+    // 192 kHz / 500 us / 16ch / L24: fit=5, so standard uses 4 flows of 4ch.
+    let config = unsafe { super::config((&mode_config(16, 192_000, 500, 0, 0)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [4, 4, 4, 4]);
 
-    // 192 kHz / 1 ms / 16ch / L24: 2ch per flow, 8 flows. This is an EXTENSION
-    // (192 kHz is outside AES67) and the maximum flow count; no single stream
-    // can carry it.
-    let config = unsafe { super::config((&auto_config(16, 192_000, 1_000, 0)).cast()) }.unwrap();
-    assert_eq!(config.flows.len(), 8);
-    assert!(config.flows.iter().all(|flow| flow.channels == 2));
+    // 192 kHz / 1 ms / 16ch / L24: fit=2, so standard uses 8 flows of 2ch.
+    let config = unsafe { super::config((&mode_config(16, 192_000, 1_000, 0, 0)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [2, 2, 2, 2, 2, 2, 2, 2]);
+    assert_eq!(payload_per_flow(&config), [1152; 8]);
     // 192 kHz / 2 ms / 16ch / L24 would need 16 flows (> 8); reject.
-    assert!(unsafe { super::config((&auto_config(16, 192_000, 2_000, 0)).cast()) }.is_none());
+    assert!(unsafe { super::config((&mode_config(16, 192_000, 2_000, 0, 0)).cast()) }.is_none());
     // 192 kHz / 1 ms / 8ch / L16: 3072 B -> 3 flows of 3/3/2 channels.
-    let config = unsafe { super::config((&auto_config(8, 192_000, 1_000, 1)).cast()) }.unwrap();
-    assert_eq!(config.flows.iter().map(|f| f.channels).collect::<Vec<_>>(), [3, 3, 2]);
+    let config = unsafe { super::config((&mode_config(8, 192_000, 1_000, 1, 0)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [3, 3, 2]);
+
+    // 64ch / 48k/1ms / L24: fit=10 but standard caps 8 -> 8 x 8ch.
+    let config = unsafe { super::config((&mode_config(64, 48_000, 1_000, 0, 0)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [8; 8]);
+    assert_eq!(payload_per_flow(&config), [1152; 8]);
+    // 64ch / 192k/1ms / L24 would need 32 flows (> 8); reject.
+    assert!(unsafe { super::config((&mode_config(64, 192_000, 1_000, 0, 0)).cast()) }.is_none());
 }
 
 #[test]
-fn single_flow_mode_is_capped_to_the_eight_channel_profile() {
-    let mut v2 = auto_config(8, 192_000, 125, 0);
-    v2.base.flow_mode = 1;
-    let config = unsafe { super::config((&v2).cast()) }.unwrap();
-    assert_eq!(config.flows.len(), 1);
-    assert_eq!(config.flows[0].channels, 8);
+fn extension_mode_packs_to_the_1440_byte_payload_limit_then_splits() {
+    // Single flow when the whole layout fits: 48k/125us 16ch L24 = 288 B.
+    let config = unsafe { super::config((&mode_config(16, 48_000, 125, 0, 1)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [16]);
+    assert_eq!(payload_per_flow(&config), [288]);
+    // 192k/125us 16ch L24 = 1152 B, still one flow.
+    let config = unsafe { super::config((&mode_config(16, 192_000, 125, 0, 1)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [16]);
+    assert_eq!(payload_per_flow(&config), [1152]);
+    // 48k/250us 16ch L24 = 576 B in one flow.
+    let config = unsafe { super::config((&mode_config(16, 48_000, 250, 0, 1)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [16]);
+    assert_eq!(payload_per_flow(&config), [576]);
+    // 48k/125us 64ch L24 = 1152 B in one 64-channel flow.
+    let config = unsafe { super::config((&mode_config(64, 48_000, 125, 0, 1)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [64]);
+    assert_eq!(payload_per_flow(&config), [1152]);
+    // 48k/125us 64ch L16 = 768 B in one 64-channel flow.
+    let config = unsafe { super::config((&mode_config(64, 48_000, 125, 1, 1)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [64]);
+    assert_eq!(payload_per_flow(&config), [768]);
 
-    // No 16-channel single flow: split with flow_mode = auto (2 x 8ch).
-    let mut v2 = auto_config(16, 192_000, 125, 0);
-    v2.base.flow_mode = 1;
-    assert!(unsafe { super::config((&v2).cast()) }.is_none());
-    v2.base.flow_mode = 0;
-    assert_eq!(unsafe { super::config((&v2).cast()) }.unwrap().flows.len(), 2);
+    // When the payload does not fit, extension splits at max_ch instead of
+    // rejecting: 48k/1ms 16ch L24 -> fit 10 -> balanced 8 + 8.
+    let config = unsafe { super::config((&mode_config(16, 48_000, 1_000, 0, 1)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [8, 8]);
+    assert_eq!(payload_per_flow(&config), [1152, 1152]);
+    // 48k/1ms 64ch L24 -> fit 10 -> 7 balanced flows (10,9,...,9).
+    let config = unsafe { super::config((&mode_config(64, 48_000, 1_000, 0, 1)).cast()) }.unwrap();
+    assert_eq!(config.flows.len(), 7);
+    assert_eq!(flows_of(&config), [10, 9, 9, 9, 9, 9, 9]);
+    assert_eq!(payload_per_flow(&config)[0], 1440);
+    assert!(payload_per_flow(&config).iter().all(|bytes| *bytes <= 1440));
+    // 192k/1ms 16ch L24 -> fit 2 -> 8 x 2ch.
+    let config = unsafe { super::config((&mode_config(16, 192_000, 1_000, 0, 1)).cast()) }.unwrap();
+    assert_eq!(flows_of(&config), [2; 8]);
+    // 96k/1ms 64ch L24 -> fit 5 -> 13 flows (> 8); reject.
+    assert!(unsafe { super::config((&mode_config(64, 96_000, 1_000, 0, 1)).cast()) }.is_none());
+    // 192k/2ms 16ch L24 -> fit 1 -> 16 flows (> 8); reject.
+    assert!(unsafe { super::config((&mode_config(16, 192_000, 2_000, 0, 1)).cast()) }.is_none());
+}
+
+#[test]
+fn same_layout_across_standard_and_extension_modes() {
+    // (rate, ptime, depth, channels): standard flow plan vs extension plan.
+    let cases = [
+        ((48_000, 250, 0, 16), vec![8, 8], vec![16]),
+        ((48_000, 1_000, 0, 16), vec![8, 8], vec![8, 8]),
+        ((192_000, 125, 0, 16), vec![8, 8], vec![16]),
+        ((48_000, 125, 0, 16), vec![8, 8], vec![16]),
+        ((48_000, 1_000, 0, 64), vec![8; 8], vec![10, 9, 9, 9, 9, 9, 9]),
+        ((192_000, 125, 1, 16), vec![8, 8], vec![16]),
+        ((192_000, 1_000, 1, 8), vec![3, 3, 2], vec![3, 3, 2]),
+    ];
+    for ((rate, ptime, depth, channels), standard, extension) in cases {
+        let standard_config =
+            unsafe { super::config((&mode_config(channels, rate, ptime, depth, 0)).cast()) }.unwrap();
+        assert_eq!(flows_of(&standard_config), standard, "{rate}/{ptime}/{depth}/{channels} standard");
+        assert!(payload_per_flow(&standard_config).iter().all(|bytes| *bytes <= 1440));
+        let extension_config =
+            unsafe { super::config((&mode_config(channels, rate, ptime, depth, 1)).cast()) }.unwrap();
+        assert_eq!(
+            flows_of(&extension_config),
+            extension,
+            "{rate}/{ptime}/{depth}/{channels} extension"
+        );
+        assert!(payload_per_flow(&extension_config).iter().all(|bytes| *bytes <= 1440));
+    }
 }
 
 #[test]
@@ -835,7 +917,7 @@ fn flow_row(dest: [u8; 4], port: u16, offset: u32) -> FlowV1 {
 fn strict_ports_share_5004_and_reject_divergence() {
     let rows = [flow_row([239, 1, 0, 1], 5004, 0), flow_row([239, 1, 0, 2], 5004, 4)];
     let mut v2 = auto_config(8, 48_000, 1_000, 0);
-    v2.base.flow_mode = 2;
+    v2.base.flow_mode = 0; // standard: <=8ch per flow
     v2.base.flow_count = 2;
     v2.base.flows = rows.as_ptr();
     let config = unsafe { super::config((&v2).cast()) }.unwrap();
@@ -887,13 +969,13 @@ fn oversized_explicit_multi_flow_is_rejected() {
         ..FlowV1::default()
     }];
     let mut v2 = auto_config(9, 48_000, 1_000, 0);
-    v2.base.flow_mode = 2;
+    v2.base.flow_mode = 0; // standard rejects a 9-channel explicit flow
     v2.base.flow_count = 1;
     v2.base.flows = rows.as_ptr();
     assert!(unsafe { super::config((&v2).cast()) }.is_none());
 
     // Explicit 11ch L24 at 1 ms exceeds the 1440-byte payload budget even in
-    // single mode (1440 / 144 = 10 channels maximum).
+    // extension mode (1440 / 144 = 10 channels maximum).
     let rows = [FlowV1 {
         dest_ip: [239, 1, 0, 1],
         src_interface_ip: IP.octets(),
@@ -904,7 +986,7 @@ fn oversized_explicit_multi_flow_is_rejected() {
         ..FlowV1::default()
     }];
     let mut v2 = auto_config(11, 48_000, 1_000, 0);
-    v2.base.flow_mode = 1;
+    v2.base.flow_mode = 1; // extension
     v2.base.flow_count = 1;
     v2.base.flows = rows.as_ptr();
     assert!(unsafe { super::config((&v2).cast()) }.is_none());
