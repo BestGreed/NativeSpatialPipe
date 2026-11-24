@@ -147,14 +147,20 @@ impl Output {
     /// packet would be dropped as a payload-type error (audit 2026-11-23,
     /// RFC 3550 clause 5.3 line 968-977 leaves the bit to the profile).
     pub fn send(&mut self, stamp: u32, frames: &[f32], channels: usize) -> io::Result<usize> {
-        if channels != self.flow.channels
+        // `channels` is the interleaved frame width of `frames` (the session
+        // total, e.g. 16 for the AES67-standard 2 x 8ch layout); this output
+        // serializes the [offset, offset + flow.channels) slice of each frame.
+        // Requiring channels == flow.channels would turn every multi-flow
+        // 16ch/64ch send into InvalidInput (measured on FLP01 2026-11-24).
+        if channels == 0
             || frames.is_empty()
             || !frames.len().is_multiple_of(channels)
+            || self.flow.offset + self.flow.channels > channels
         {
             return Err(io::ErrorKind::InvalidInput.into());
         }
         let count = frames.len() / channels;
-        let end = RTP_HEADER + count * channels * self.encoding.bytes();
+        let end = RTP_HEADER + count * self.flow.channels * self.encoding.bytes();
         if end > PACKET_CAPACITY {
             return Err(io::ErrorKind::InvalidInput.into());
         }
@@ -412,6 +418,49 @@ mod tests {
         assert_eq!(size, RTP_HEADER + 6);
         assert_eq!(&datagram[12..15], &[0xC0, 0x00, 0x00]);
         assert_eq!(&datagram[15..18], &[0x20, 0x00, 0x00]);
+    }
+
+    #[test]
+    fn multi_flow_send_packs_only_its_channel_slice_from_the_session_frame() {
+        // Regression (FLP01 2026-11-24): the session passes the total frame
+        // width (16ch) to each 8ch flow. The second flow must serialize
+        // channels 8..16, not reject the send as InvalidInput.
+        let timing = PacketTiming::new(HZ_48K, 1_000).unwrap();
+        let sink = sink();
+        let SocketAddr::V4(destination) = sink.local_addr().unwrap() else {
+            unreachable!()
+        };
+        let mut second = Output::open(
+            Flow {
+                destination,
+                interface: Ipv4Addr::LOCALHOST,
+                ttl: 1,
+                ssrc: 0x4E53_5001,
+                offset: 8,
+                channels: 8,
+                payload_type: 96,
+                source_filter: false,
+            },
+            Encoding::L16,
+        )
+        .unwrap();
+        // 48 stereo frames of 16 channels: flow 1 carries lanes 8..16.
+        let mut frames = vec![0.0_f32; 48 * 16];
+        for sample in 0..48 {
+            for channel in 8..16 {
+                frames[sample * 16 + channel] = (channel - 7) as f32 / 16.0;
+            }
+        }
+        second.send(0, &frames, 16).unwrap();
+        let (datagram, size) = receive(&sink);
+        assert_eq!(size, RTP_HEADER + 48 * 8 * 2);
+        let payload = &datagram[RTP_HEADER..size];
+        for frame in payload.chunks_exact(16) {
+            for (index, sample) in frame.chunks_exact(2).enumerate() {
+                // L16 big-endian: 0.0625 * 32768 = 0x0800 for lane 8, then +0x0800.
+                assert_eq!(sample, [((index + 1) * 8) as u8, 0u8]);
+            }
+        }
     }
 
     #[test]

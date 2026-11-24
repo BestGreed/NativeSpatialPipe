@@ -333,7 +333,7 @@ test "unknown AES67 fields still fail closed" {
     );
 }
 fn ptpJson(allocator: std.mem.Allocator, ptp: []const u8) ![]u8 {
-    const prefix = "{\"bridgeDll\":\"C:/fixture/bridge.dll\",\"outputBackend\":\"aes67\",\"outputLayout\":\"7.1.4\",\"sampleRate\":48000,\"aes67\":{\"sampleRate\":48000,\"ptimeUs\":1000,\"codec\":\"L24\",\"flowMode\":\"auto\",\"groupBase\":\"239.69.0.1\",\"srcInterfaceIp\":\"192.0.2.63\",\"ptp\":";
+    const prefix = "{\"bridgeDll\":\"C:/fixture/bridge.dll\",\"outputBackend\":\"aes67\",\"outputLayout\":\"7.1.4\",\"sampleRate\":48000,\"aes67\":{\"sampleRate\":48000,\"ptimeUs\":1000,\"codec\":\"L24\",\"flowMode\":\"standard\",\"groupBase\":\"239.69.0.1\",\"srcInterfaceIp\":\"192.0.2.63\",\"ptp\":";
     return std.mem.concat(allocator, u8, &.{ prefix, ptp, "}}" });
 }
 
