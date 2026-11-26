@@ -56,26 +56,102 @@ pub fn ptime_milliseconds(timing: PacketTiming) -> String {
     text
 }
 
+/// SDP o= username (RFC 8866 sec 5.2). The field is a single token: printable
+/// ASCII is kept, while spaces, non-ASCII and control characters become '-'.
+/// Capped at 64 characters and never empty, so a configured device name
+/// cannot split or inject lines in the origin field.
+fn origin_username(name: &str) -> String {
+    let mut token: String = name
+        .chars()
+        .take(64)
+        .map(|value| if value.is_ascii_graphic() { value } else { '-' })
+        .collect();
+    if token.is_empty() {
+        token.push('-');
+    }
+    token
+}
+
+/// Media-level i= value (RFC 8866 sec 5.4). Spaces are legal here, but CR, LF
+/// and every other control character are dropped so a configured name cannot
+/// start a new SDP line; 200 characters keeps the line inside the RFC 8866
+/// sec 5 recommendation.
+fn media_information(name: &str) -> String {
+    name.chars()
+        .filter(|value| !value.is_control())
+        .take(200)
+        .collect()
+}
+
+/// ST 2110-30 channel-order groups for one flow's exact label sequence.
+///
+/// A mapping is accepted only when the labels start with the standard group's
+/// exact sequence (longest group first); the remainder of 1..=8 channels is
+/// described as a user-defined group. A sequence without a standard prefix is
+/// described as one user-defined group when it has 1..=8 channels. Anything
+/// else is omitted rather than guessed: a wrong channel-order makes a
+/// receiver decode the wrong speakers, so silence is safer (DESIGN-TOPO.md).
+fn channel_order(labels: &[String]) -> Option<String> {
+    // Longest first: 7.1 starts with 5.1, which starts with the stereo pair.
+    const PREFIXES: [(&str, &[&str]); 6] = [
+        ("71", &["L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs"]),
+        ("51", &["L", "R", "C", "LFE", "Ls", "Rs"]),
+        ("ST", &["L", "R"]),
+        ("ST", &["FL", "FR"]),
+        ("M", &["M"]),
+        ("M", &["C"]),
+    ];
+    for (group, prefix) in PREFIXES {
+        let prefix_matches = labels.len() >= prefix.len()
+            && labels
+                .iter()
+                .zip(prefix)
+                .all(|(label, expected)| label.as_str() == *expected);
+        if !prefix_matches {
+            continue;
+        }
+        let remaining = labels.len() - prefix.len();
+        return match remaining {
+            0 => Some(group.to_owned()),
+            1..=8 => Some(format!("{group},U{remaining:02}")),
+            _ => None,
+        };
+    }
+    (1..=8)
+        .contains(&labels.len())
+        .then(|| format!("U{:02}", labels.len()))
+}
+
+#[allow(clippy::too_many_arguments)]
 fn media_block(
     s: &mut String,
+    name: &str,
+    index: usize,
     output: &Output,
     timing: PacketTiming,
     reference: Option<Reference>,
     port: u16,
     mid: Option<u8>,
+    channel_order: Option<&str>,
 ) {
     let flow = &output.flow;
     let dest = flow.destination.ip();
     let pt = flow.payload_type;
+    // Media-level information line immediately after m= (RFC 8866 sec 5.4),
+    // carrying the device name and which configured flow this is.
+    let information = media_information(name);
     let _ = write!(
         s,
-        "m=audio {} RTP/AVP {pt}\r\na=rtpmap:{pt} {}/{}/{}\r\na=sendonly\r\na=ptime:{}\r\n",
-        port,
+        "m=audio {port} RTP/AVP {pt}\r\ni={information} flow{index} IN/{}\r\na=rtpmap:{pt} {}/{}/{}\r\n",
+        flow.channels,
         output.encoding.codec(),
         timing.sample_rate(),
         flow.channels,
-        ptime_milliseconds(timing),
     );
+    if let Some(order) = channel_order {
+        let _ = write!(s, "a=fmtp:{pt} channel-order=SMPTE2110.({order})\r\n");
+    }
+    let _ = write!(s, "a=sendonly\r\na=ptime:{}\r\n", ptime_milliseconds(timing));
     if dest.is_multicast() && flow.source_filter {
         let _ = write!(
             s,
@@ -118,7 +194,9 @@ fn media_block(
 
 /// Serializes one RTP flow as one v=0 session. With ST 2022-7 redundancy the
 /// session carries two media sections (primary and secondary port) under
-/// a=group:DUP, matching the daemon source layout.
+/// a=group:DUP, matching the daemon source layout. Every media section carries
+/// i= with the device name and flow index, plus a=fmtp:<pt> channel-order
+/// when the flow's exact label sequence identifies the ST 2110-30 group.
 #[allow(clippy::too_many_arguments)]
 pub fn describe(
     name: &str,
@@ -133,9 +211,9 @@ pub fn describe(
 ) -> String {
     let flow = &output.flow;
     let dest = flow.destination.ip();
-    let pt = flow.payload_type;
     let mut s = format!(
-        "v=0\r\no=- {session_id} {version} IN IP4 {}\r\ns={name} flow{index}\r\n",
+        "v=0\r\no={} {session_id} {version} IN IP4 {}\r\ns={name} flow{index}\r\n",
+        origin_username(name),
         output.source
     );
     let _ = write!(s, "c=IN IP4 {dest}");
@@ -146,21 +224,31 @@ pub fn describe(
     if secondary_port.is_some() {
         s.push_str("a=group:DUP 1 2\r\n");
     }
+    let labels = &labels[flow.offset..flow.offset + flow.channels];
+    let order = channel_order(labels);
     media_block(
         &mut s,
+        name,
+        index,
         output,
         timing,
         reference,
         flow.destination.port(),
         secondary_port.map(|_| 1),
+        order.as_deref(),
     );
     if let Some(secondary) = secondary_port {
-        media_block(&mut s, output, timing, reference, secondary, Some(2));
-    }
-    let labels = &labels[flow.offset..flow.offset + flow.channels];
-    if matches!(labels, [left,right] if (left == "L" && right == "R") || (left == "FL" && right == "FR"))
-    {
-        let _ = write!(s, "a=fmtp:{pt} channel-order=SMPTE2110.(ST)\r\n");
+        media_block(
+            &mut s,
+            name,
+            index,
+            output,
+            timing,
+            reference,
+            secondary,
+            Some(2),
+            order.as_deref(),
+        );
     }
     let _ = write!(
         s,
@@ -242,6 +330,30 @@ mod tests {
         .unwrap()
     }
 
+    /// Flow whose label window starts at `offset`: lets one config's labels be
+    /// described as several flows, as the session does with flow.offset.
+    fn output_at(offset: usize, channels: usize) -> Output {
+        let ip = Ipv4Addr::LOCALHOST;
+        Output::open(
+            Flow {
+                destination: SocketAddrV4::new(ip, 5004),
+                interface: ip,
+                ttl: 32,
+                ssrc: 1,
+                offset,
+                channels,
+                payload_type: 110,
+                source_filter: false,
+            },
+            Encoding::L24,
+        )
+        .unwrap()
+    }
+
+    fn label_list(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
     fn reference() -> Option<Reference> {
         Some(Reference::Ptp {
             gm: [0xab; 8],
@@ -269,7 +381,7 @@ mod tests {
             None,
         );
         assert_eq!(s.matches("v=0\r\n").count(), 1);
-        assert!(s.contains("m=audio 5004 RTP/AVP 110\r\n"));
+        assert!(s.contains("m=audio 5004 RTP/AVP 110\r\ni=test flow0 IN/2\r\n"));
         assert!(s.contains("a=rtpmap:110 L24/48000/2\r\n"));
         // AES67 requires ptime; the value is milliseconds (line 1695).
         assert!(s.contains("a=ptime:1\r\n"));
@@ -284,7 +396,8 @@ mod tests {
         assert_eq!(&packet[..8], &[0x20, 0, 0x12, 0x34, 127, 0, 0, 1]);
         let stop = sap_packet(0x1234, Ipv4Addr::LOCALHOST, &s, true);
         assert_eq!(stop[0], 0x24);
-        assert!(stop.ends_with(b"o=- 15 1 IN IP4 127.0.0.1\r\n"));
+        assert!(s.contains("o=test 15 1 IN IP4 127.0.0.1\r\n"));
+        assert!(stop.ends_with(b"o=test 15 1 IN IP4 127.0.0.1\r\n"));
     }
 
     #[test]
@@ -468,5 +581,224 @@ mod tests {
         let none = describe("test", &output, 0, &labels, None, 1, 1, timing, None);
         assert!(!none.contains("a=ts-refclk:"));
         assert!(!none.contains("a=mediaclk:"));
+    }
+
+    #[test]
+    fn origin_username_is_a_bounded_ascii_token() {
+        assert_eq!(origin_username("test"), "test");
+        assert_eq!(origin_username("Living Room"), "Living-Room");
+        assert_eq!(origin_username("NSP 主输出"), "NSP----");
+        assert_eq!(origin_username(""), "-");
+        assert_eq!(origin_username("a\r\nb"), "a--b");
+        assert_eq!(origin_username(&"x".repeat(100)), "x".repeat(64));
+        let token = origin_username("NSP 主输出");
+        assert!(!token.contains(' '));
+        assert!(token.is_ascii());
+    }
+
+    #[test]
+    fn channel_order_maps_standard_layouts_and_only_exact_prefixes() {
+        assert_eq!(channel_order(&label_list(&["M"])).as_deref(), Some("M"));
+        assert_eq!(channel_order(&label_list(&["C"])).as_deref(), Some("M"));
+        assert_eq!(channel_order(&label_list(&["L", "R"])).as_deref(), Some("ST"));
+        assert_eq!(channel_order(&label_list(&["FL", "FR"])).as_deref(), Some("ST"));
+        assert_eq!(
+            channel_order(&label_list(&["L", "R", "C", "LFE", "Ls", "Rs"])).as_deref(),
+            Some("51")
+        );
+        assert_eq!(
+            channel_order(&label_list(&[
+                "L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs"
+            ]))
+            .as_deref(),
+            Some("71")
+        );
+        // A standard prefix followed by user-defined channels: the count is
+        // spelled out so the receiver does not have to guess the order.
+        assert_eq!(
+            channel_order(&label_list(&[
+                "L", "R", "C", "LFE", "Ls", "Rs", "aux-a", "aux-b"
+            ]))
+            .as_deref(),
+            Some("51,U02")
+        );
+        assert_eq!(
+            channel_order(&label_list(&[
+                "L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs", "aux-a", "aux-b"
+            ]))
+            .as_deref(),
+            Some("71,U02")
+        );
+        assert_eq!(
+            channel_order(&label_list(&["L", "R", "aux"])).as_deref(),
+            Some("ST,U01")
+        );
+        // No standard prefix: one user-defined group for 1..=8 channels.
+        assert_eq!(
+            channel_order(&label_list(&["CH", "CH", "CH", "CH"])).as_deref(),
+            Some("U04")
+        );
+        assert_eq!(channel_order(&label_list(&["CH"; 8])).as_deref(), Some("U08"));
+        assert_eq!(channel_order(&label_list(&["CH"])).as_deref(), Some("U01"));
+        // Order matters: the same channels in a different order must not claim
+        // 51. With an unknown head there is no standard prefix, so the whole
+        // 6-channel segment is one user-defined group.
+        assert_eq!(
+            channel_order(&label_list(&["Ls", "Rs", "C", "LFE", "L", "R"])).as_deref(),
+            Some("U06")
+        );
+        // A sequence that starts with the stereo pair is ST plus four
+        // user-defined channels, never 51: the remaining order is not known.
+        assert_eq!(
+            channel_order(&label_list(&["L", "R", "C", "LFE", "Rs", "Ls"])).as_deref(),
+            Some("ST,U04")
+        );
+        // More than eight unmatched channels cannot be described: emit nothing.
+        assert_eq!(channel_order(&label_list(&["CH"; 9])), None);
+        assert_eq!(channel_order(&label_list(&["CH"; 16])), None);
+        assert_eq!(channel_order(&[]), None);
+    }
+
+    #[test]
+    fn origin_and_information_lines_use_the_device_name_safely() {
+        let timing = PacketTiming::new(48_000, 1_000).unwrap();
+        let output = output(5004, 2, Encoding::L24, false);
+        let labels = ["other".to_owned(), "L".to_owned(), "R".to_owned()];
+        let s = describe(
+            "Living Room 主",
+            &output,
+            3,
+            &labels,
+            reference(),
+            15,
+            1,
+            timing,
+            None,
+        );
+        // o= is one ASCII token: the device name survives without spaces.
+        assert!(
+            s.contains("\r\no=Living-Room-- 15 1 IN IP4 127.0.0.1\r\n"),
+            "{s}"
+        );
+        // i= follows m= and keeps spaces while the name has no control bytes.
+        let lines: Vec<&str> = s.split("\r\n").collect();
+        let media = lines
+            .iter()
+            .position(|line| line.starts_with("m=audio "))
+            .unwrap();
+        assert_eq!(lines[media + 1], "i=Living Room 主 flow3 IN/2");
+
+        // CR/LF (and any other control character) is removed, not echoed: a
+        // configured name cannot start a new SDP line.
+        let injected = describe(
+            "Stage\r\nIN IP4 10.0.0.1",
+            &output,
+            0,
+            &labels,
+            reference(),
+            1,
+            1,
+            timing,
+            None,
+        );
+        let lines: Vec<&str> = injected.split("\r\n").collect();
+        let media = lines
+            .iter()
+            .position(|line| line.starts_with("m=audio "))
+            .unwrap();
+        assert_eq!(lines[media + 1], "i=StageIN IP4 10.0.0.1 flow0 IN/2");
+        assert_eq!(lines.iter().filter(|line| line.starts_with("i=")).count(), 1);
+    }
+
+    #[test]
+    fn channel_order_is_emitted_per_media_section_from_the_exact_label_sequence() {
+        let timing = PacketTiming::new(48_000, 1_000).unwrap();
+        let cases: [(&[&str], &str); 7] = [
+            (&["L", "R"], "ST"),
+            (&["L", "R", "C", "LFE", "Ls", "Rs"], "51"),
+            (&["L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs"], "71"),
+            (&["L", "R", "C", "LFE", "Ls", "Rs", "aux-a", "aux-b"], "51,U02"),
+            (
+                &[
+                    "L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs", "aux-a", "aux-b",
+                ],
+                "71,U02",
+            ),
+            (&["CH", "CH", "CH", "CH"], "U04"),
+            (&["CH", "CH", "CH", "CH", "CH", "CH", "CH", "CH"], "U08"),
+        ];
+        for (names, group) in cases {
+            let output = output_at(0, names.len());
+            let s = describe(
+                "test",
+                &output,
+                0,
+                &label_list(names),
+                reference(),
+                1,
+                1,
+                timing,
+                None,
+            );
+            assert!(
+                s.contains(&format!("a=fmtp:110 channel-order=SMPTE2110.({group})\r\n")),
+                "{names:?}: {s}"
+            );
+        }
+        // The second flow of a multi-flow config is described by its labels.
+        let labels = label_list(&["L", "R", "C", "LFE", "CH", "CH", "CH", "CH"]);
+        let second = output_at(4, 4);
+        let s = describe("test", &second, 1, &labels, reference(), 1, 1, timing, None);
+        assert!(
+            s.contains("a=fmtp:110 channel-order=SMPTE2110.(U04)\r\n"),
+            "{s}"
+        );
+        // Unmatched and wider than eight channels: omit instead of guessing.
+        let wide = output_at(0, 16);
+        let s = describe(
+            "test",
+            &wide,
+            0,
+            &label_list(&["CH"; 16]),
+            reference(),
+            1,
+            1,
+            timing,
+            None,
+        );
+        assert!(!s.contains("channel-order"), "{s}");
+    }
+
+    #[test]
+    fn redundant_sections_repeat_information_and_channel_order() {
+        let timing = PacketTiming::new(48_000, 1_000).unwrap();
+        let output = output_at(0, 2);
+        let labels = label_list(&["L", "R"]);
+        let s = describe(
+            "NSP Sender",
+            &output,
+            0,
+            &labels,
+            reference(),
+            1,
+            1,
+            timing,
+            Some(5006),
+        );
+        assert_eq!(
+            s.matches("m=audio 5004 RTP/AVP 110\r\ni=NSP Sender flow0 IN/2\r\n")
+                .count(),
+            1
+        );
+        assert_eq!(
+            s.matches("m=audio 5006 RTP/AVP 110\r\ni=NSP Sender flow0 IN/2\r\n")
+                .count(),
+            1
+        );
+        assert_eq!(
+            s.matches("a=fmtp:110 channel-order=SMPTE2110.(ST)\r\n")
+                .count(),
+            2
+        );
     }
 }

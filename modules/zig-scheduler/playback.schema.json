@@ -514,6 +514,12 @@
       ],
       "additionalProperties": false,
       "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^[\\x20-\\x7E]*$",
+          "description": "Optional device/session name advertised in SDP and in receiver device lists. Omitted or empty selects NSP-<COMPUTERNAME> at runtime; the trimmed name is at most 63 printable ASCII bytes (0x20-0x7E)."
+        },
         "ttl": {
           "type": "integer",
           "minimum": 1,

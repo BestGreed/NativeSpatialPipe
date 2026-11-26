@@ -125,6 +125,21 @@ pub const Session = struct {
         var labels: [settings.max_channels][*:0]const u8 = undefined;
         var arena = std.heap.ArenaAllocator.init(u.a);
         defer arena.deinit();
+        // aes67.name wins; otherwise the device name is NSP-<COMPUTERNAME>
+        // (COMPUTERNAME missing or unreadable falls back to "AES67"). The ABI
+        // copies the name during configure, so the arena only keeps it valid
+        // for this open() call.
+        const configured_name = std.mem.trim(u8, net.name, " \t\r\n");
+        const session_name: [:0]const u8 = if (configured_name.len != 0)
+            try arena.allocator().dupeZ(u8, configured_name)
+        else blk: {
+            const computer_name = std.process.getEnvVarOwned(arena.allocator(), "COMPUTERNAME") catch |err| switch (err) {
+                error.OutOfMemory => return err,
+                else => "AES67",
+            };
+            const host = if (computer_name.len != 0) computer_name else "AES67";
+            break :blk try std.fmt.allocPrintZ(arena.allocator(), "NSP-{s}", .{host});
+        };
         for (0..channels) |index| {
             const source = if (net.channelMap) |map| map[index] else sources[index];
             channel_map[index] = source;
@@ -146,6 +161,7 @@ pub const Session = struct {
             .flow_count = prepared.flow_count,
             .flows = &flows,
             .channel_labels = &labels,
+            .session_name = session_name.ptr,
             .channel_map = &channel_map,
             .default_payload_type = net.payloadType,
             .flow_mode = prepared.abi_flow_mode,

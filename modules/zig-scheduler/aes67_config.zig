@@ -36,6 +36,9 @@ pub const default_ptp_announce_timeout_ms: u32 = 6_000;
 pub const default_ttl: u8 = 32;
 pub const default_sap_interval_ms: u32 = 30_000;
 pub const auto_max_flows: u8 = 4;
+/// aes67.name: optional device/session name advertised in SDP and receiver
+/// device lists. Trimmed length must fit 63 bytes of printable ASCII.
+pub const max_name_len: usize = 63;
 
 pub const supported_sample_rates = [_]u32{ 44_100, 48_000, 88_200, 96_000, 176_400, 192_000 };
 pub const supported_packet_times_us = [_]u16{ 125, 250, 333, 500, 1_000, 2_000, 4_000 };
@@ -205,6 +208,10 @@ pub const File = struct {
     ptpGmid: []const u8 = "",
     ptpDomain: u16 = default_ptp_domain,
     ptp: ?Ptp = null,
+    /// aes67.name: optional device/session name advertised in SDP and in
+    /// receiver device lists. Empty = unset (session open derives
+    /// NSP-<COMPUTERNAME>); otherwise trimmed length <= 63 printable ASCII.
+    name: []const u8 = "",
     ringPackets: u16 = default_ring_packets,
     prebufferFrames: u32 = default_prebuffer_frames,
     ttl: u8 = default_ttl,
@@ -395,12 +402,25 @@ fn appendFlow(
     };
 }
 
+/// aes67.name is optional; an all-space value is accepted and treated as
+/// unset by the session opener. Everything else must be printable ASCII and
+/// fit 63 bytes after trimming.
+fn validateName(name: []const u8) !void {
+    if (name.len == 0) return;
+    const trimmed = std.mem.trim(u8, name, " \t\r\n");
+    if (trimmed.len > max_name_len) return error.InvalidAes67Name;
+    for (name) |ch| {
+        if (ch < 0x20 or ch > 0x7e) return error.InvalidAes67Name;
+    }
+}
+
 /// Validates the JSON object and resolves defaults. Fail-closed: every value
 /// used by the transport is checked here before a socket or session exists.
 ///
 /// channels is the renderer output width (outputLayout channel count).
 pub fn prepare(file: File, channels: usize) !Prepared {
     if (channels == 0 or channels > max_channels) return error.Aes67ChannelCount;
+    try validateName(file.name);
     if (std.mem.indexOfScalar(u32, &supported_sample_rates, file.sampleRate) == null)
         return error.InvalidAes67SampleRate;
     if (std.mem.indexOfScalar(u16, &supported_packet_times_us, file.ptimeUs) == null)

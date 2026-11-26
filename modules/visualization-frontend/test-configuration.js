@@ -218,4 +218,22 @@ assert.equal(draft.flows[1].srcInterfaceIp,'192.0.2.63');
 assert.ok(flowCase([{...first},{...first,port:5008,channelOffset:8}]).includes('aes67.flows.1.destIp'));
 assert.ok(flowCase([{...first},{...first,destIp:'239.1.0.2',channelOffset:7}]).includes('aes67.flows.1.channelOffset'));
 assert.ok(parseAes67Ssrc('0x100000000')>0xFFFFFFFF);
+// Device name: optional printable ASCII with spaces, <=63 characters. It is
+// not part of aes67Defaults, so an absent name never gets injected on save,
+// while a configured name survives the save round trip.
+assert.equal(Object.hasOwn(aes67Defaults,'name'),false,'a default device name is never injected');
+assert.equal('name' in aesPrepared.aes67,false,'a fresh AES67 block keeps the name unset');
+assert.ok(!invalidScalar({name:'NSP Living Room'}),'spaces are allowed in a device name');
+assert.ok(!invalidScalar({name:'a'.repeat(63)}),'63 printable characters are accepted');
+assert.ok(!invalidScalar({name:'   '}),'a blank name is equivalent to omitted');
+assert.ok(invalidScalar({name:'a'.repeat(64)}),'64 characters are rejected');
+assert.ok(invalidScalar({name:'NSP\tRoom'}),'control characters are rejected');
+assert.ok(invalidScalar({name:'NSP-音响'}),'non-ASCII characters are rejected');
+const named={...aes67,name:'NSP Living Room'};
+const namedSaved=prepare({...asioBase,outputBackend:'aes67',outputLayout:'5.1.2',aes67:named},'playback');
+assert.equal(namedSaved.aes67.name,'NSP Living Room');
+assert.deepEqual(namedSaved.aes67,{...named,ptp:expectedLegacy.ptp});
+assert.equal(finish(namedSaved).aes67.name,'NSP Living Room','a saved device name survives finish()');
+assert.equal(JSON.parse(JSON.stringify(finish(namedSaved))).aes67.name,'NSP Living Room','a saved device name survives a JSON round trip');
+assert.deepEqual(validateAes67({...aesPrepared,aes67:named,outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).filter(problem=>problem.path==='aes67.name'),[]);
 console.log('PASS AES67 backend defaults, multicast destinations, flows-only universal per-flow rows for every layout, hex SSRC, config preservation, channel count and contract validation');

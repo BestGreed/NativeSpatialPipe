@@ -7,6 +7,8 @@ export const deviceChannels=value=>value.outputBackend==='wasapi'?['L','R']:layo
 // AES67 RTP/L24 transport defaults, matching modules/zig-scheduler/aes67_config.zig.
 // E16 flows-only: destinations live exclusively in aes67.flows; the legacy
 // top-level destIp/port mirror is gone from the model and from saved files.
+// aes67.name is deliberately absent: an unset name means the runtime picks
+// NSP-<COMPUTERNAME>, and saving must not inject a default for it.
 export const aes67Defaults={framesPerPacket:48,payloadType:96,ssrc:0,srcInterfaceIp:'',ptpGmid:'',ptpDomain:0,ringPackets:64,prebufferFrames:480,ttl:32};
 // One AES67 RTP flow carries at most 8 L24 channels (48 frames x 8 ch x 3 B
 // = 1152 B <= the 1440 B RFC 3550 budget). The backend accepts 1-8 explicit
@@ -205,6 +207,13 @@ export function aes67BlockProblems(aes,channels){
  if(!intRange(aes?.payloadType,96,127))problems.push({path:'aes67.payloadType',message:'AES67 payloadType 必须在 96–127'});
  if(!intRange(aes?.ssrc,0,4294967295))problems.push({path:'aes67.ssrc',message:'AES67 SSRC 必须在 0–4294967295'});
  if(String(aes?.srcInterfaceIp??'')!==''&&!unicastIpv4(aes?.srcInterfaceIp))problems.push({path:'aes67.srcInterfaceIp',message:'AES67 源网卡 IP 必须留空或为有效的单播 IPv4'});
+ // Optional device name: empty/blank means "omit" (runtime derives
+ // NSP-<COMPUTERNAME>); otherwise printable ASCII with spaces, <=63 trimmed.
+ if(Object.hasOwn(aes,'name')&&aes.name!==undefined){
+  if(typeof aes.name!=='string')problems.push({path:'aes67.name',message:'AES67 设备名必须是字符串'});
+  else if(aes.name.trim().length>63)problems.push({path:'aes67.name',message:'AES67 设备名最长 63 个字符'});
+  else if(!/^[\x20-\x7E]*$/.test(aes.name))problems.push({path:'aes67.name',message:'AES67 设备名只能包含可打印 ASCII 字符（含空格）'});
+ }
  if(String(aes?.ptpGmid??'').trim()!=='')problems.push({path:'aes67.ptpGmid',message:'AES67 PTP GMID 必须留空，由模块从锁定的时钟取得'});
  if(!intRange(aes?.ptpDomain,0,127))problems.push({path:'aes67.ptpDomain',message:'AES67 PTP domain 必须在 0–127'});
  if(aes?.ptp!=null){

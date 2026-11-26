@@ -31,6 +31,7 @@ Select AES67 in the playback configuration panel or set outputBackend to "aes67"
       "outputLayout": "7.1.4",
       "sampleRate": 48000,
       "aes67": {
+        "name": "NSP-Studio",
         "sampleRate": 48000,
         "ptimeUs": 1000,
         "codec": "L24",
@@ -53,6 +54,10 @@ Select AES67 in the playback configuration panel or set outputBackend to "aes67"
 
 The playback schema and the 12-channel and 16-channel examples under modules/zig-scheduler show the available settings.
 
+- name: optional device/session name (printable ASCII, trimmed length at most 63). Omitted or blank
+  derives NSP-<COMPUTERNAME> when the session opens. The name appears in the SDP o= username,
+  s= and i= lines; spaces survive in s=/i= and fold to '-' in the o= token, and CR/LF or other
+  control characters are rejected by the configuration validator.
 - sampleRate: 44100, 48000, 88200, 96000, 176400, 192000. Default 48000.
 - ptimeUs: 125, 250, 333, 500, 1000, 2000, 4000. Default 1000. Samples per packet follow AES67-2023 Table 2: 6/12/16/24/48/96/192 at the 1FS rate of the sampling-rate family. The 1 ms profile is 48 samples at both 48 kHz and 44.1 kHz, so the 44.1 kHz packet lasts 1.088 ms (SDP a=ptime:1.09, 918.75 packets/s, timestamp step 48).
 - codec: "L16" (2 bytes/sample) or "L24" (3 bytes/sample), both big-endian. Omitted selects L16 for the 44.1 kHz family (AES67 requirement) and L24 otherwise. framesPerPacket remains accepted as a legacy cross-check but must equal the derived sample count.
@@ -143,6 +148,45 @@ ptp_timescale=... reason=...). Software timestamping uses Windows QPC at the soc
 uses software when hardware timestamping is unavailable.
 
 The module supplies one SDP description per flow (RFC 4566, RFC 7273) while locked and during holdover, and enables SAP announcements for discovery (RFC 2974). SAP message identifiers are CRC-16 hashes of the SDP, so a version change is visible to browsers; deletions are repeated three times and announcements stop only when RTP stops. The NSP web interface retains the configuration panel. Static SDP can be exported through the ABI for HTTP or file delivery; the module does not run an HTTP/RTSP server.
+
+### Device identity and channel metadata in SDP
+
+Every SDP carries the session name in three places:
+
+```
+o=NSP-Studio 15008987692570773568 1 IN IP4 192.0.2.1
+s=NSP-Studio flow0
+m=audio 5004 RTP/AVP 97
+i=NSP-Studio flow0 IN/8
+a=rtpmap:97 L24/48000/8
+a=fmtp:97 channel-order=SMPTE2110.(71)
+```
+
+- `o=` username is a single ASCII token: printable characters are kept, spaces, non-ASCII and
+  control characters become '-', the token is capped at 64 characters and never empty.
+- `i=` repeats the device name plus the flow index and channel count after the media line. It is
+  free text (spaces allowed); control characters are dropped so a configured name cannot inject a
+  new SDP line. RAVENNA tooling reads the media information line and the origin name, which is why
+  both are emitted rather than only the private `a=comment` lines.
+- `a=comment:channel-labels`, `a=comment:flow` and `a=comment:channel-offset` remain for diagnosis;
+  they are private extensions and are not part of AES67.
+
+`a=fmtp:<payload type> channel-order=SMPTE2110.(<groups>)` is emitted per media section when the
+flow's exact label sequence identifies a SMPTE ST 2110-30 grouping symbol:
+
+| Flow labels (exact order) | channel-order |
+| --- | --- |
+| M or C | SMPTE2110.(M) |
+| L,R or FL,FR | SMPTE2110.(ST) |
+| L,R,C,LFE,Ls,Rs | SMPTE2110.(51) |
+| L,R,C,LFE,Ls,Rs,Lrs,Rrs | SMPTE2110.(71) |
+| standard group followed by 1-8 user channels | `<group>,U<nn>` (e.g. 5.1.2 -> 51,U02) |
+| 1-8 channels without a standard group | `U<nn>` (e.g. 7.1.4 height flow -> U04) |
+| anything else (no standard prefix, or more than eight channels) | omitted |
+
+A wrong channel-order makes a receiver decode the wrong speakers, so the sender omits the attribute
+rather than guessing. NSP labels use `Ls/Rs` where ST 2110-30 says `Lss/Rss`; the sequences above
+are matched on the project's label names.
 
 ## Pacing, QoS and packet format
 

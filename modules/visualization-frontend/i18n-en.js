@@ -1035,4 +1035,16 @@ AES67 默认使用固定源流。=AES67 defaults to a fixed source stream.
 必须留空=must stay empty
 填写任何值都会被后端拒绝=any configured value is rejected by the backend
 已发布=published
+设备名=Device name
+设备名必须是字符串=Device name must be a string
+设备名最长=Device name is at most
+个字符=characters
+设备名只能包含可打印=Device name may contain only printable
+字符=characters
+含空格=including spaces
+留空自动=Leave blank for automatic
+留空时使用=When blank, uses
+计算机名=computer name
+该名字会出现在=The name appears in
+与接收端设备列表=and the receiver device list
 `.trim().split('\n').map(line=>{const at=line.indexOf('=');return [line.slice(0,at).trim(),line.slice(at+1).trim()];})));

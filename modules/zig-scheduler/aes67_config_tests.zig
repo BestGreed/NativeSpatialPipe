@@ -419,3 +419,58 @@ test "invalid sender ptp topology values fail closed" {
         playback.parse(allocator, badDomain),
     );
 }
+
+test "aes67.name defaults to empty and accepts printable names up to 63 bytes" {
+    // Omitting aes67.name keeps it unset and never changes the transport plan.
+    const default_file = cfg.File{};
+    try std.testing.expectEqual(@as(usize, 0), default_file.name.len);
+    const baseline = try cfg.prepare(multicastFile(), 2);
+    var file = multicastFile();
+    try std.testing.expectEqual(@as(usize, 0), file.name.len);
+    file.name = "NSP Living Room";
+    const named = try cfg.prepare(file, 2);
+    try std.testing.expectEqual(baseline.port, named.port);
+    try std.testing.expectEqual(baseline.frames_per_packet, named.frames_per_packet);
+    try std.testing.expectEqual(baseline.sample_rate, named.sample_rate);
+    try std.testing.expectEqual(baseline.flow_count, named.flow_count);
+    try std.testing.expectEqual(baseline.ptp_domain, named.ptp_domain);
+    // 63 printable bytes are the limit; leading/trailing/embedded spaces are
+    // allowed, and an all-space value trims to unset.
+    const name63 = [_]u8{'n'} ** cfg.max_name_len;
+    file.name = &name63;
+    _ = try cfg.prepare(file, 2);
+    file.name = "  NSP Living Room  ";
+    _ = try cfg.prepare(file, 2);
+    file.name = "   ";
+    _ = try cfg.prepare(file, 2);
+}
+
+test "aes67.name rejects overlong, control and non-ASCII names" {
+    var file = multicastFile();
+    const too_long = [_]u8{'n'} ** (cfg.max_name_len + 1);
+    file.name = &too_long;
+    try std.testing.expectError(error.InvalidAes67Name, cfg.prepare(file, 2));
+    file.name = "NSP\tRoom";
+    try std.testing.expectError(error.InvalidAes67Name, cfg.prepare(file, 2));
+    file.name = "NSP\nRoom";
+    try std.testing.expectError(error.InvalidAes67Name, cfg.prepare(file, 2));
+    file.name = "NSP-\x7f";
+    try std.testing.expectError(error.InvalidAes67Name, cfg.prepare(file, 2));
+    // UTF-8 bytes above 0x7E are rejected (no non-ASCII in SDP names).
+    file.name = "NSP-\xc3\xa9";
+    try std.testing.expectError(error.InvalidAes67Name, cfg.prepare(file, 2));
+}
+
+test "playback JSON aes67.name parses and fails closed when invalid" {
+    const allocator = std.testing.allocator;
+    const text = "{\"bridgeDll\":\"C:/fixture/bridge.dll\",\"outputBackend\":\"aes67\",\"outputLayout\":\"5.1.2\"," ++
+        "\"aes67\":{\"groupBase\":\"239.69.0.1\",\"srcInterfaceIp\":\"192.0.2.63\",\"name\":\"NSP Living Room\"}}";
+    var parsed = try playback.parse(allocator, text);
+    defer parsed.deinit();
+    try std.testing.expectEqualStrings("NSP Living Room", parsed.value.aes67.?.name);
+    try parsed.value.validate();
+
+    const bad = "{\"bridgeDll\":\"C:/fixture/bridge.dll\",\"outputBackend\":\"aes67\",\"outputLayout\":\"5.1.2\"," ++
+        "\"aes67\":{\"groupBase\":\"239.69.0.1\",\"srcInterfaceIp\":\"192.0.2.63\",\"name\":\"NSP\\tRoom\"}}";
+    try std.testing.expectError(error.InvalidAes67Name, playback.parse(allocator, bad));
+}
