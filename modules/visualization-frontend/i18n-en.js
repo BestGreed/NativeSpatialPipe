@@ -1134,4 +1134,6 @@ AES67 默认使用固定源流。=AES67 defaults to a fixed source stream.
 仅影响=only affects
 时间戳对齐=timestamp alignment
 输出同样可开启=the output can enable it too
+未填写=not set
+的目标与端口在基础设置中编辑=destination and port are edited in the basic settings
 `.trim().split('\n').map(line=>{const at=line.indexOf('=');return [line.slice(0,at).trim(),line.slice(at+1).trim()];})));

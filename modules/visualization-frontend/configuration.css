@@ -15,3 +15,4 @@
 .aes67-flows th{white-space:nowrap}
 .aes67-flows td:nth-child(7){white-space:nowrap;color:#9db4ba}
 .aes67-flows td .config-field{min-width:76px}
+.aes67-flow-readonly{color:#d6eeea;font-variant-numeric:tabular-nums;white-space:nowrap}

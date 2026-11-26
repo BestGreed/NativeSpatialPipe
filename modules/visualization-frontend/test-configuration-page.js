@@ -225,6 +225,9 @@ try{
  assert.equal(input('aes67.flows.0.port').value,'5004');
  assert.equal(input('aes67.flows.1.destIp').value,'192.0.2.222');
  assert.equal(input('aes67.flows.1.port').value,'5006');
+ const readonlyCells=element('fields').querySelectorAll('span').filter(item=>item.className==='aes67-flow-readonly').map(item=>item.textContent);
+ assert.equal(readonlyCells[0],'192.0.2.222','flow 1 shows its current destination in the per-flow editor');
+ assert.equal(readonlyCells[1],'5004','flow 1 shows its current port');
  assert.equal(input('aes67.flows.0.ssrc').title,'0x4E535036','effective SSRC is shown in hexadecimal');
  assert.equal(input('aes67.flows.1.ssrc').title,'0x4E535037');
  const flowNote=()=>element('fields').querySelectorAll('p').find(item=>item.className==='aes67-flow-note');

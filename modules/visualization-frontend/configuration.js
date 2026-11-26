@@ -134,12 +134,22 @@ function render(){
    const row=document.createElement('tr');
    const name=document.createElement('th');name.scope='row';name.textContent='流 '+(index+1);row.append(name);
    const destCell=document.createElement('td');
-   if(index===0)destCell.textContent='（在基础设置中填写）';
-   else{field(destCell,'aes67.flows.'+index+'.destIp','流 '+(index+1)+' 目标 IP','text');destCell.querySelector('span').hidden=true;}
-   row.append(destCell);
    const portCell=document.createElement('td');
-   if(index===0)portCell.textContent='（基础设置）';
-   else{field(portCell,'aes67.flows.'+index+'.port','流 '+(index+1)+' 端口','integer');portCell.querySelector('span').hidden=true;}
+   if(index===0){
+    // Flow 1 is edited in the basic panel, but the per-flow editor still
+    // shows its current values so the table never looks like a gap.
+    const destination=document.createElement('span');destination.className='aes67-flow-readonly';
+    destination.textContent=String(flow?.destIp??'').trim()||'（未填写）';
+    destination.title='流 1 的目标与端口在基础设置中编辑';
+    destCell.append(destination);
+    const port=document.createElement('span');port.className='aes67-flow-readonly';
+    port.textContent=flow?.port==null||flow?.port===''?'5004（默认）':String(flow.port);
+    portCell.append(port);
+   }else{
+    field(destCell,'aes67.flows.'+index+'.destIp','流 '+(index+1)+' 目标 IP','text');destCell.querySelector('span').hidden=true;
+    field(portCell,'aes67.flows.'+index+'.port','流 '+(index+1)+' 端口','integer');portCell.querySelector('span').hidden=true;
+   }
+   row.append(destCell);
    row.append(portCell);
    const ptCell=document.createElement('td');const ptInput=field(ptCell,'aes67.flows.'+index+'.payloadType','流 '+(index+1)+' payloadType','integer');ptInput.placeholder='继承';ptCell.querySelector('span').hidden=true;row.append(ptCell);
    const ssrcCell=document.createElement('td');const ssrcInput=field(ssrcCell,'aes67.flows.'+index+'.ssrc','流 '+(index+1)+' SSRC','ssrc');if(flow?.ssrc)ssrcInput.value=formatAes67Ssrc(flow.ssrc);ssrcInput.placeholder=formatAes67Ssrc(effectiveAes67FlowSsrc(working.aes67,index));ssrcInput.title=formatAes67Ssrc(effectiveAes67FlowSsrc(working.aes67,index));ssrcCell.querySelector('span').hidden=true;row.append(ssrcCell);
