@@ -8,3 +8,5 @@
 .config-advanced>.config-advanced-note{margin:0;padding:0 16px 10px;color:#9db6b1;font-size:.92rem}
 .config-advanced>.config-fields{padding:4px 16px 16px}
 .config-advanced-heading{grid-column:1/-1;margin:8px 0 0;color:#85ddce;font-size:.86rem;letter-spacing:.06em}
+.config-advanced-sub{display:contents}
+.config-advanced-sub[hidden]{display:none}

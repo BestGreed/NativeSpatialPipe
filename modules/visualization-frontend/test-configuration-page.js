@@ -144,7 +144,7 @@ try{
  // ---- AES67 output backend panel ----
  assert.equal(input('outputBackend').children.some(o=>o.value==='aes67'),true);
  input('outputBackend').value='aes67';input('outputBackend').listeners.change();
- assert.ok(input('aes67.flows.0.destIp'));assert.ok(input('aes67.flows.0.port'));assert.ok(input('aes67.framesPerPacket'));
+ assert.ok(input('aes67.flows.0.destIp'));assert.ok(input('aes67.flows.0.port'));assert.equal(input('aes67.framesPerPacket'),undefined,'the legacy frames key is not a form field');assert.equal(input('aes67.ptpGmid'),undefined,'the PTP GMID is never editable');
   // Basic fields stay visible; protocol parameters and clock tuning fold away.
   const insideDetails=node=>{let item=node;while(item){if(item.tag==='details')return true;item=item.parentElement;}return false;};
   assert.equal(element('fields').querySelectorAll('details').length,1,'AES67 builds exactly one advanced-settings disclosure');
@@ -152,10 +152,24 @@ try{
   assert.equal(insideDetails(input('aes67.name')),false,'device name is a basic field');
   assert.equal(insideDetails(input('aes67.srcInterfaceIp')),false,'source interface is a basic field');
   assert.equal(insideDetails(input('aes67.ptp.domain')),true,'PTP domain lives under advanced settings');
-  assert.equal(insideDetails(input('aes67.framesPerPacket')),true,'transport tuning lives under advanced settings');
- assert.equal(input('aes67.framesPerPacket').value,'48');assert.equal(input('aes67.payloadType').value,'96');
- assert.equal(input('aes67.ringPackets').value,'64');assert.equal(input('aes67.prebufferFrames').value,'480');
+  assert.equal(insideDetails(input('aes67.ptimeUs')),true,'packet time lives under advanced settings');
+  assert.equal(insideDetails(input('aes67.flowMode')),true,'flow packing lives under advanced settings');
+  assert.equal(insideDetails(input('sampleRate')),true,'sample rate lives under advanced settings');
+  assert.equal(insideDetails(input('aes67.flows.0.destIp')),false,'the start group is a basic field');
+  assert.equal(insideDetails(input('aes67.flows.0.port')),false,'the flow-1 port is a basic field');
+ assert.equal(input('aes67.ptimeUs').value,'1000');
+ assert.ok(input('aes67.ptimeUs').children.some(option=>option.value==='125'),'125 us is offered');
  assert.equal(input('sampleRate').value,'48000');
+ assert.ok(input('sampleRate').children.filter(option=>!option.disabled).length===1,'only 48 kHz is currently selectable');
+ assert.ok(input('sampleRate').children.some(option=>option.value==='96000'&&option.disabled),'96 kHz is visible but disabled');
+ assert.equal(input('aes67.flowMode').value,'standard');assert.equal(input('aes67.portPolicy').value,'strict');
+ assert.equal(input('aes67.payloadType').value,'96');
+ assert.equal(input('aes67.ringPackets').value,'64');assert.equal(input('aes67.prebufferFrames').value,'480');
+ const hiddenAncestor=node=>{let item=node;while(item){if(item.hidden)return true;item=item.parentElement;}return false;};
+ assert.equal(hiddenAncestor(input('aes67.ptp.priority1')),true,'GM-only fields stay hidden in slave mode');
+ input('aes67.ptp.mode').value='gm';input('aes67.ptp.mode').listeners.change();
+ assert.equal(hiddenAncestor(input('aes67.ptp.priority1')),false,'GM fields appear in gm mode');
+ input('aes67.ptp.mode').value='slave';input('aes67.ptp.mode').listeners.change();
  assert.equal(input('sourcePolicy').value,'unified');
  assert.ok(!input('sourcePolicy').children.some(option=>option.value==='active'));
  assert.equal(input('aes67.ptp.domain').value,'0');
@@ -170,7 +184,7 @@ try{
  assert.equal(saves,blocked,'invalid empty AES67 destination must not be saved');
  assert.match(element('result').textContent,/(校验未通过|validation failed)/i);
  input('aes67.flows.0.destIp').value='192.0.2.222';input('aes67.ssrc').value='1314082870';
- input('aes67.ringPackets').value='512';input('aes67.framesPerPacket').value='48';
+ input('aes67.ringPackets').value='512';
  input('sourcePolicy').value='fixed';input('sourcePolicy').listeners.change();
  assert.ok(input('sourceStream'));
  assert.equal(input('unifiedSlotProfile'),undefined);
@@ -191,7 +205,7 @@ try{
  assert.equal(playback.aes67.flows[1].destIp,'192.0.2.222');
  assert.equal(playback.aes67.flows[1].port,5006);
  assert.equal(playback.aes67.flows[1].channels,4);
- assert.equal(playback.aes67.flows[1].ssrc,0,'zero preserves SSRC derivation');
+ assert.ok(playback.aes67.flows[1].ssrc===undefined||playback.aes67.flows[1].ssrc===0,'an empty per-flow SSRC keeps runtime derivation');
  // Destinations are always shown per flow: every layout binds the explicit
  // aes67.flows rows (E16 flows-only).
  assert.ok(element('fields').querySelectorAll('th').some(item=>item.textContent==='流 1'),'every layout renders the flow-1 row');
@@ -223,7 +237,7 @@ try{
  // Multicast auto allocation increments the group and defaults blank ports to 5004.
  input('aes67.flows.0.destIp').value='239.1.0.1';input('aes67.flows.0.port').value='5010';
  input('aes67.srcInterfaceIp').value='192.0.2.63';
- element('fields').querySelectorAll('button').find(item=>item.textContent==='重新自动分配').listeners.click();
+ element('fields').querySelectorAll('button').find(item=>item.textContent==='重新自动分配流地址').listeners.click();
  assert.equal(input('aes67.flows.0.destIp').value,'239.1.0.1');
  assert.equal(input('aes67.flows.0.port').value,'5010');
  assert.equal(input('aes67.flows.1.destIp').value,'239.1.0.2');
@@ -240,7 +254,7 @@ try{
  input('outputLayout').value='5.1.2';input('outputLayout').listeners.change();
  assert.equal(input('aes67.flows.0.destIp').value,'239.1.0.1','the base row carries over');
  assert.equal(input('aes67.flows.1.destIp'),undefined);
- assert.match(element('fields').querySelectorAll('p').find(item=>item.className==='aes67-flow-note'&&/显式保存/.test(item.textContent)).textContent,/显式保存/,'a <=8ch layout shows the explicit single-flow note');
+ assert.match(element('fields').querySelectorAll('p').find(item=>item.className==='aes67-flow-note'&&/条流/.test(item.textContent)).textContent,/1 条流/,'a <=8ch layout announces one flow');
  await element('configForm').listeners.submit({preventDefault(){}});
  assert.equal(playback.aes67.flows.length,1);assert.equal(playback.aes67.channelMap,undefined);
  assert.equal(playback.aes67.flows[0].destIp,'239.1.0.1','multicast base destination survives the layout change');
@@ -260,6 +274,31 @@ try{
  assert.equal(playback.aes67.flows[1].channels,2,'the 10ch layout splits 8+2');
  assert.equal(playback.outputLayout,'5.1.4');
  assert.equal(playback.sourcePolicy,'fixed','layout changes preserve AES67 fixed source');
+ // Advanced protocol controls: ptime drives packetization, extension packing
+ // re-plans flows, and a failed save opens the advanced section automatically.
+ input('outputLayout').value='9.1.6';input('outputLayout').listeners.change();
+ input('aes67.flowMode').value='extension';input('aes67.flowMode').listeners.change();
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(playback.aes67.flowMode,'extension');
+ assert.deepEqual(playback.aes67.flows.map(flow=>flow.channels),[10,6],'extension packs 16ch as 10+6 at 1 ms');
+ input('aes67.ptimeUs').value='125';input('aes67.ptimeUs').listeners.change();
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(playback.aes67.ptimeUs,125);
+ assert.deepEqual(playback.aes67.flows.map(flow=>flow.channels),[16],'125 us fits all 16 channels in one flow');
+ assert.equal(playback.aes67.framesPerPacket,undefined,'the legacy frames key is not saved');
+ input('aes67.flowMode').value='standard';input('aes67.flowMode').listeners.change();
+ input('aes67.ptimeUs').value='1000';input('aes67.ptimeUs').listeners.change();
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.deepEqual(playback.aes67.flows.map(flow=>flow.channels),[8,8]);
+ const details=element('fields').querySelectorAll('details')[0];
+ details.open=false;
+ input('aes67.ringPackets').value='7';
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(details.open,true,'a failed save opens the advanced section');
+ assert.equal(input('aes67.ringPackets').attrs['aria-invalid'],'true');
+ input('aes67.ringPackets').value='64';
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(playback.aes67.ringPackets,64);
  input('outputBackend').value='asio';input('outputBackend').listeners.change();
  assert.equal(input('aes67.flows.0.destIp'),undefined);
  assert.equal(input('sourcePolicy').value,'fixed');

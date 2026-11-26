@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {prepare,numeric,finish,setPath,orders,updateSourceSelection,aes67Defaults,validateAes67,deviceChannels,isIpv4,isPtpGmid,deriveAes67Flows,aes67StandardChannelMap916,effectiveAes67FlowSsrc,proposeAes67Flows,materializeAes67Destinations,parseAes67Ssrc,formatAes67Ssrc} from './configuration-model.js';
+import {prepare,numeric,finish,setPath,orders,updateSourceSelection,aes67Defaults,validateAes67,deviceChannels,isIpv4,isPtpGmid,deriveAes67Flows,aes67StandardChannelMap916,effectiveAes67FlowSsrc,proposeAes67Flows,materializeAes67Destinations,parseAes67Ssrc,formatAes67Ssrc,aes67MaxChannelsPerFlow,aes67SamplesPerPacket} from './configuration-model.js';
 const original={renderer:'roar',bridgeDll:'C:/bridge.dll',asioDll:'C:/asio.dll',driver:'asio:{test}',startupTimeoutMs:120000};
 const prepared=prepare(original,'playback');
 assert.equal(original.outputProcessing,undefined);
@@ -93,7 +93,7 @@ console.log('PASS backend source selection, PCM disable, session endpoint follow
 // ---- AES67 fourth output backend ----
 // E16 flows-only: destinations live in aes67.flows; the top-level destIp/port
 // mirror is gone from the model and from saved files.
-const aes67={framesPerPacket:48,payloadType:96,ssrc:1314082870,srcInterfaceIp:'',ptpGmid:'',ptpDomain:0,ringPackets:512,prebufferFrames:480,ttl:32,flows:[{destIp:'192.0.2.222',port:5004,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:0}]};
+const aes67={...aes67Defaults,payloadType:96,ssrc:1314082870,srcInterfaceIp:'',ptpDomain:0,ringPackets:512,prebufferFrames:480,ttl:32,flows:[{destIp:'192.0.2.222',port:5004,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:0}]};
 const asioBase={renderer:'roar',bridgeDll:'C:/bridge.dll',asioDll:'C:/asio.dll',driver:'asio:{test}',outputBackend:'asio',outputLayout:'5.1.2'};
 const aesPrepared=prepare({...asioBase,outputBackend:'aes67'},'playback');
 assert.equal(aesPrepared.aes67.destIp,undefined);
@@ -236,4 +236,26 @@ assert.deepEqual(namedSaved.aes67,{...named,ptp:expectedLegacy.ptp});
 assert.equal(finish(namedSaved).aes67.name,'NSP Living Room','a saved device name survives finish()');
 assert.equal(JSON.parse(JSON.stringify(finish(namedSaved))).aes67.name,'NSP Living Room','a saved device name survives a JSON round trip');
 assert.deepEqual(validateAes67({...aesPrepared,aes67:named,outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).filter(problem=>problem.path==='aes67.name'),[]);
+// ptime drives packetization: frames, per-flow packing and legacy-key guidance.
+assert.equal(aes67SamplesPerPacket(48000,1000),48);
+assert.equal(aes67SamplesPerPacket(48000,125),6);
+assert.equal(aes67SamplesPerPacket(96000,1000),96);
+assert.equal(aes67SamplesPerPacket(44100,1000),48);
+assert.equal(aes67SamplesPerPacket(48000,123),null);
+assert.equal(aes67MaxChannelsPerFlow({flowMode:'standard',ptimeUs:1000}),8);
+assert.equal(aes67MaxChannelsPerFlow({flowMode:'extension',ptimeUs:1000,sampleRate:48000}),10);
+assert.equal(aes67MaxChannelsPerFlow({flowMode:'extension',ptimeUs:125,sampleRate:48000}),16);
+assert.deepEqual(proposeAes67Flows(16,first,10).map(flow=>flow.channels),[10,6]);
+assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,ptimeUs:123},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.ptimeUs'));
+assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,framesPerPacket:6},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.framesPerPacket'),'the legacy frames key must agree with ptimeUs');
+const extension={...aes67,srcInterfaceIp:'192.0.2.63',flowMode:'extension',flows:proposeAes67Flows(16,first,10)};materializeAes67Destinations(extension);
+assert.deepEqual(validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sourcePolicy:'fixed',sampleRate:48000,aes67:extension}),[]);
+assert.ok(validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sourcePolicy:'fixed',sampleRate:48000,aes67:{...extension,flowMode:'standard'}}).some(problem=>problem.path.startsWith('aes67.flows.')&&problem.message.includes('当前打包模式')));
+assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,flowMode:'packed'},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.flowMode'));
+assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,portPolicy:'loose'},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.portPolicy'));
+assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,sapAddress:'192.0.2.1'},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.sapAddress'));
+assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,sapAddress:'239.255.255.255',sapIntervalMs:500},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.sapIntervalMs'));
+// finish() materializes the single sample-rate control into the AES67 block.
+assert.equal(finish(prepare({...asioBase,outputBackend:'aes67',outputLayout:'5.1.2',aes67},'playback')).aes67.sampleRate,48000);
+assert.equal(prepare({...asioBase,outputBackend:'aes67',outputLayout:'5.1.2',aes67},'playback').aes67.ptimeUs,1000,'ptimeUs defaults to 1 ms');
 console.log('PASS AES67 backend defaults, multicast destinations, flows-only universal per-flow rows for every layout, hex SSRC, config preservation, channel count and contract validation');

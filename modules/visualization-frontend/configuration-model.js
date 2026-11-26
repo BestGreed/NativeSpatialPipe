@@ -9,7 +9,10 @@ export const deviceChannels=value=>value.outputBackend==='wasapi'?['L','R']:layo
 // top-level destIp/port mirror is gone from the model and from saved files.
 // aes67.name is deliberately absent: an unset name means the runtime picks
 // NSP-<COMPUTERNAME>, and saving must not inject a default for it.
-export const aes67Defaults={framesPerPacket:48,payloadType:96,ssrc:0,srcInterfaceIp:'',ptpGmid:'',ptpDomain:0,ringPackets:64,prebufferFrames:480,ttl:32};
+// framesPerPacket is a LEGACY key (the backend still accepts it when it agrees
+// with sampleRate/ptimeUs); the editor drives packetization through
+// aes67.ptimeUs and strips the legacy field on load so the two can never drift.
+export const aes67Defaults={ptimeUs:1000,payloadType:96,ssrc:0,srcInterfaceIp:'',ptpDomain:0,ringPackets:64,prebufferFrames:480,ttl:32,flowMode:'standard',portPolicy:'strict',sapAddress:'',sapIntervalMs:30000};
 // One AES67 RTP flow carries at most 8 L24 channels (48 frames x 8 ch x 3 B
 // = 1152 B <= the 1440 B RFC 3550 budget). The backend accepts 1-8 explicit
 // flows whose contiguous channel offsets sum to the layout channel count; the
@@ -17,6 +20,28 @@ export const aes67Defaults={framesPerPacket:48,payloadType:96,ssrc:0,srcInterfac
 // playback.json (aes67.flows), addresses are never derived at runtime, and the
 // removed top-level destIp/port mirror is rejected as a legacy format.
 export const aes67MaxFlowChannels=8;
+// AES67-2023 Table 2 packet counts at the 1FS family rate (48 kHz and 44.1 kHz
+// both use these rows; 88.2/96/176.4/192 kHz scale by rate/base). The editor
+// exposes the same list the scheduler accepts (aes67_config.zig).
+export const aes67PtimeFrames={125:6,250:12,333:16,500:24,1000:48,2000:96,4000:192};
+export const aes67Ptimes=Object.keys(aes67PtimeFrames).map(Number);
+export function aes67SamplesPerPacket(rate,ptimeUs){
+ const base=aes67PtimeFrames[Number(ptimeUs)];if(!base)return null;
+ const family=rate%48000===0?48000:rate%44100===0?44100:null;if(!family)return null;
+ return base*Math.round(rate/family);
+}
+// 44.1 kHz family defaults to L16 (AES67-2023 7.1); every other family the
+// editor can select uses L24. The editor does not expose codec yet.
+export function aes67CodecBytes(rate){return rate%44100===0?2:3;}
+// standard keeps the AES67 media profile (<=8 channels per flow); extension
+// packs each flow to the 1440-byte RTP payload budget and may use up to 16
+// channels per flow. This mirrors aes67_config.zig maxChannelsPerFlow.
+export function aes67MaxChannelsPerFlow(aes){
+ const rate=Number(aes?.sampleRate??48000),samples=aes67SamplesPerPacket(rate,aes?.ptimeUs??1000);
+ if(!samples)return aes67MaxFlowChannels;
+ if(aes?.flowMode!=='extension')return aes67MaxFlowChannels;
+ return Math.max(1,Math.min(16,Math.floor(1440/(samples*aes67CodecBytes(rate)))));
+}
 // Optional wire-order permutation example: the 9.1.6 renderer order mapped onto
 // the 16ch container order. Transmitted channel k carries source channel
 // channelMap[k]; without a map the renderer source order is used.
@@ -78,7 +103,7 @@ export function prepare(config,id){
   value.outputBackend??='asio';normalizeSourcePolicy(value);value.aoip??={interfaceIp:'',masterIp:'',mac:'',name:'NSP Native AoIP',prebufferFrames:960,txLatencyUs:4000,framesPerPacket:32};value.aoip.name??='NSP Native AoIP';value.aoip.prebufferFrames??=960;value.aoip.txLatencyUs??=4000;value.aoip.framesPerPacket??=32;
   // The scheduler validates the AES67 block even while another backend is
   // selected, so normalise it in place instead of dropping or recreating it.
-  if(value.aes67&&typeof value.aes67==='object')value.aes67={...aes67Defaults,...value.aes67};
+  if(value.aes67&&typeof value.aes67==='object'){value.aes67={...aes67Defaults,...value.aes67};delete value.aes67.framesPerPacket;}
   else if(value.outputBackend==='aes67')value.aes67={...aes67Defaults,flows:proposeAes67Flows(layoutFor(value.outputLayout).channels.length)};
   if(value.aes67?.ptp==null&&value.aes67)value.aes67.ptp={domain:value.aes67.ptpDomain,lockTimeoutMs:5000,timestamping:'auto',mode:'slave',priority1:128,priority2:128,announceTimeoutMs:6000,gmCapable:false,gmUtcOffset:null};
   else if(value.aes67?.ptp&&typeof value.aes67.ptp==='object'&&!Array.isArray(value.aes67.ptp))value.aes67.ptp={domain:0,lockTimeoutMs:5000,timestamping:'auto',mode:'slave',priority1:128,priority2:128,announceTimeoutMs:6000,gmCapable:false,gmUtcOffset:null,...value.aes67.ptp};
@@ -119,6 +144,9 @@ export function finish(value){
  if(value.outputBackend!=='aes67'&&Array.isArray(value.aes67?.flows)&&value.aes67.flows.length>0&&
     !Object.hasOwn(value.aes67,'destIp')&&!Object.hasOwn(value.aes67,'port')&&
     value.aes67.flows.every(flow=>flow?.destIp===''))delete value.aes67;
+ // One sample-rate control: for AES67 the renderer rate is the RTP media-clock
+ // rate, so materialize it into the block the scheduler validates.
+ if(value.outputBackend==='aes67'&&value.aes67&&typeof value.aes67==='object')value.aes67.sampleRate=value.sampleRate;
  if(value.pcmCapture?.enabled===false){
   if(value.pcmCapture.routeToOutput)value.pcmCapture.routeToOutput=false;
   if(value.wasapiUpmix?.enabled)value.wasapiUpmix.enabled=false;
@@ -156,12 +184,13 @@ function incrementIpv4(parts,step){
  return carry>0?null:octets;
 }
 // A fresh form or explicit layout change proposes the minimum split.
-export function proposeAes67Flows(channels,first={}){
- return Array.from({length:Math.ceil(channels/aes67MaxFlowChannels)},(_,index)=>({
+export function proposeAes67Flows(channels,first={},maxPerFlow=aes67MaxFlowChannels){
+ const width=Number.isInteger(maxPerFlow)&&maxPerFlow>0?maxPerFlow:aes67MaxFlowChannels;
+ return Array.from({length:Math.ceil(channels/width)},(_,index)=>({
   ...(index===0?first:{}),
   destIp:index===0?(first.destIp??''):'',
-  channels:Math.min(aes67MaxFlowChannels,channels-index*aes67MaxFlowChannels),
-  channelOffset:index*aes67MaxFlowChannels,
+  channels:Math.min(width,channels-index*width),
+  channelOffset:index*width,
  }));
 }
 
@@ -190,7 +219,7 @@ export function materializeAes67Destinations(aes){
 export function deriveAes67Flows(aes,channels){
  const first=aes?.flows?.[0];
  if(!first||!isAes67Destination(first.destIp))return null;
- const proposal={...aes,flows:proposeAes67Flows(channels,first)};
+ const proposal={...aes,flows:proposeAes67Flows(channels,first,aes67MaxChannelsPerFlow(aes))};
  materializeAes67Destinations(proposal);
  return proposal.flows.every(flow=>isAes67Destination(flow.destIp)&&intRange(flow.port,1,65535))?proposal.flows:null;
 }
@@ -203,7 +232,15 @@ export function aes67BlockProblems(aes,channels){
  for(const key of ['destIp','port'])if(Object.hasOwn(aes,key))problems.push({path:'aes67.'+key,message:'旧版 AES67 目标字段 '+key+' 已移除。请用高级 JSON 删除该字段并将目标写入 aes67.flows。'});
  if(flows.length>8)problems.push({path:'aes67.flows',message:'AES67 最多支持 8 条流'});
  if(!flows.length)problems.push({path:'aes67.flows.0.destIp',message:'AES67 后端需要完整的 aes67 网络配置'});
- if(aes?.framesPerPacket!==48)problems.push({path:'aes67.framesPerPacket',message:'AES67 每包帧数当前只支持 48（1 ms）'});
+ // ptimeUs drives packetization; the LEGACY framesPerPacket key is accepted
+ // only when it agrees with the derived sample count. The editor removes it.
+ const samples=aes67SamplesPerPacket(Number(aes?.sampleRate??48000),aes?.ptimeUs??1000);
+ if(samples===null)problems.push({path:'aes67.ptimeUs',message:'AES67 ptimeUs 必须是 125、250、333、500、1000、2000 或 4000 微秒'});
+ else if(Object.hasOwn(aes??{},'framesPerPacket')&&aes.framesPerPacket!==samples)problems.push({path:'aes67.framesPerPacket',message:'旧版 framesPerPacket（'+aes.framesPerPacket+'）与 ptimeUs 推导的每包帧数（'+samples+'）不一致，请删除该字段'});
+ if(Object.hasOwn(aes??{},'flowMode')&&!['standard','extension'].includes(aes.flowMode))problems.push({path:'aes67.flowMode',message:'AES67 flowMode 必须是 standard 或 extension'});
+ if(Object.hasOwn(aes??{},'portPolicy')&&!['strict','explicit'].includes(aes.portPolicy))problems.push({path:'aes67.portPolicy',message:'AES67 portPolicy 必须是 strict 或 explicit'});
+ if(Object.hasOwn(aes??{},'sapAddress')&&String(aes.sapAddress??'')!==''&&!multicastIpv4(aes.sapAddress))problems.push({path:'aes67.sapAddress',message:'AES67 SAP 组必须是空或有效的组播 IPv4'});
+ if(Object.hasOwn(aes??{},'sapIntervalMs')&&!intRange(aes.sapIntervalMs,1000,300000))problems.push({path:'aes67.sapIntervalMs',message:'AES67 SAP 间隔必须在 1000–300000 ms'});
  if(!intRange(aes?.payloadType,96,127))problems.push({path:'aes67.payloadType',message:'AES67 payloadType 必须在 96–127'});
  if(!intRange(aes?.ssrc,0,4294967295))problems.push({path:'aes67.ssrc',message:'AES67 SSRC 必须在 0–4294967295'});
  if(String(aes?.srcInterfaceIp??'')!==''&&!unicastIpv4(aes?.srcInterfaceIp))problems.push({path:'aes67.srcInterfaceIp',message:'AES67 源网卡 IP 必须留空或为有效的单播 IPv4'});
@@ -245,7 +282,7 @@ export function aes67BlockProblems(aes,channels){
  flows.forEach((flow,index)=>{
   if(!isAes67Destination(flow?.destIp))problems.push({path:'aes67.flows.'+index+'.destIp',message:'流 '+(index+1)+' 目标 IP 必须是有效的单播 IPv4 或组播组'});
   if(!intRange(flow?.port,1,65535))problems.push({path:'aes67.flows.'+index+'.port',message:'流 '+(index+1)+' 端口必须在 1–65535'});
-  if(!intRange(flow?.channels,1,aes67MaxFlowChannels))problems.push({path:'aes67.flows.'+index+'.channels',message:'流 '+(index+1)+' 声道必须在 1–8'});
+  if(!intRange(flow?.channels,1,aes67MaxChannelsPerFlow(aes)))problems.push({path:'aes67.flows.'+index+'.channels',message:'流 '+(index+1)+' 声道必须在 1–'+aes67MaxChannelsPerFlow(aes)+'（当前打包模式）'});
   if(flow?.channelOffset!==offset)problems.push({path:'aes67.flows.'+index+'.channelOffset',message:'AES67 流声道偏移必须连续且从 0 开始'});
   offset+=Number(flow?.channels??0);
   if(!intRange(flow?.ssrc??0,0,4294967295))problems.push({path:'aes67.flows.'+index+'.ssrc',message:'流 '+(index+1)+' SSRC 必须在 0x0–0xFFFFFFFF'});
@@ -280,7 +317,8 @@ export function validateAes67(value){
  if(value?.aes67!=null)problems=problems.concat(aes67BlockProblems(value.aes67,channels));
  else if(value?.outputBackend==='aes67')problems.push({path:'aes67.flows.0.destIp',message:'AES67 后端需要完整的 aes67 网络配置'});
  if(value?.outputBackend==='aes67'){
-  if(value.sampleRate!==48000)problems.push({path:'sampleRate',message:'AES67 需要设备采样率 48000 Hz'});
+  if(value.sampleRate!==48000)problems.push({path:'sampleRate',message:'AES67 当前仅支持 48000 Hz（后端尚未实现重采样）'});
+  if(value.aes67!=null&&value.aes67.sampleRate!=null&&Number(value.aes67.sampleRate)!==Number(value.sampleRate))problems.push({path:'sampleRate',message:'AES67 块内的采样率必须与设备采样率一致'});
   if(!['fixed','unified'].includes(value.sourcePolicy))problems.push({path:'sourcePolicy',message:'AES67 选流方式必须是固定源流或统一输入'});
  }
  return problems;
