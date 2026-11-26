@@ -1,5 +1,6 @@
 // DOM contract fixture only: does not drive a browser or operate the desktop.
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 class Element {
  constructor(tag='div'){this.tag=tag;this.children=[];this.dataset={};this.listeners={};this.value='';this.checked=false;this.hidden=false;this.attrs={};}
  set value(value){this._value=String(value);}
@@ -33,6 +34,12 @@ globalThis.fetch=async(url,options={})=>{
  return {ok:true,json:async()=>body};
 };
 try{
+ // The stylesheet is a first-class contract too: a tool-truncated line breaks
+ // CSS nesting and silently drops every rule after it.
+ const css=readFileSync(new URL('./configuration.css',import.meta.url),'utf8');
+ assert.ok(!css.includes('line truncated'),'configuration.css carries no truncation marker');
+ assert.equal((css.match(/{/g)||[]).length,(css.match(/}/g)||[]).length,'configuration.css braces balance');
+ assert.match(css,/\.config-advanced \.aes67-flows/,'advanced flow rows span the whole panel');
  await import(new URL('./configuration.js',import.meta.url).href+'?fixture='+Date.now());
  const input=path=>element('fields').querySelectorAll('[data-path]').find(item=>item.dataset.path===path);
  assert.ok(input('outputProcessing.bypass'));
