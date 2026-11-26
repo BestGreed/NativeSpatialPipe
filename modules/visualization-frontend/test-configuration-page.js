@@ -145,6 +145,14 @@ try{
  assert.equal(input('outputBackend').children.some(o=>o.value==='aes67'),true);
  input('outputBackend').value='aes67';input('outputBackend').listeners.change();
  assert.ok(input('aes67.flows.0.destIp'));assert.ok(input('aes67.flows.0.port'));assert.ok(input('aes67.framesPerPacket'));
+  // Basic fields stay visible; protocol parameters and clock tuning fold away.
+  const insideDetails=node=>{let item=node;while(item){if(item.tag==='details')return true;item=item.parentElement;}return false;};
+  assert.equal(element('fields').querySelectorAll('details').length,1,'AES67 builds exactly one advanced-settings disclosure');
+  assert.match(element('fields').querySelectorAll('summary')[0].textContent,/高级设置/,'the disclosure is labelled as advanced settings');
+  assert.equal(insideDetails(input('aes67.name')),false,'device name is a basic field');
+  assert.equal(insideDetails(input('aes67.srcInterfaceIp')),false,'source interface is a basic field');
+  assert.equal(insideDetails(input('aes67.ptp.domain')),true,'PTP domain lives under advanced settings');
+  assert.equal(insideDetails(input('aes67.framesPerPacket')),true,'transport tuning lives under advanced settings');
  assert.equal(input('aes67.framesPerPacket').value,'48');assert.equal(input('aes67.payloadType').value,'96');
  assert.equal(input('aes67.ringPackets').value,'64');assert.equal(input('aes67.prebufferFrames').value,'480');
  assert.equal(input('sampleRate').value,'48000');
@@ -187,7 +195,7 @@ try{
  // Destinations are always shown per flow: every layout binds the explicit
  // aes67.flows rows (E16 flows-only).
  assert.ok(element('fields').querySelectorAll('th').some(item=>item.textContent==='流 1'),'every layout renders the flow-1 row');
- assert.match(element('fields').querySelectorAll('p').find(item=>item.className==='aes67-flow-note').textContent,/2 条流/,'a 12ch layout announces the universal 2-flow packing');
+  assert.match(element('fields').querySelectorAll('p').find(item=>item.className==='aes67-flow-note'&&/2 条流/.test(item.textContent)).textContent,/2 条流/,'a 12ch layout announces the universal 2-flow packing');
  // Multi-flow destinations become explicit on a >8ch layout: the panel
  // derives ceil(channels/8) rows, stores them, and allows per-flow overrides.
  input('outputLayout').value='9.1.6';input('outputLayout').listeners.change();

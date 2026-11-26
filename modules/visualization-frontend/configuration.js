@@ -59,6 +59,7 @@ function field(container,path,label,type='number',options=null,note='',offset=0)
  return input;
 }
 function group(title){const fieldset=document.createElement('fieldset');const legend=document.createElement('legend');legend.textContent=title;fieldset.append(legend);const body=document.createElement('div');body.className='config-fields';fieldset.append(body);$('fields').append(fieldset);return body;}
+function advancedGroup(container,title,note){const details=document.createElement('details');details.className='config-advanced';const summary=document.createElement('summary');summary.textContent=title;details.append(summary);if(note){const help=document.createElement('p');help.className='config-advanced-note';help.textContent=note;details.append(help);}const body=document.createElement('div');body.className='config-fields';details.append(body);container.append(details);return body;}
 function render(){
  routePreview=null;$('fields').replaceChildren();if(!working)return;
  if(id==='backend'){
@@ -80,22 +81,9 @@ function render(){
  if(working.outputBackend==='aes67'){
   body=group('AES67 网络输出（RTP / L24，48 kHz）');
   field(body,'aes67.name','设备名（留空自动）','text',null,'留空时使用 NSP-<计算机名>；该名字会出现在 SDP 与接收端设备列表。');
-  field(body,'aes67.framesPerPacket','每包帧数','integer',[{value:48,label:'48 帧 · 1 ms（当前仅支持）'}],'传输层当前固定 1 ms（48 帧）。');
-  field(body,'aes67.payloadType','RTP payloadType','integer',null,'动态负载类型范围 96–127，AES67 默认 96。');
-  const baseSsrc=field(body,'aes67.ssrc','SSRC（0x0 = 默认）','ssrc',null,'0x0 使用固定默认 0x4E535036（NSP6）；非 0 时按填写值发送并在 SDP 通告。多流时每流 SSRC 在下表逐流显示与保存（自动分配 = 基准 + 流序号）。');baseSsrc.value=formatAes67Ssrc(working.aes67?.ssrc??0);
   field(body,'aes67.srcInterfaceIp','源网卡绑定 IP（可空）','text',null,'留空由系统路由选择发送网卡；填写时必须是本机单播 IPv4。组播目标必填。');
-  field(body,'aes67.ptp.domain','PTP domain（0–127）','integer');
-  field(body,'aes67.ptp.lockTimeoutMs','PTP 锁定超时（ms）','integer');
-  field(body,'aes67.ptp.timestamping','PTP 时间戳模式','text',['auto','software','hardware'].map(value=>({value,label:value})));
-  field(body,'aes67.ptp.mode','PTP 拓扑模式','text',[{value:'slave',label:'slave（跟随外部 GM，默认）'},{value:'auto',label:'先监听再回退'},{value:'gm',label:'本机作为 GM'},{value:'local',label:'无 PTP 本地时钟'}],'slave 保持原有行为；gm 需要可读取网卡 MAC 作为 EUI-64 时钟标识。');
-  field(body,'aes67.ptp.announceTimeoutMs','Announce 超时（ms）','integer',null,'auto 模式的监听窗口与外部 GM 超时，1000–60000，默认 6000。');
-  field(body,'aes67.ptp.priority1','GM priority1（0–255）','integer',null,'gm 模式广播的 BMCA priority1，默认 128。');
-  field(body,'aes67.ptp.priority2','GM priority2（0–255）','integer',null,'gm 模式广播的 BMCA priority2，默认 128。');
-  field(body,'aes67.ptp.gmCapable','auto 可成为 GM','text',[{value:'false',label:'false'},{value:'true',label:'true'}],'仅 auto 模式使用；gm 模式隐含 true。');
-  field(body,'aes67.ptp.gmUtcOffset','GM UTC 偏移（秒，可空）','text',null,'留空为 ARB（ptpTimescale=0）；0–127 时广播 ptpTimescale=1 与 currentUtcOffsetValid=1。');
-  field(body,'aes67.ttl','组播 TTL（1–255）','integer',null,'仅组播目标生效，默认 32；单播忽略。逐流 TTL 为 0 时继承此值。');
-  field(body,'aes67.ringPackets','环形缓冲包数','integer',null,'范围 8–1024，每包 1 ms；溢出会丢最旧音频并计入 ringDroppedFrames。');
-  field(body,'aes67.prebufferFrames','发送前预缓冲（源帧）','integer',null,'48–48000 帧且不超过 ringPackets × 48；只影响发送状态机。');
+  const basicNote=document.createElement('p');basicNote.className='aes67-flow-note';basicNote.textContent='日常只需填写设备名、源网卡与下方流目标；协议参数和时钟拓扑都在下面的高级设置里，保持默认即可。';body.parentElement.append(basicNote);
+
   // Render every explicitly stored row. The default proposal is the minimum split.
   const flows=Array.isArray(working.aes67?.flows)?working.aes67.flows:[];
   const layoutChannels=deviceChannels(working).length;
@@ -150,6 +138,27 @@ function render(){
    mapNote.textContent='声道映射：发送声道 k ← 源声道 channelMap[k]（9.1.6 渲染顺序 → 16ch 容器顺序），完整值见高级 JSON。';
    body.parentElement.append(mapNote);
   }
+
+  // 高级设置（默认折叠）：协议参数、PTP 拓扑与发送调优项；日常对接无需展开。
+  const advanced=advancedGroup(body.parentElement,'高级设置（协议参数与调优）','仅当对接第三方接收端、排障或特殊时钟拓扑时再展开；日常保持默认。');
+  const advancedHeading=text=>{const p=document.createElement('p');p.className='config-advanced-heading';p.textContent=text;advanced.append(p);};
+  advancedHeading('传输参数');
+  field(advanced,'aes67.framesPerPacket','每包帧数','integer',[{value:48,label:'48 帧 · 1 ms（当前仅支持）'}],'传输层当前固定 1 ms（48 帧）。');
+  field(advanced,'aes67.payloadType','RTP payloadType','integer',null,'动态负载类型范围 96–127，AES67 默认 96。');
+  const baseSsrc=field(advanced,'aes67.ssrc','SSRC（0x0 = 默认）','ssrc',null,'0x0 使用固定默认 0x4E535036（NSP6）；非 0 时按填写值发送并在 SDP 通告。多流时每流 SSRC 在下表逐流显示与保存（自动分配 = 基准 + 流序号）。');baseSsrc.value=formatAes67Ssrc(working.aes67?.ssrc??0);
+  field(advanced,'aes67.ttl','组播 TTL（1–255）','integer',null,'仅组播目标生效，默认 32；单播忽略。逐流 TTL 为 0 时继承此值。');
+  field(advanced,'aes67.ringPackets','环形缓冲包数','integer',null,'范围 8–1024，每包 1 ms；溢出会丢最旧音频并计入 ringDroppedFrames。');
+  field(advanced,'aes67.prebufferFrames','发送前预缓冲（源帧）','integer',null,'48–48000 帧且不超过 ringPackets × 48；只影响发送状态机。');
+  advancedHeading('PTP 时钟');
+  field(advanced,'aes67.ptp.mode','PTP 拓扑模式','text',[{value:'slave',label:'slave（跟随外部 GM，默认）'},{value:'auto',label:'先监听再回退'},{value:'gm',label:'本机作为 GM'},{value:'local',label:'无 PTP 本地时钟'}],'slave 保持原有行为；gm 需要可读取网卡 MAC 作为 EUI-64 时钟标识。');
+  field(advanced,'aes67.ptp.domain','PTP domain（0–127）','integer');
+  field(advanced,'aes67.ptp.lockTimeoutMs','PTP 锁定超时（ms）','integer');
+  field(advanced,'aes67.ptp.timestamping','PTP 时间戳模式','text',['auto','software','hardware'].map(value=>({value,label:value})));
+  field(advanced,'aes67.ptp.announceTimeoutMs','Announce 超时（ms）','integer',null,'auto 模式的监听窗口与外部 GM 超时，1000–60000，默认 6000。');
+  field(advanced,'aes67.ptp.priority1','GM priority1（0–255）','integer',null,'gm 模式广播的 BMCA priority1，默认 128。');
+  field(advanced,'aes67.ptp.priority2','GM priority2（0–255）','integer',null,'gm 模式广播的 BMCA priority2，默认 128。');
+  field(advanced,'aes67.ptp.gmCapable','auto 可成为 GM','text',[{value:'false',label:'false'},{value:'true',label:'true'}],'仅 auto 模式使用；gm 模式隐含 true。');
+  field(advanced,'aes67.ptp.gmUtcOffset','GM UTC 偏移（秒，可空）','text',null,'留空为 ARB（ptpTimescale=0）；0–127 时广播 ptpTimescale=1 与 currentUtcOffsetValid=1。');
  }
  field(body,'mediaFoundation.enabled','启用 Media Foundation 播放适配','checkbox');
  const sourcePolicies=[{value:'fixed',label:'固定源流'},{value:'unified',label:'空间流与普通 PCM 统一输入',disabled:working.renderer==='lira'}];
