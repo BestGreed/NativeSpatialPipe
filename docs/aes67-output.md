@@ -54,6 +54,22 @@ Select AES67 in the playback configuration panel or set outputBackend to "aes67"
 
 The playback schema and the 12-channel and 16-channel examples under modules/zig-scheduler show the available settings.
 
+The web settings page separates deployment decisions from tuning. The basic panel keeps only
+the device name, the source-interface binding and the start multicast group (flow 1 destination
+and port). The collapsible advanced panel holds sample rate, packet time (ptime), payload type,
+TTL, base SSRC, flow packing mode, port policy, SAP group/interval, send-buffer sizing, the PTP
+mode/domain/timestamping block and a per-flow editor (destination, port, payload type, SSRC,
+TTL). Changing ptimeUs or flowMode re-plans flow widths and keeps explicit per-flow overrides;
+the legacy framesPerPacket key is no longer a form field and is removed on load (the scheduler
+still accepts it when it equals the derived sample count). A save that fails validation opens
+the advanced section and focuses the first invalid field.
+
+The sample-rate pull-down currently enables only 48 kHz. The scheduler accepts the other schema
+rates, but the NSP renderer path does not resample yet, so 44.1/88.2/96/176.4/192 kHz are shown
+disabled. ptimeUs 125 us was verified on the reference sender with a 20 s 8-channel L24 capture:
+8000 packets/s, timestamp step 6 samples, 144-byte payloads and zero loss in steady state; the
+only drops are the usual start/stop boundary packets.
+
 - name: optional device/session name (printable ASCII, trimmed length at most 63). Omitted or blank
   derives NSP-<COMPUTERNAME> when the session opens. The name appears in the SDP o= username,
   s= and i= lines; spaces survive in s=/i= and fold to '-' in the o= token, and CR/LF or other
@@ -90,7 +106,7 @@ DESIGN audit D8: they live inside the nested aes67.ptp object.
 | aes67.ptp.mode | slave, auto, gm, local | slave | slave: strict follower, fails/keeps DEGRADED exactly like before. auto: listen up to announceTimeoutMs, then follow an external GM or fall back to gm (when gmCapable) / local. gm: announce this sender as the grandmaster immediately. local: no PTP sockets; local media clock and a=ts-refclk:local. |
 | aes67.ptp.domain | 0-127 | 0 | AES67 Annex A Table A.1 default 0. |
 | aes67.ptp.lockTimeoutMs | 100-120000 ms | 5000 ms | Existing startup/lock deadline. |
-| aes67.ptp.timestamping | auto, software, hardware | auto | Windows has no PHC; explicit hardware still reports startup failure. |
+| aes67.ptp.timestamping | auto, software, hardware | auto | No PHC is integrated in this Windows sender: software timestamps come from QPC at the socket boundaries, and explicit hardware reports TIMESTAMP_UNAVAILABLE at start. Intel I225/I226 advertises 1588 only for its Linux drivers, so a Windows hardware path needs another NIC/stack. |
 | aes67.ptp.priority1 | 0-255 | 128 | GM BMCA priority1 (AES67 Annex A Table A.1 default). |
 | aes67.ptp.priority2 | 0-255 | 128 | GM BMCA priority2 (AES67 Annex A Table A.1 default). |
 | aes67.ptp.announceTimeoutMs | 1000-60000 ms | 6000 | AUTO listening window and foreign-master receipt timeout (announceReceiptTimeout 3 x 2 s). |
@@ -113,7 +129,7 @@ mode stays slave, so existing configurations are unchanged.
   are IMPLEMENTATION CHOICES matching that profile, not AES67 numeric requirements.
 - Data set: clockClass 248 (AES67 Annex A Table A.2 default/ARB), stepsRemoved 0, timeSource 0xA0,
   timeProperties ARB unless gmUtcOffset is configured. GM time is a monotonic anchor at activation
-  (ARB) or the Windows system UTC at activation plus the configured offset; there is no PHC, so the
+  (ARB) or the Windows system UTC at activation plus the configured offset; no PHC is integrated, so the
   hardware-timestamping path remains NOT_RUN and GM accuracy is software-grade.
 - BMCA-lite follows the IEEE 1588-2008 9.3.2 dataset comparison order (UNVERIFIED-LOCAL: the 1588
   text is not in this workspace). A better foreign GM makes us stop announcing immediately (auto:
