@@ -414,9 +414,12 @@ impl FollowerState {
             return Err("wrong_master");
         }
         match msg.body {
-            Body::Sync if event && msg.flags & codec::TWO_STEP != 0 => {
-                self.sync(msg, now, Some(now), None)
+            // AES67 media-clock recovery needs the two-step originTimestamp.
+            // Keep this reason distinct from unrelated unsupported traffic.
+            Body::Sync if event && msg.flags & codec::TWO_STEP == 0 => {
+                Err("one_step_sync_unsupported")
             }
+            Body::Sync if event => self.sync(msg, now, Some(now), None),
             Body::FollowUp(stamp) if !event => self.sync(msg, now, None, Some(stamp)),
             Body::DelayResp {
                 received_ns,
@@ -686,6 +689,10 @@ impl PtpRuntime {
                 port[9] = 1;
                 port
             });
+        // The only reachable timestamp source on this Windows sender is QPC
+        // software timestamping (hardware_source() always reports unavailable),
+        // so the follower's fit gate mirrors the actual source. When a hardware
+        // path lands, thread the negotiated mode through Config instead.
         let set = TimestampMode::Software;
         let mode = config.mode;
         let gm_capable = match mode {
@@ -740,11 +747,19 @@ impl PtpRuntime {
 
     pub fn status(&self) -> PtpStatus {
         let status = self.role.status();
+        // Report the master the follower is actually locked to, not merely the
+        // last Announce that arrived (the role machine tracks the winning
+        // foreign GM for Passive). Falls back to the role snapshot while the fit
+        // is still being acquired.
+        let gm = match status.role {
+            Role::Slave | Role::Passive => self.follower.master_identity().or(status.gm),
+            _ => status.gm,
+        };
         PtpStatus {
             mode: self.mode,
             role: status.role,
             source: status.source,
-            gm: status.gm,
+            gm,
             domain: self.config.domain,
             time_traceable: status.time_traceable,
             ptp_timescale: self.ptp_timescale(),
@@ -1191,6 +1206,20 @@ mod tests {
             correction_scaled_ns: 0,
             body,
         }
+    }
+
+    #[test]
+    fn one_step_sync_is_rejected_with_a_stable_reason() {
+        // AES67 media-clock recovery needs two-step Sync/Follow_Up; a bare
+        // one-step Sync must be distinguishable from malformed traffic.
+        let ip = Ipv4Addr::LOCALHOST;
+        let config = follower_config(ip);
+        let mut state = FollowerState::new(&config, PORT, TimestampMode::Software);
+        state.receive(message(MASTER, announce(GM), 0, 0, 1), ip, 0, false);
+        let error = state
+            .accept(message(MASTER, Body::Sync, 1, 0, 0), ip, 10, true)
+            .unwrap_err();
+        assert_eq!(error, "one_step_sync_unsupported");
     }
 
     #[test]

@@ -167,9 +167,11 @@ fn materializeAes67Flows(config: *u.Value, arena: std.mem.Allocator) !void {
     if (base_text.len == 0) return error.Aes67RequiresFlowDestination;
     const base = cfg.parseIpv4Address(base_text) orelse return error.InvalidAes67Destination;
     const base_multicast = cfg.isMulticastIpv4(base);
-    // Flow 0's explicit port anchors the unicast continuation; without one the
-    // AES67 default 5004 applies.
-    const base_port = (try fieldNumber(&flows_entry.array.items[0].object, "port")) orelse cfg.default_port;
+    // Flow 0's explicit port anchors the unicast continuation; otherwise the
+    // session basePort applies (5004 when absent), never a hard-coded 5004.
+    const session_port = (try fieldNumber(&aes67_entry.object, "basePort")) orelse cfg.default_port;
+    if (session_port == 0 or session_port > 65535) return error.InvalidAes67Port;
+    const base_port = (try fieldNumber(&flows_entry.array.items[0].object, "port")) orelse session_port;
     if (base_port == 0 or base_port > 65535) return error.InvalidAes67Port;
     const session_ttl = (try fieldNumber(&aes67_entry.object, "ttl")) orelse cfg.default_ttl;
     if (session_ttl == 0 or session_ttl > 255) return error.InvalidAes67Ttl;
@@ -198,7 +200,7 @@ fn materializeAes67Flows(config: *u.Value, arena: std.mem.Allocator) !void {
         } else {
             // Multicast shares the AES67 default port (Plan A); unicast needs a
             // unique port per flow on the same host (continuation of flow 0).
-            const port_value: u64 = if (multicast) cfg.default_port else base_port + 2 * index;
+            const port_value: u64 = if (multicast) session_port else base_port + 2 * index;
             if (port_value == 0 or port_value > 65535) return error.InvalidAes67Port;
             try map.put("port", .{ .integer = @intCast(port_value) });
         }

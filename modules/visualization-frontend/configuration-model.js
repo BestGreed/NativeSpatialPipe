@@ -195,13 +195,14 @@ export function proposeAes67Flows(channels,first={},maxPerFlow=aes67MaxFlowChann
 }
 
 // Match web_host.zig: preserve explicit values, derive missing destinations
-// from flow 1, default multicast ports to 5004 and increment unicast ports by 2.
+// from flow 1, default multicast ports to the session basePort (5004 by
+// default) and increment unicast ports by 2 from the flow-1 port.
 export function materializeAes67Destinations(aes){
  if(!Array.isArray(aes?.flows)||aes.flows.length===0||aes.flows.length>8)return;
  if(Object.hasOwn(aes,'destIp')||Object.hasOwn(aes,'port'))return;
  const first=aes.flows[0];
  if(typeof first?.destIp!=='string'||!isAes67Destination(first.destIp))return;
- const base=parseIpv4(first.destIp),basePort=first.port??5004;
+ const base=parseIpv4(first.destIp),sessionPort=aes.basePort??5004,basePort=first.port??sessionPort;
  if(!intRange(basePort,1,65535))return;
  const multicast=multicastIpv4(first.destIp);
  aes.flows.forEach((flow,index)=>{
@@ -211,7 +212,7 @@ export function materializeAes67Destinations(aes){
    if(next)flow.destIp=next.join('.');
   }
   const flowMulticast=multicastIpv4(flow.destIp);
-  flow.port??=flowMulticast?5004:basePort+2*index;
+  flow.port??=flowMulticast?sessionPort:basePort+2*index;
   if(flowMulticast&&(flow.ttl==null||flow.ttl===0))flow.ttl=aes.ttl??32;
   if(!flow.srcInterfaceIp&&aes.srcInterfaceIp)flow.srcInterfaceIp=aes.srcInterfaceIp;
  });

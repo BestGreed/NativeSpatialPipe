@@ -448,8 +448,8 @@
     {
       "path": "modules/aes67/INTERFACE.md",
       "sourcePath": "modules/aes67/INTERFACE.md",
-      "sourceSha256": "297f22da0c93bc734ad99b2e0aaec89e38db2c4d08c13bde8d7c6e6e529249ac",
-      "sha256": "297f22da0c93bc734ad99b2e0aaec89e38db2c4d08c13bde8d7c6e6e529249ac"
+      "sourceSha256": "d27ffb1cba357bd24c8803031ce9b81f69a57f18579d44d26f3fd96611741f4f",
+      "sha256": "d27ffb1cba357bd24c8803031ce9b81f69a57f18579d44d26f3fd96611741f4f"
     },
     {
       "path": "modules/aes67/nsp_aes67.h",
@@ -502,8 +502,8 @@
     {
       "path": "modules/aes67/src/ptp/mod.rs",
       "sourcePath": "modules/aes67/src/ptp/mod.rs",
-      "sourceSha256": "733554e3d145f159653d49570d2907eaa5af2d64dec0427e97f411556d98d7ff",
-      "sha256": "22eff1ead460ebeed127668bc032b9196c37631aa4a1f493f14b1dad4b3442b6"
+      "sourceSha256": "7a19aabcd185c004b2fdbd59744f3ce9c05731fbf03fb7cf6965d13a4899528a",
+      "sha256": "7a19aabcd185c004b2fdbd59744f3ce9c05731fbf03fb7cf6965d13a4899528a"
     },
     {
       "path": "modules/aes67/src/ptp/role.rs",
@@ -4816,8 +4816,8 @@
     {
       "path": "modules/visualization-frontend/configuration-model.js",
       "sourcePath": "modules/visualization-frontend/configuration-model.js",
-      "sourceSha256": "c470682f2f6c27c0b7c4867deb315ca547c477a6a5c6b095706ab394091698c4",
-      "sha256": "9412b1e45036a89c74039b1249e92b2a2bff492ca1175d2817be82f883b7f4e9"
+      "sourceSha256": "c4c92d99029c6a09e20f0f5b532aa82f39aec560cf93d9ad4846589d75679295",
+      "sha256": "c4c92d99029c6a09e20f0f5b532aa82f39aec560cf93d9ad4846589d75679295"
     },
     {
       "path": "modules/visualization-frontend/configuration.css",
@@ -4981,8 +4981,8 @@
     {
       "path": "modules/visualization-frontend/test-configuration.js",
       "sourcePath": "modules/visualization-frontend/test-configuration.js",
-      "sourceSha256": "7da472a4495f17eca609bff7661cb09f316bab3d3bede02a4ee9c06810148d6c",
-      "sha256": "a7e41c0d290b4f30dedabeb547f8b12f8c26d91c599e41604c32c5cd74590bf6"
+      "sourceSha256": "9fef05060b796bfd5eb72110ee541d1be97f420cf48886785463857965dbc499",
+      "sha256": "9fef05060b796bfd5eb72110ee541d1be97f420cf48886785463857965dbc499"
     },
     {
       "path": "modules/visualization-frontend/test-data.js",
@@ -5518,8 +5518,8 @@
     {
       "path": "modules/zig-scheduler/web_host.zig",
       "sourcePath": "modules/zig-scheduler/web_host.zig",
-      "sourceSha256": "a82282471a4d6824109316a3f2f3ca0dc92b7789e50f374266bf82f64ed35244",
-      "sha256": "a82282471a4d6824109316a3f2f3ca0dc92b7789e50f374266bf82f64ed35244"
+      "sourceSha256": "895e35e60ac7ad50e0efc2539df0f9beceb05f9e80213f9ed19af522115cc5ef",
+      "sha256": "895e35e60ac7ad50e0efc2539df0f9beceb05f9e80213f9ed19af522115cc5ef"
     },
     {
       "path": "tools/Build-Product.ps1",

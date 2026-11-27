@@ -222,6 +222,12 @@ const draft={...aes916,flows:proposeAes67Flows(16,first)};
 materializeAes67Destinations(draft);
 assert.equal(draft.flows[1].destIp,'239.1.0.2');
 assert.equal(draft.flows[1].port,5004);
+// Multicast default ports follow the session basePort, not a hard-coded 5004
+// (same rule as web_host.zig and aes67_config.zig).
+const basePortDraft={...aes916,basePort:6004,flows:proposeAes67Flows(16,{...first,port:undefined})};
+materializeAes67Destinations(basePortDraft);
+assert.equal(basePortDraft.flows[0].port,6004);
+assert.equal(basePortDraft.flows[1].port,6004);
 assert.equal(draft.flows[1].srcInterfaceIp,'192.0.2.63');
 assert.ok(flowCase([{...first},{...first,port:5008,channelOffset:8}]).includes('aes67.flows.1.destIp'));
 assert.ok(flowCase([{...first},{...first,destIp:'239.1.0.2',channelOffset:7}]).includes('aes67.flows.1.channelOffset'));
