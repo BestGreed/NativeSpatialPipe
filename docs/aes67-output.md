@@ -206,7 +206,7 @@ are matched on the project's label names.
 
 ## Pacing, QoS and packet format
 
-RTP timestamps are absolute media-clock sample positions (mediaclk:direct=0) and advance by exactly the packet's sample count. The pacing deadline is computed with exact rational arithmetic from the media clock, so 44.1 kHz does not drift and 125 us packets are not batched into 1 ms bursts. Catch-up is bounded by NSP_AES67_CATCH_UP_SLOTS (default 8 slots).
+RTP timestamps are absolute media-clock sample positions (mediaclk:direct=0) and advance by exactly the packet's sample count. The pacing deadline is computed with exact rational arithmetic from the media clock, so 44.1 kHz does not drift and 125 us packets are not batched into 1 ms bursts. Catch-up is bounded in real time by NSP_AES67_CATCH_UP_NS (1 ms per ptime slot is sent per wake; default 2000000 ns, allowed 100000-20000000 ns), so a long OS stall never becomes a ptime x slots burst.
 
 RTP sockets are marked AF41 (DSCP 34) and PTP sockets EF (DSCP 46) per AES67-2023 sec 6.2. The RTP marker bit is always zero: AES67 assigns it no meaning here and the Merging RAVENNA LKM would read the byte as a wrong payload type. Payloads are L16/L24 big-endian; the 1440-byte RTP payload limit is checked before every send.
 

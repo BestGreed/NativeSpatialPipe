@@ -353,6 +353,18 @@ impl Session {
     }
 }
 
+/// Converts a time budget into the number of grid slots one wake-up may send
+/// before dropping the rest. A fixed slot count is ptime-dependent: 8 slots is
+/// 8 ms at 1 ms ptime but 32 ms at 4 ms, a burst large enough to overflow the
+/// ASIO host buffer. Bounding the burst in real time keeps it constant.
+pub(crate) fn catch_up_slots(slot_period_ns: i128, budget_ns: i128) -> u32 {
+    (budget_ns / slot_period_ns.max(1)).clamp(1, 64) as u32
+}
+
+/// Default catch-up budget: 2 ms of audio, the same bound as the 1 ms default
+/// ptime under the previous 8-slot limit.
+const CATCH_UP_BUDGET_NS: i128 = 2_000_000;
+
 mod pacer;
 
 struct Network {
@@ -429,11 +441,12 @@ impl Network {
             .unwrap_or(2000);
         let holdover_ns = i128::from(holdover_ms) * NS_PER_MS;
         let diagnostic = std::env::var("NSP_AES67_PTP_DIAGNOSTICS").as_deref() == Ok("1");
-        let max_catch_up = std::env::var("NSP_AES67_CATCH_UP_SLOTS")
+        let catch_up_budget_ns = std::env::var("NSP_AES67_CATCH_UP_NS")
             .ok()
-            .and_then(|value| value.parse::<u32>().ok())
-            .filter(|slots| (1..=10).contains(slots))
-            .unwrap_or(8);
+            .and_then(|value| value.parse::<i128>().ok())
+            .filter(|ns| (100_000..=20_000_000).contains(ns))
+            .unwrap_or(CATCH_UP_BUDGET_NS);
+        let max_catch_up = catch_up_slots(run.config.timing.slot_period_ns(), catch_up_budget_ns);
         let pacer = pacer::Pacer::new();
         let spin_ns = (run.config.timing.slot_period_ns() / 8).clamp(1, 500_000);
         let mut next_log = 0;
@@ -1087,6 +1100,20 @@ mod tests {
             encoding: Encoding::L24,
             redundant: false,
         }
+    }
+
+    #[test]
+    fn catch_up_budget_bounds_the_burst_in_time_not_slots() {
+        // 2 ms budget is two 1 ms slots.
+        assert_eq!(catch_up_slots(1_000_000, 2_000_000), 2);
+        // At 4 ms ptime the same budget is a single slot, not a 32 ms burst.
+        assert_eq!(catch_up_slots(4_000_000, 2_000_000), 1);
+        // At 125 us it allows sixteen slots, still 2 ms of audio.
+        assert_eq!(catch_up_slots(125_000, 2_000_000), 16);
+        // Hostile or degenerate periods stay bounded.
+        assert_eq!(catch_up_slots(1, 20_000_000), 64);
+        assert_eq!(catch_up_slots(0, 2_000_000), 64);
+        assert_eq!(catch_up_slots(1_000_000, 1), 1);
     }
 
     #[test]

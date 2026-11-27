@@ -16,6 +16,7 @@ pub struct Ring {
     capacity_frames: usize,
     channels: usize,
     next_host: Option<u64>,
+    resyncs: u64,
 }
 
 pub struct Accepted {
@@ -29,6 +30,7 @@ impl Ring {
             capacity_frames,
             channels,
             next_host: None,
+            resyncs: 0,
         }
     }
     pub fn frames(&self) -> usize {
@@ -37,6 +39,10 @@ impl Ring {
     pub fn clear(&mut self) {
         self.samples.clear();
         self.next_host = None;
+    }
+    /// Producer timeline re-anchors caused by a jump larger than the ring.
+    pub fn resyncs(&self) -> u64 {
+        self.resyncs
     }
 
     /// Copies one producer block onto the host frame timeline.
@@ -59,7 +65,17 @@ impl Ring {
         let gap = first.saturating_sub(cursor);
         let accepted = frames - late;
         let needed = gap.checked_add(accepted)?;
-        if needed > self.capacity_frames.saturating_sub(self.frames()) as u64 {
+        let available = self.capacity_frames.saturating_sub(self.frames()) as u64;
+        if needed > available {
+            // A producer that jumps further than the whole ring can never catch
+            // up with the stale cursor, so every later block would be rejected
+            // forever. Re-anchor on the new block: this submission is refused
+            // once (the caller sees QUEUE_FULL) and the next one lands normally.
+            if gap > self.capacity_frames as u64 {
+                self.samples.clear();
+                self.next_host = Some(first);
+                self.resyncs = self.resyncs.saturating_add(1);
+            }
             return None;
         }
         self.next_host = Some(cursor.max(end));
@@ -97,6 +113,18 @@ impl Ring {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_jump_beyond_the_ring_reanchors_instead_of_blocking_forever() {
+        let mut ring = Ring::new(10, 1);
+        assert!(ring.copy(0, &[1.0; 4], 1, &[0]).is_some());
+        // 96 frames ahead of the cursor with a 10-frame ring: refuse once, but
+        // move the cursor so the next submission can proceed.
+        assert!(ring.copy(100, &[2.0; 4], 1, &[0]).is_none());
+        assert_eq!(ring.resyncs(), 1);
+        assert!(ring.copy(100, &[2.0; 4], 1, &[0]).is_some());
+        assert_eq!(ring.resyncs(), 1);
+    }
 
     #[test]
     fn routing_and_gaps_use_a_bounded_frame_timeline() {
@@ -210,13 +238,16 @@ mod tests {
     #[test]
     fn capacity_rejection_keeps_the_host_cursor() {
         let mut ring = Ring::new(4, 1);
-        ring.copy(0, &[1.0; 2], 1, &[0]).unwrap();
-        assert!(ring.copy(10, &[2.0; 2], 1, &[0]).is_none());
-        let accepted = ring.copy(2, &[2.0; 2], 1, &[0]).unwrap();
+        ring.copy(0, &[1.0; 3], 1, &[0]).unwrap();
+        // Two frames needed, one free: refused, and the cursor stays at 3
+        // because the block is within the ring's reach.
+        assert!(ring.copy(3, &[2.0; 2], 1, &[0]).is_none());
+        assert_eq!(ring.resyncs(), 0);
+        let accepted = ring.copy(3, &[2.0], 1, &[0]).unwrap();
         assert_eq!(accepted.late, 0);
         let mut out = [9.0f32; 4];
         assert!(!ring.consume(&mut out));
-        assert_eq!(out, [1.0, 1.0, 2.0, 2.0]);
+        assert_eq!(out, [1.0, 1.0, 1.0, 2.0]);
     }
 
     #[test]
