@@ -9,6 +9,18 @@ fn multicastFile() cfg.File {
     };
 }
 
+test "redundant legs reject flow ports that cannot carry the +2 secondary port" {
+    var file = multicastFile();
+    file.redundant = true;
+    file.portPolicy = .explicit;
+    const flow = cfg.Flow{ .destIp = "239.69.0.1", .port = 65534, .channels = 2, .channelOffset = 0 };
+    file.flows = &.{flow};
+    try std.testing.expectError(error.InvalidAes67Port, cfg.prepare(file, 2));
+    // The same port is fine without ST 2022-7 redundancy.
+    file.redundant = false;
+    _ = try cfg.prepare(file, 2);
+}
+
 test "defaults resolve the AES67 baseline: 48 kHz, L24, 48 samples, 5004" {
     const prepared = try cfg.prepare(multicastFile(), 2);
     try std.testing.expectEqual(@as(u32, 48_000), prepared.sample_rate);

@@ -383,10 +383,10 @@ impl Network {
                 .cloned()
                 .map(|flow| {
                     let mut flow = flow;
-                    flow.destination = std::net::SocketAddrV4::new(
-                        *flow.destination.ip(),
-                        flow.destination.port() + 2,
-                    );
+                    let secondary_port = flow.destination.port().checked_add(2).ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidInput, "redundant secondary port overflows")
+                    })?;
+                    flow.destination = std::net::SocketAddrV4::new(*flow.destination.ip(), secondary_port);
                     Output::open(flow, config.encoding)
                 })
                 .collect::<io::Result<_>>()?

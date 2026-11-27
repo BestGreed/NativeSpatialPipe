@@ -16,7 +16,7 @@ mod identity;
 pub mod role;
 
 use crate::{
-    net::{TOS_EF, dscp, multicast_interface},
+    net::{TOS_EF, mark_dscp, multicast_interface},
     time::{ClockFit, FitResult, MediaClock, NS_PER_S, TimestampMode, TimestampSource},
 };
 use codec::{Body, ClockId, DecodeError, Message, PortId, UNICAST};
@@ -567,7 +567,7 @@ impl Sockets {
             // AES67-2023 sec 6.2 Table 1: clock traffic EF (46). The TTL is a
             // deployment choice, not an RFC rule; see PTP_MULTICAST_TTL.
             socket.set_multicast_ttl_v4(PTP_MULTICAST_TTL)?;
-            let _ = dscp(&socket, TOS_EF);
+            mark_dscp(&socket, TOS_EF);
             Ok(socket)
         };
         Ok(Self {

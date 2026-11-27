@@ -515,6 +515,7 @@ pub fn prepare(file: File, channels: usize) !Prepared {
             const port = if (flow.port == 0) file.basePort else flow.port;
             if (port < 1024 or port % 2 != 0) return error.InvalidAes67Port;
             if (file.portPolicy == .strict and port != file.basePort) return error.InvalidAes67Port;
+            if (file.redundant and port > 65535 - secondary_port_offset) return error.InvalidAes67Port;
             if (@as(usize, flow.channels) * samples * bytes_per_sample > max_payload_bytes)
                 return error.Aes67PayloadTooLarge;
             const flow_payload_type = flow.payloadType orelse file.payloadType;

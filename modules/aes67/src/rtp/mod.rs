@@ -1,7 +1,7 @@
 pub mod ring;
 
 use crate::{
-    net::{TOS_AF41, dscp, multicast_interface},
+    net::{TOS_AF41, mark_dscp, multicast_interface},
     time::{MAX_RTP_PAYLOAD, PacketTiming},
 };
 use std::{
@@ -118,7 +118,7 @@ impl Output {
         socket.set_nonblocking(true)?;
         // AES67-2023 sec 6.2 Table 1 (line 1300-1302): mark media AF41 (34).
         // Best effort: some Windows stacks reject IP_TOS on a bound socket.
-        let _ = dscp(&socket, TOS_AF41);
+        mark_dscp(&socket, TOS_AF41);
         socket.connect(flow.destination)?;
         let SocketAddr::V4(address) = socket.local_addr()? else {
             return Err(io::ErrorKind::InvalidData.into());
