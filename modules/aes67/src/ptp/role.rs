@@ -201,7 +201,12 @@ impl RoleMachine {
             PtpMode::Auto => (Role::Listening, Source::None, "listening_for_external_gm"),
             PtpMode::Gm => {
                 if own_identity.is_some() {
-                    (Role::Gm, Source::SelfGm, "configured_gm")
+                    // Listen for an existing GM first: announcing immediately
+                    // with the AES67 default dataset can win the clockIdentity
+                    // tie-break and flap a live network for ~10 s before the
+                    // dual-GM watchdog yields. The listening window is the
+                    // configured announce timeout, like auto mode.
+                    (Role::Listening, Source::None, "listening_for_external_gm")
                 } else {
                     // Refused at open(); reported honestly if ever reached.
                     (Role::Local, Source::Local, "gm_identity_unavailable")
@@ -362,7 +367,23 @@ impl RoleMachine {
 
     fn step_gm(&mut self, inputs: &Inputs) {
         match self.status.role {
-            Role::Gm | Role::Init => {
+            Role::Listening | Role::Init => {
+                if let Some(announce) = inputs.announce {
+                    // A GM is already announcing here. Explicit gm mode yields
+                    // to it instead of starting a dual-GM contest whose
+                    // resolution costs every receiver a full announce timeout.
+                    self.set(
+                        Role::Passive,
+                        Source::Passive,
+                        Some(announce.gm),
+                        announce.time_traceable,
+                        "better_foreign_gm",
+                    );
+                } else if inputs.now >= self.listening_deadline || inputs.lock_timed_out {
+                    self.gm_fallback(inputs, "configured_gm");
+                }
+            }
+            Role::Gm => {
                 if let Some((reason, winner)) = inputs.gm_stepped_aside {
                     // Explicit gm mode: step aside to Passive, never Slave.
                     self.set(
@@ -383,6 +404,14 @@ impl RoleMachine {
             }
             Role::Passive => {
                 if inputs.gm_reclaimed {
+                    self.gm_fallback(inputs, "foreign_gm_timeout_reclaim");
+                } else if self
+                    .last_announce_at
+                    .is_some_and(|last| inputs.now - last > self.config.announce_timeout_ns)
+                {
+                    // The GM engine only tracks foreign masters while it is
+                    // announcing itself. A Passive role born from the listening
+                    // window must reclaim by silence on its own.
                     self.gm_fallback(inputs, "foreign_gm_timeout_reclaim");
                 } else if let Some(announce) = inputs.announce {
                     // Keep reporting the winning GM identity/time traceability.
@@ -706,12 +735,20 @@ mod tests {
     }
 
     #[test]
-    fn explicit_gm_is_immediate_and_passes_through_passive() {
+    fn explicit_gm_listens_first_then_passes_through_passive() {
         let mut machine = RoleMachine::new(config(PtpMode::Gm, true), 0);
+        assert_eq!(machine.role(), Role::Listening);
+        assert_eq!(machine.status().source, Source::None);
+        assert_eq!(machine.status().gm, None);
+        // The configured announce window has not elapsed yet.
+        assert!(!machine.step(inputs(99 * NS_PER_MS)));
+        assert_eq!(machine.role(), Role::Listening);
+        assert!(machine.step(inputs(100 * NS_PER_MS)));
         assert_eq!(machine.role(), Role::Gm);
         assert_eq!(machine.status().source, Source::SelfGm);
         assert_eq!(machine.status().gm, Some(OUR_ID));
-        let mut step = inputs(1);
+        assert_eq!(machine.status().reason, "configured_gm");
+        let mut step = inputs(101 * NS_PER_MS);
         step.announce = Some(announce(false));
         step.gm_stepped_aside = Some((StepReason::DualGm, GM_ID));
         machine.step(step);
@@ -720,9 +757,31 @@ mod tests {
         assert_eq!(machine.status().gm, Some(GM_ID));
         assert_eq!(machine.status().reason, "dual_gm_detected");
         // Reclaim after the foreign master times out.
-        let mut step = inputs(2);
+        let mut step = inputs(102 * NS_PER_MS);
         step.gm_reclaimed = true;
         machine.step(step);
+        assert_eq!(machine.role(), Role::Gm);
+        assert_eq!(machine.status().reason, "foreign_gm_timeout_reclaim");
+    }
+
+    #[test]
+    fn explicit_gm_yields_to_an_existing_gm_and_reclaims_by_silence() {
+        let mut machine = RoleMachine::new(config(PtpMode::Gm, true), 0);
+        let mut step = inputs(10 * NS_PER_MS);
+        step.announce = Some(announce(true));
+        assert!(machine.step(step));
+        assert_eq!(machine.role(), Role::Passive);
+        assert_eq!(machine.status().source, Source::Passive);
+        assert_eq!(machine.status().gm, Some(GM_ID));
+        assert!(machine.status().time_traceable);
+        assert_eq!(machine.status().reason, "better_foreign_gm");
+        // Announces keep arriving: stay passive and keep reporting the winner.
+        let mut step = inputs(50 * NS_PER_MS);
+        step.announce = Some(announce(true));
+        machine.step(step);
+        assert_eq!(machine.role(), Role::Passive);
+        // Silence longer than the announce timeout: reclaim the GM role.
+        assert!(machine.step(inputs(151 * NS_PER_MS)));
         assert_eq!(machine.role(), Role::Gm);
         assert_eq!(machine.status().reason, "foreign_gm_timeout_reclaim");
     }

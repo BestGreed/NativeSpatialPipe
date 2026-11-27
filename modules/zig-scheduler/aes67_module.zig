@@ -74,6 +74,43 @@ comptime {
 }
 
 const Event = extern struct { kind: u32, code: i32, detail: i32 };
+/// Mirror of session::Counters from the Rust DLL (nsp_aes67_counters).
+const Counters = extern struct {
+    packets: u64,
+    silent: u64,
+    dropped: u64,
+    late: u64,
+    errors: u64,
+    bytes: u64,
+    locked: u32,
+    timestamping: u32,
+    offset_ns: f64,
+    rate_ppm: f64,
+    fit_rms_ns: f64,
+};
+/// Mirror of abi::PtpStatusV1 (nsp_aes67_ptp_status).
+const PtpStatus = extern struct {
+    mode: u32,
+    role: u32,
+    source: u32,
+    domain: u32,
+    time_traceable: u32,
+    ptp_timescale: u32,
+    gm_identity: [8]u8,
+    reason: [32]u8,
+    transitions: u64,
+    reserved: u32,
+};
+comptime {
+    if (@sizeOf(Counters) != 80) @compileError("AES67 Counters ABI mirror must stay 80 bytes");
+    if (@sizeOf(PtpStatus) != 80) @compileError("AES67 PtpStatus ABI mirror must stay 80 bytes");
+}
+/// Counters and PTP status are optional exports: a DLL built before they were
+/// added keeps working, the diagnostics simply report null.
+pub const Diagnostics = struct {
+    counters: ?Counters,
+    ptp: ?PtpStatus,
+};
 const started_event = 1;
 const sender_exited_event = 2;
 const stop_complete_event = 3;
@@ -88,6 +125,8 @@ pub const Session = struct {
     const Retire = *const fn (*anyopaque, u32) callconv(.C) c_int;
     const Poll = *const fn (*anyopaque, *Event) callconv(.C) c_int;
     const Submit = *const @TypeOf(@import("output_stream.zig").publishPool);
+    const CountersFn = *const fn (*anyopaque, *Counters) callconv(.C) c_int;
+    const PtpStatusFn = *const fn (*anyopaque, *PtpStatus) callconv(.C) c_int;
     lib: std.DynLib,
     handle: *anyopaque,
     start_fn: Start,
@@ -95,6 +134,8 @@ pub const Session = struct {
     close_fn: Retire,
     poll_fn: Poll,
     submit_leased: Submit,
+    counters_fn: ?CountersFn = null,
+    ptp_status_fn: ?PtpStatusFn = null,
     stop_timeout_ms: u32,
     started: bool = false,
     failed: bool = false,
@@ -198,6 +239,9 @@ pub const Session = struct {
         const close_fn = try u.symbol(Retire, &lib, "nsp_aes67_close");
         const poll_fn = try u.symbol(Poll, &lib, "nsp_aes67_poll_lifecycle_event");
         const submit_leased = try u.symbol(Submit, &lib, "nsp_aes67_submit_leased");
+        // Optional observability exports: older DLLs lack them.
+        const counters_fn = lib.lookup(CountersFn, "nsp_aes67_counters");
+        const ptp_status_fn = lib.lookup(PtpStatusFn, "nsp_aes67_ptp_status");
         var handle: ?*anyopaque = null;
         try check("create", create(&handle));
         const session = handle orelse return error.Aes67MissingHandle;
@@ -206,13 +250,33 @@ pub const Session = struct {
         errdefer _ = close_fn(session, playback.drainTimeoutMs);
         try check("configure", configure(session, &config));
         return .{ .lib = lib, .handle = session, .start_fn = start_fn, .stop_fn = stop_fn, .close_fn = close_fn,
-            .poll_fn = poll_fn, .submit_leased = submit_leased, .stop_timeout_ms = playback.drainTimeoutMs };
+            .poll_fn = poll_fn, .submit_leased = submit_leased, .counters_fn = counters_fn,
+            .ptp_status_fn = ptp_status_fn, .stop_timeout_ms = playback.drainTimeoutMs };
     }
 
     pub fn start(self: *Session) !void {
         // Synchronous ABI call. The module owns the configured PTP deadline.
         try check("start", self.start_fn(self.handle));
         try self.checkRunning();
+    }
+
+    /// Counters plus PTP status, for the host's periodic diagnostics file.
+    /// Both exports are optional so a pre-diagnostics DLL still opens.
+    pub fn diagnostics(self: *Session) !Diagnostics {
+        return .{
+            .counters = if (self.counters_fn) |function| blk: {
+                var counters = std.mem.zeroes(Counters);
+                if (function(self.handle, &counters) != 0) return error.Aes67DiagnosticsUnavailable;
+                break :blk counters;
+            } else null,
+            .ptp = if (self.ptp_status_fn) |function| blk: {
+                var status = std.mem.zeroes(PtpStatus);
+                // STATE means no PTP status exists yet (before start); null is
+                // the honest value, not an error.
+                if (function(self.handle, &status) != 0) break :blk null;
+                break :blk status;
+            } else null,
+        };
     }
 
     pub fn checkRunning(self: *Session) !void {
@@ -234,7 +298,10 @@ pub const Session = struct {
                     std.log.err("AES67 sender exited (code {d}, detail {d})", .{ event.code, event.detail });
                 },
                 stop_complete_event => self.stopped = true,
-                ptp_lost_event => std.log.warn("AES67 PTP lock lost; module paused RTP", .{}),
+                // PTP_LOST is emitted when holdover starts; RTP keeps flowing
+                // until the holdover deadline expires. The old text claimed RTP
+                // had already stopped and misled field diagnosis.
+                ptp_lost_event => std.log.warn("AES67 PTP lock lost; RTP continues through holdover until its deadline", .{}),
                 else => {},
             }
         }
@@ -279,6 +346,17 @@ test "prebuffer is expressed in milliseconds for every packet time" {
     try std.testing.expectEqual(@as(u32, 10), prebufferMilliseconds(480, 48_000));
     try std.testing.expectEqual(@as(u32, 1), prebufferMilliseconds(48, 48_000));
     try std.testing.expectEqual(@as(u32, 10), prebufferMilliseconds(960, 96_000));
+}
+
+test "diagnostics ABI mirrors the Rust Counters/PtpStatus layouts" {
+    try std.testing.expectEqual(@as(usize, 80), @sizeOf(Counters));
+    try std.testing.expectEqual(@as(usize, 0), @offsetOf(Counters, "packets"));
+    try std.testing.expectEqual(@as(usize, 40), @offsetOf(Counters, "bytes"));
+    try std.testing.expectEqual(@as(usize, 56), @offsetOf(Counters, "offset_ns"));
+    try std.testing.expectEqual(@as(usize, 80), @sizeOf(PtpStatus));
+    try std.testing.expectEqual(@as(usize, 24), @offsetOf(PtpStatus, "gm_identity"));
+    try std.testing.expectEqual(@as(usize, 32), @offsetOf(PtpStatus, "reason"));
+    try std.testing.expectEqual(@as(usize, 64), @offsetOf(PtpStatus, "transitions"));
 }
 
 fn check(operation: []const u8, code: c_int) !void {

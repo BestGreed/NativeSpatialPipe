@@ -1517,6 +1517,9 @@ mod tests {
             interface: Ipv4Addr::LOCALHOST,
             unicast_master: Some(Ipv4Addr::LOCALHOST),
             gm_identity: Some([0xae, 0x6f, 0x0d, 0xff, 0xfe, 0x8e, 0x86, 0xfc]),
+            // gm mode listens for this long before announcing; the test cannot
+            // wait the 6 s production default.
+            announce_timeout_ns: 2 * NS_PER_MS,
             event_port: view_event.local_addr().unwrap().port(),
             general_port: view_general.local_addr().unwrap().port(),
             local_event_port: 0,
@@ -1537,6 +1540,9 @@ mod tests {
     #[test]
     fn gm_engine_drives_real_udp_announce_sync_follow_up_and_delay_resp() {
         let (mut runtime, view_event, view_general) = gm_runtime();
+        assert_eq!(runtime.status().role, Role::Listening);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        runtime.tick().unwrap();
         assert_eq!(runtime.status().role, Role::Gm);
         let mut announce = None;
         let mut sync = None;

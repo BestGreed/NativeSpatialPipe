@@ -54,30 +54,16 @@ test "16ch at 48k/1ms splits into two 8ch flows on shared port 5004" {
     try std.testing.expectEqual(@as(usize, 8 * 48 * 3), 1152);
 }
 
-test "44.1 kHz uses 48 samples: L16 default, ptime 1.09, 918.75 pps" {
-    var file = multicastFile();
-    file.sampleRate = 44_100;
-    file.groupBase = "239.69.16.1";
-    const prepared = try cfg.prepare(file, 16);
-    try std.testing.expectEqual(cfg.BitDepth.L16, prepared.bit_depth);
-    try std.testing.expectEqual(@as(u16, 48), prepared.frames_per_packet);
-    try std.testing.expectEqual(@as(u8, 2), prepared.bytes_per_sample);
-    try std.testing.expectApproxEqAbs(@as(f64, 1.088435), prepared.ptimeMilliseconds(), 0.0001);
-    try std.testing.expectApproxEqAbs(@as(f64, 918.75), prepared.packetsPerSecond(), 0.001);
-    try std.testing.expectEqual(@as(u8, 2), prepared.flow_count);
-    // 8ch L16 1ms profile = 768 B.
-    try std.testing.expectEqual(@as(usize, 8 * 48 * 2), 768);
-}
-
-test "96 kHz 1ms L24 fits five channels per flow, so 8ch needs two flows" {
-    var file = multicastFile();
-    file.sampleRate = 96_000;
-    const prepared = try cfg.prepare(file, 8);
-    try std.testing.expectEqual(@as(u16, 96), prepared.frames_per_packet);
-    try std.testing.expectEqual(@as(u8, 2), prepared.flow_count);
-    try std.testing.expect(prepared.flows[0].channels <= 5);
-    try std.testing.expect(prepared.flows[1].channels <= 5);
-    try std.testing.expectEqual(@as(u16, 8), prepared.flows[0].channels + prepared.flows[1].channels);
+test "non-48 kHz AES67 rates are rejected until the renderer can resample" {
+    // The renderer pipeline is fixed at 48 kHz (output_processing.zig) and the
+    // pipeline ABI carries no rate, so a different RTP rate would run the module
+    // at the wrong cadence instead of failing.
+    const unsupported = [_]u32{ 44_100, 88_200, 96_000, 176_400, 192_000 };
+    for (unsupported) |rate| {
+        var file = multicastFile();
+        file.sampleRate = rate;
+        try std.testing.expectError(error.UnsupportedAes67SampleRate, cfg.prepare(file, 16));
+    }
 }
 
 test "short packet times scale samples and standard/extension differ" {
@@ -94,12 +80,6 @@ test "short packet times scale samples and standard/extension differ" {
     try std.testing.expectEqual(@as(u8, 1), prepared.flow_count);
     try std.testing.expectEqual(@as(u16, 16), prepared.flows[0].channels);
     try std.testing.expectEqual(@as(u8, 1), prepared.abi_flow_mode);
-    // 192k/125us L24: 16 x 24 x 3 = 1152 B single flow in extension.
-    file.sampleRate = 192_000;
-    prepared = try cfg.prepare(file, 16);
-    try std.testing.expectEqual(@as(u16, 24), prepared.frames_per_packet);
-    try std.testing.expectEqual(@as(u8, 1), prepared.flow_count);
-    try std.testing.expectEqual(@as(u16, 16), prepared.flows[0].channels);
     // standard splits the same mode into 2 x 8ch.
     file.flowMode = .standard;
     prepared = try cfg.prepare(file, 16);
@@ -107,7 +87,6 @@ test "short packet times scale samples and standard/extension differ" {
     try std.testing.expectEqual(@as(u8, 0), prepared.abi_flow_mode);
     // 333 us sample count and ptime formatting are independent of mode.
     file.ptimeUs = 333;
-    file.sampleRate = 48_000;
     prepared = try cfg.prepare(file, 16);
     try std.testing.expectEqual(@as(u16, 16), prepared.frames_per_packet);
     try std.testing.expectApproxEqAbs(@as(f64, 0.333333), prepared.ptimeMilliseconds(), 0.00001);
@@ -118,15 +97,12 @@ test "short packet times scale samples and standard/extension differ" {
 
 test "unservable rate/ptime/channel combinations are rejected" {
     var file = multicastFile();
-    file.sampleRate = 192_000;
-    // 192k/1ms 16ch L24: 2ch per flow, 8 flows is the maximum aggregation.
-    _ = try cfg.prepare(file, 16);
-    // 2 ms -> 1ch per flow -> 16 flows (> 8): reject.
-    file.ptimeUs = 2_000;
-    try std.testing.expectError(error.Aes67PayloadTooLarge, cfg.prepare(file, 16));
-    file.ptimeUs = 1_000;
+    // 352.8 kHz is not an AES67 family rate at all.
     file.sampleRate = 352_800;
     try std.testing.expectError(error.InvalidAes67SampleRate, cfg.prepare(file, 2));
+    // 96 kHz is a valid module rate but the renderer path is fixed at 48 kHz.
+    file.sampleRate = 96_000;
+    try std.testing.expectError(error.UnsupportedAes67SampleRate, cfg.prepare(file, 16));
     file.sampleRate = 48_000;
     file.ptimeUs = 300;
     try std.testing.expectError(error.InvalidAes67Ptime, cfg.prepare(file, 2));
@@ -147,12 +123,8 @@ test "standard and extension modes pick flow counts from the 1440B budget" {
         .{ .rate = 48_000, .ptime = 250, .codec = .L24, .channels = 16, .standard = &.{ 8, 8 }, .extension = &.{16} },
         // 48k/1ms L24: 16ch x 48 x 3 = 2304 B -> both split at 8/10 channels.
         .{ .rate = 48_000, .ptime = 1_000, .codec = .L24, .channels = 16, .standard = &.{ 8, 8 }, .extension = &.{ 8, 8 } },
-        // 192k/125us L24: 16ch x 24 x 3 = 1152 B -> extension single.
-        .{ .rate = 192_000, .ptime = 125, .codec = .L24, .channels = 16, .standard = &.{ 8, 8 }, .extension = &.{16} },
         // 48k/125us L24: 16ch x 6 x 3 = 288 B -> extension single.
         .{ .rate = 48_000, .ptime = 125, .codec = .L24, .channels = 16, .standard = &.{ 8, 8 }, .extension = &.{16} },
-        // 192k/1ms L24: 2ch per flow -> 8 x 2ch in both modes.
-        .{ .rate = 192_000, .ptime = 1_000, .codec = .L24, .channels = 16, .standard = &.{ 2, 2, 2, 2, 2, 2, 2, 2 }, .extension = &.{ 2, 2, 2, 2, 2, 2, 2, 2 } },
         // 48k/1ms L16: 16ch x 48 x 2 = 1536 B -> 2 x 8 in both modes.
         .{ .rate = 48_000, .ptime = 1_000, .codec = .L16, .channels = 16, .standard = &.{ 8, 8 }, .extension = &.{ 8, 8 } },
     };
@@ -320,15 +292,15 @@ test "playback JSON carries the new transport fields and validates" {
     const allocator = std.testing.allocator;
     const text =
         "{\"bridgeDll\":\"C:/fixture/bridge.dll\",\"outputBackend\":\"aes67\",\"outputLayout\":\"9.1.6\"," ++
-        "\"sampleRate\":96000,\"aes67\":{\"sampleRate\":96000,\"ptimeUs\":500,\"codec\":\"L24\"," ++
+        "\"sampleRate\":48000,\"aes67\":{\"sampleRate\":48000,\"ptimeUs\":500,\"codec\":\"L24\"," ++
         "\"flowMode\":\"standard\",\"basePort\":5004,\"groupBase\":\"239.69.0.1\"," ++
         "\"sapAddress\":\"224.2.127.254\",\"sapIntervalMs\":30000,\"srcInterfaceIp\":\"192.0.2.63\"}}";
     var parsed = try playback.parse(allocator, text);
     defer parsed.deinit();
     try parsed.value.validate();
     const prepared = try cfg.prepare(parsed.value.aes67.?, parsed.value.channelCount());
-    try std.testing.expectEqual(@as(u32, 96_000), prepared.sample_rate);
-    try std.testing.expectEqual(@as(u16, 48), prepared.frames_per_packet);
+    try std.testing.expectEqual(@as(u32, 48_000), prepared.sample_rate);
+    try std.testing.expectEqual(@as(u16, 24), prepared.frames_per_packet);
     try std.testing.expectEqual(@as(u8, 2), prepared.flow_count);
     try std.testing.expect(parsed.value.aes67.?.ptp == null);
 }

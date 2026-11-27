@@ -534,9 +534,9 @@
         },
         "sampleRate": {
           "type": "integer",
-          "enum": [44100, 48000, 88200, 96000, 176400, 192000],
+          "enum": [48000],
           "default": 48000,
-          "description": "RTP sampling rate / media-clock rate. 48 kHz is AES67-mandatory (AES67-2023 sec 7.1 line 1416); 44.1 and 96 kHz are recommended; 88.2/176.4/192 kHz are RAVENNA-family extensions outside AES67. The renderer sampleRate must equal this value."
+          "description": "RTP sampling rate / media-clock rate. 48 kHz only: the renderer path feeds 48 kHz PCM and does not resample, so the scheduler rejects other rates until processingConfig() carries a rate. The module itself can carry 44.1/88.2/96/176.4/192 kHz; those stay disabled in the UI."
         },
         "ptimeUs": {
           "type": "integer",

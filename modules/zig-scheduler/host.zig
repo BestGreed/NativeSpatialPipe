@@ -659,6 +659,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     };
     const deadline = if (duration_ms) |ms| c.GetTickCount64() + ms else std.math.maxInt(u64);
     var nextCheck: u64 = 0;
+    var next_aes67_diagnostics: u64 = 0;
     var reportedAoipFault:u32=0;
     var aes67_poll_failure: ?anyerror = null;
     while (c.GetTickCount64() < deadline and !u.exists(stopFile)) {
@@ -668,6 +669,16 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
                 break;
             };
             if (session.failed) break;
+            // Field diagnosis previously had only host-stderr.txt and packet
+            // captures: counters and PTP status are written where the other
+            // output diagnostics live (aoip-output-fault.json uses the same dir).
+            const now_ticks = c.GetTickCount64();
+            if (now_ticks >= next_aes67_diagnostics) {
+                next_aes67_diagnostics = now_ticks + 1000;
+                writeAes67Diagnostics(out, session) catch |err| {
+                    std.log.warn("AES67 diagnostics write failed: {s}", .{@errorName(err)});
+                };
+            }
         }
         if(aoip_source) |source| {
             const fault=try pipelines[source].aoipFault();
@@ -729,6 +740,15 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         if (session.failed) return error.Aes67OutputFailed;
     }
 }
+/// Periodic AES67 snapshot for field diagnosis: sent/silent/dropped/late
+/// packets, RTP bytes, lock flags and the PTP role/identity/reason. Written
+/// once a second next to the other output diagnostics.
+fn writeAes67Diagnostics(out: []const u8, session: *aes67_module.Session) !void {
+    const path = try u.join(&.{ out, "aes67-diagnostics.json" });
+    defer u.a.free(path);
+    try u.writeJson(path, try session.diagnostics());
+}
+
 fn shutdown(hook: *n.Hook, receiver: *n.Receiver, pipelines: []n.Pipeline, bridge: *Bridge, thread: *std.Thread, recorder: *Recorder, recordThread: *?std.Thread, out: []const u8) !void {
     // Never free a mapping/renderer until Hook stop and receiver join are proven.
     var stats: ?std.json.Parsed(u.Value) = null;

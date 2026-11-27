@@ -40,6 +40,8 @@ pub const auto_max_flows: u8 = 4;
 /// device lists. Trimmed length must fit 63 bytes of printable ASCII.
 pub const max_name_len: usize = 63;
 
+/// Rates the AES67 module itself can carry. The scheduler prepares only
+/// 48 kHz until the renderer path can resample (see prepare()).
 pub const supported_sample_rates = [_]u32{ 44_100, 48_000, 88_200, 96_000, 176_400, 192_000 };
 pub const supported_packet_times_us = [_]u16{ 125, 250, 333, 500, 1_000, 2_000, 4_000 };
 
@@ -423,6 +425,11 @@ pub fn prepare(file: File, channels: usize) !Prepared {
     try validateName(file.name);
     if (std.mem.indexOfScalar(u32, &supported_sample_rates, file.sampleRate) == null)
         return error.InvalidAes67SampleRate;
+    // The renderer path (output_processing.zig) feeds 48 kHz PCM and the
+    // pipeline-creation ABI has no sample-rate parameter, so any other RTP rate
+    // would timestamp 48 kHz frames at the wrong cadence without an error.
+    // Reject it until processingConfig() carries a rate and resampling exists.
+    if (file.sampleRate != 48_000) return error.UnsupportedAes67SampleRate;
     if (std.mem.indexOfScalar(u16, &supported_packet_times_us, file.ptimeUs) == null)
         return error.InvalidAes67Ptime;
     const samples = samplesPerPacket(file.sampleRate, file.ptimeUs) orelse return error.InvalidAes67Ptime;
