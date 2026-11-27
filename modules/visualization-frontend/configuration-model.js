@@ -276,12 +276,17 @@ export function aes67BlockProblems(aes,channels){
  // (address,port) pair. A multicast destination requires srcInterfaceIp.
  if(flows.length&&Number.isInteger(channels)&&flows.reduce((total,flow)=>total+Number(flow?.channels??0),0)!==channels)problems.push({path:'aes67.flows',message:'AES67 多流声道总数必须等于布局声道数'});
  let offset=0;
+ const basePort=intRange(Number(aes?.basePort??5004),1024,65534)&&Number(aes?.basePort??5004)%2===0?Number(aes?.basePort??5004):5004;
+ const strictPorts=(aes?.portPolicy??'strict')!=='explicit';
  const seen=new Set();
  const seenGroups=new Set();
  const seenSsrc=new Map();
  flows.forEach((flow,index)=>{
   if(!isAes67Destination(flow?.destIp))problems.push({path:'aes67.flows.'+index+'.destIp',message:'流 '+(index+1)+' 目标 IP 必须是有效的单播 IPv4 或组播组'});
-  if(!intRange(flow?.port,1,65535))problems.push({path:'aes67.flows.'+index+'.port',message:'流 '+(index+1)+' 端口必须在 1–65535'});
+  // Mirror aes67_config.zig: RTP ports are 1024-65534 even; strict policy
+  // requires every flow to use the base port (5004 by default).
+  if(!intRange(flow?.port,1024,65534)||Number(flow?.port)%2!==0)problems.push({path:'aes67.flows.'+index+'.port',message:'流 '+(index+1)+' 端口必须是 1024–65534 的偶数'});
+  else if(strictPorts&&Number(flow?.port)!==basePort)problems.push({path:'aes67.flows.'+index+'.port',message:'strict 端口策略要求所有流使用基准端口 '+basePort+'（可在高级设置改为 explicit）'});
   if(!intRange(flow?.channels,1,aes67MaxChannelsPerFlow(aes)))problems.push({path:'aes67.flows.'+index+'.channels',message:'流 '+(index+1)+' 声道必须在 1–'+aes67MaxChannelsPerFlow(aes)+'（当前打包模式）'});
   if(flow?.channelOffset!==offset)problems.push({path:'aes67.flows.'+index+'.channelOffset',message:'AES67 流声道偏移必须连续且从 0 开始'});
   offset+=Number(flow?.channels??0);

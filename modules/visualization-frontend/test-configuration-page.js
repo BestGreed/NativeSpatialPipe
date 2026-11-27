@@ -191,6 +191,10 @@ try{
  assert.equal(saves,blocked,'invalid empty AES67 destination must not be saved');
  assert.match(element('result').textContent,/(校验未通过|validation failed)/i);
  input('aes67.flows.0.destIp').value='192.0.2.222';input('aes67.ssrc').value='1314082870';
+ // Unicast multi-flow derives port 5006 for flow 2, so the default strict policy
+ // cannot apply; the panel must expose that through the explicit policy and the
+ // client-side check below.
+ input('aes67.portPolicy').value='explicit';
  input('aes67.ringPackets').value='512';
  input('aes67.ptp.gmUtcOffset').value='5';
  input('sourcePolicy').value='fixed';input('sourcePolicy').listeners.change();
@@ -205,6 +209,12 @@ try{
  input('aes67.ptp.gmUtcOffset').value='';
  await element('configForm').listeners.submit({preventDefault(){}});
  assert.equal(playback.aes67.ptp.gmUtcOffset,undefined,'clearing the UTC offset removes it (ARB)');
+ const strictBlocked=saves;
+ input('aes67.portPolicy').value='strict';
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(saves,strictBlocked,'strict policy with a non-base port must be rejected in the client');
+ assert.match(element('result').textContent,/strict|基准端口/);
+ input('aes67.portPolicy').value='explicit';
  await element('reload').onclick();
  assert.equal(input('sourcePolicy').value,'fixed');
  assert.ok(input('sourceStream'));

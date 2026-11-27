@@ -1136,4 +1136,8 @@ AES67 默认使用固定源流。=AES67 defaults to a fixed source stream.
 输出同样可开启=the output can enable it too
 未填写=not set
 的目标与端口在基础设置中编辑=destination and port are edited in the basic settings
+端口必须是=RTP port must be
+的偶数=an even number
+端口策略要求所有流使用基准端口=the strict port policy requires every flow to use base port
+可在高级设置改为=override the policy to explicit under advanced settings
 `.trim().split('\n').map(line=>{const at=line.indexOf('=');return [line.slice(0,at).trim(),line.slice(at+1).trim()];})));

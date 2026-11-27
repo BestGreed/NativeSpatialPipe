@@ -4693,7 +4693,7 @@
       "path": "modules/visualization-frontend/configuration-model.js",
       "sourcePath": "modules/visualization-frontend/configuration-model.js",
       "sourceSha256": "c470682f2f6c27c0b7c4867deb315ca547c477a6a5c6b095706ab394091698c4",
-      "sha256": "781397706fa52a26684baac2dd72551489619448f7104d8ef0349eec82b65f13"
+      "sha256": "9412b1e45036a89c74039b1249e92b2a2bff492ca1175d2817be82f883b7f4e9"
     },
     {
       "path": "modules/visualization-frontend/configuration.css",
@@ -4735,7 +4735,7 @@
       "path": "modules/visualization-frontend/i18n-en.js",
       "sourcePath": "modules/visualization-frontend/i18n-en.js",
       "sourceSha256": "2d5a291bf569d8eee26c48adb9bf4d961f79b3df73edc613fa170a60428988fe",
-      "sha256": "19f11655de78638277f0be19546be13ea70f825bd18f588856dfff2be4932ea1"
+      "sha256": "67a2d9da76a9e4f68acca28cfd3cdc8017f4a92b3788f2eb2e49d4dd409a4522"
     },
     {
       "path": "modules/visualization-frontend/i18n.js",
@@ -4852,13 +4852,13 @@
       "path": "modules/visualization-frontend/test-configuration-page.js",
       "sourcePath": "modules/visualization-frontend/test-configuration-page.js",
       "sourceSha256": "5552783469ffb6b44b697f6c278e23cf1b033d46930caf597bc4102c48a80365",
-      "sha256": "faff52570ce00355d27e71eb8990738861ded2f6907dc278ca66229ed46989d7"
+      "sha256": "22b325f0cf4c1409e0d3082164a43cd078a004b33853d8c2d1cf87f3bb268b95"
     },
     {
       "path": "modules/visualization-frontend/test-configuration.js",
       "sourcePath": "modules/visualization-frontend/test-configuration.js",
       "sourceSha256": "7da472a4495f17eca609bff7661cb09f316bab3d3bede02a4ee9c06810148d6c",
-      "sha256": "196cd24ca092bedab2636b1aaca8b1ff3233ae0655aba2d94ec038cd306527ac"
+      "sha256": "a7e41c0d290b4f30dedabeb547f8b12f8c26d91c599e41604c32c5cd74590bf6"
     },
     {
       "path": "modules/visualization-frontend/test-data.js",

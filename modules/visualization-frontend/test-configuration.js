@@ -182,10 +182,18 @@ const explicit916=prepare({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6
 assert.deepEqual(explicit916.aes67.flows,explicitFlows);
 // Flow-level validation mirrors aes67_config.zig: bad address, duplicate
 // (address,port) and multicast without a bound source interface.
-const flowCase=flows=>validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sourcePolicy:'fixed',sampleRate:48000,aes67:{...aes916,flows}}).map(problem=>problem.path);
+const flowCase=(flows,portPolicy)=>validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sourcePolicy:'fixed',sampleRate:48000,aes67:{...aes916,portPolicy:portPolicy??'strict',flows}}).map(problem=>problem.path);
 assert.ok(flowCase([{destIp:'239.1.0.1',port:5010,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:32},{destIp:'240.1.1.1',port:5012,channels:8,channelOffset:8,payloadType:96,ssrc:0,ttl:32}]).includes('aes67.flows.1.destIp'));
 assert.ok(flowCase([{destIp:'239.1.0.1',port:5010,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:32},{destIp:'239.1.0.1',port:5010,channels:8,channelOffset:8,payloadType:96,ssrc:0,ttl:32}]).includes('aes67.flows.1.port'));
-assert.ok(flowCase([{destIp:'239.1.0.1',port:5010,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:32},{destIp:'239.1.0.2',port:5012,channels:8,channelOffset:8,payloadType:96,ssrc:0,ttl:32}]).length===0);
+// Port policy mirrors the scheduler: explicit allows lab ports, strict only
+// accepts the base port, and ports are always 1024-65534 even.
+const twoFlows=(firstPort,secondPort)=>[{destIp:'239.1.0.1',port:firstPort,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:32},{destIp:'239.1.0.2',port:secondPort,channels:8,channelOffset:8,payloadType:96,ssrc:0,ttl:32}];
+assert.ok(!flowCase(twoFlows(5004,5004)).includes('aes67.flows.1.port'),'strict accepts the base port for every multicast flow');
+assert.ok(flowCase(twoFlows(5004,5006)).includes('aes67.flows.1.port'),'strict rejects a non-base port');
+assert.ok(flowCase(twoFlows(5010,5012),'explicit').length===0,'explicit allows per-flow ports');
+assert.ok(!flowCase(twoFlows(5004,5004),'explicit').includes('aes67.flows.1.port'));
+assert.ok(flowCase(twoFlows(5004,5003)).some(path=>path==='aes67.flows.1.port'),'odd ports are rejected');
+assert.ok(flowCase(twoFlows(5004,1022)).some(path=>path==='aes67.flows.1.port'),'ports below 1024 are rejected');
 assert.ok(validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sourcePolicy:'fixed',sampleRate:48000,aes67:{...aes916,srcInterfaceIp:''}}).map(problem=>problem.path).includes('aes67.srcInterfaceIp'));
 assert.ok(validateAes67({...asioBase,outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000,aes67:{...aes67,ttl:0}}).map(problem=>problem.path).includes('aes67.ttl'));
 // Per-flow SSRC: hex display/input, base-derivation default, and the
@@ -206,7 +214,7 @@ assert.ok(validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',
 // Proposed minimum splits are separate from saved, user-defined packing.
 assert.deepEqual(proposeAes67Flows(8).map(flow=>flow.channels),[8]);
 assert.deepEqual(proposeAes67Flows(10).map(flow=>flow.channels),[8,2]);
-const custom={...aes916,flows:[{...first,channels:6},{...first,destIp:'239.1.0.2',channels:6,channelOffset:6},{...first,destIp:'239.1.0.3',channels:4,channelOffset:12}],channelMap:aes67StandardChannelMap916};
+const custom={...aes916,portPolicy:'explicit',flows:[{...first,channels:6},{...first,destIp:'239.1.0.2',channels:6,channelOffset:6},{...first,destIp:'239.1.0.3',channels:4,channelOffset:12}],channelMap:aes67StandardChannelMap916};
 const saved=prepare({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',aes67:custom},'playback');
 assert.deepEqual(saved.aes67,{...custom,ptp:expectedLegacy.ptp});
 assert.deepEqual(validateAes67(saved),[]);
@@ -248,7 +256,7 @@ assert.equal(aes67MaxChannelsPerFlow({flowMode:'extension',ptimeUs:125,sampleRat
 assert.deepEqual(proposeAes67Flows(16,first,10).map(flow=>flow.channels),[10,6]);
 assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,ptimeUs:123},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.ptimeUs'));
 assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,framesPerPacket:6},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.framesPerPacket'),'the legacy frames key must agree with ptimeUs');
-const extension={...aes67,srcInterfaceIp:'192.0.2.63',flowMode:'extension',flows:proposeAes67Flows(16,first,10)};materializeAes67Destinations(extension);
+const extension={...aes67,srcInterfaceIp:'192.0.2.63',flowMode:'extension',portPolicy:'explicit',flows:proposeAes67Flows(16,first,10)};materializeAes67Destinations(extension);
 assert.deepEqual(validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sourcePolicy:'fixed',sampleRate:48000,aes67:extension}),[]);
 assert.ok(validateAes67({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sourcePolicy:'fixed',sampleRate:48000,aes67:{...extension,flowMode:'standard'}}).some(problem=>problem.path.startsWith('aes67.flows.')&&problem.message.includes('当前打包模式')));
 assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,flowMode:'packed'},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.flowMode'));
