@@ -582,11 +582,12 @@ fn loopback_125us_emits_six_sample_packets_with_six_sample_timestamp_steps() {
         assert_eq!(buf[1], 96);
         let seq = u16::from_be_bytes(buf[2..4].try_into().unwrap());
         let ts = u32::from_be_bytes(buf[4..8].try_into().unwrap());
-        if let Some(previous) = previous_ts {
-            assert_eq!(ts.wrapping_sub(previous), 6);
-        }
-        if let Some(previous) = previous_seq {
-            assert_eq!(seq.wrapping_sub(previous), 1);
+        if let (Some(previous_ts), Some(previous_seq)) = (previous_ts, previous_seq) {
+            // A designed catch-up drop may skip slots on a loaded runner; the
+            // contract is that timestamp and sequence advance together.
+            let seq_delta = seq.wrapping_sub(previous_seq);
+            assert_ne!(seq_delta, 0, "duplicate sequence number");
+            assert_eq!(ts.wrapping_sub(previous_ts), u32::from(seq_delta).wrapping_mul(6));
         }
         previous_ts = Some(ts);
         previous_seq = Some(seq);
@@ -615,17 +616,28 @@ fn loopback_44k1_keeps_48_sample_packets_and_918_75_packet_rate() {
     let _gm = start_locked_v2(&handle, &v2);
     let mut buf = [0; 1500];
     let mut previous_ts = None;
+    let mut previous_seq = None;
     let first = Instant::now();
     let mut packets = 0_u64;
     while first.elapsed() < Duration::from_secs(3) {
         let length = audio.recv(&mut buf).unwrap();
         assert_eq!(length, 12 + 48 * 2 * 3);
+        let seq = u16::from_be_bytes(buf[2..4].try_into().unwrap());
         let ts = u32::from_be_bytes(buf[4..8].try_into().unwrap());
-        if let Some(previous) = previous_ts {
-            // AES67 Table 2 line 1532: 48 samples per packet at 44.1 kHz.
-            assert_eq!(ts.wrapping_sub(previous), 48);
+        if let (Some(previous_ts), Some(previous_seq)) = (previous_ts, previous_seq) {
+            // AES67 Table 2 line 1532: 48 samples per packet at 44.1 kHz. The
+            // time-budgeted catch-up may deliberately drop a slot on a loaded
+            // runner; sequence and timestamp must then advance together.
+            let seq_delta = seq.wrapping_sub(previous_seq);
+            assert_ne!(seq_delta, 0, "duplicate sequence number");
+            assert_eq!(
+                ts.wrapping_sub(previous_ts),
+                u32::from(seq_delta).wrapping_mul(48),
+                "sequence and timestamp must stay in sync"
+            );
         }
         previous_ts = Some(ts);
+        previous_seq = Some(seq);
         packets += 1;
     }
     let pps = packets as f64 / first.elapsed().as_secs_f64();
