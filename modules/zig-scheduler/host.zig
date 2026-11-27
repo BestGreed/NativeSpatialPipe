@@ -405,6 +405,9 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     const aes67_profile=if(desktop) |settings| (if(std.mem.eql(u8,settings.value.outputBackend,"aes67")) settings.value.aes67 else null) else null;
     var aes67: ?aes67_module.Session = null;
     var aes67_source: ?usize = null;
+    // Pipeline the AES67 callback is bound to (session stream or, when
+    // pcmCapture.routeToOutput is set, the PCM capture pipeline).
+    var aes67_pipeline: ?*@TypeOf(pipelines[0]) = null;
     var wasapi:?@import("wasapi_control.zig").Session=null;
     const wasapi_source:usize=if(desktop) |settings| @intCast(settings.value.sourceStream) else 0;
     const wasapi_pipeline=if(pcm_settings!=null and pcm_settings.?.enabled and pcm_settings.?.routeToOutput) &pcm.?.pipeline.? else &pipelines[wasapi_source];
@@ -459,8 +462,9 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     }
     defer if (aes67) |*session| {
         var safe_to_close = true;
-        if (aes67_source) |source| {
-            const pipeline = &pipelines[source];
+        const target: ?*@TypeOf(pipelines[0]) = aes67_pipeline orelse
+            (if (aes67_source) |source| &pipelines[source] else null);
+        if (target) |pipeline| {
             // Only a joined writer proves that the DLL callback is no longer
             // reachable. Before capture starts, this host can join it directly.
             // Every wait is bounded: a stuck capture side must not turn process
@@ -486,13 +490,25 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     };
     if (aes67_profile != null) {
         if (aoip_enabled or wasapi_profile != null) return error.DuplicateOutputBackend;
+        // AES67 is a full output backend like aoip/wasapi: an ASIO override in
+        // the same invocation is a configuration conflict, not something to
+        // silently ignore.
+        for([_][]const u8{"--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
+            if(u.option(args,key)!=null)return error.DuplicateOutputBackend;
+        }
         const settings = desktop.?.value;
         const source: usize = settings.sourceStream;
         if (source >= pipelines.len) return error.InvalidAes67Stream;
+        // Respect pcmCapture.routeToOutput like the WASAPI branch: the AES67
+        // callback then consumes the PCM capture pipeline instead of the
+        // session stream, and teardown joins whichever pipeline it bound.
+        const route_pcm = pcm_settings != null and pcm_settings.?.enabled and pcm_settings.?.routeToOutput;
+        const target = if (route_pcm) &pcm.?.pipeline.? else &pipelines[source];
         aes67 = try aes67_module.Session.open(root, settings);
         try aes67.?.start();
-        try pipelines[source].bindAes67(settings.processingConfig(), aes67.?.submit_leased, aes67.?.handle);
-        aes67_source = source;
+        try target.bindAes67(settings.processingConfig(), aes67.?.submit_leased, aes67.?.handle);
+        aes67_pipeline = target;
+        if (!route_pcm) aes67_source = source;
     }
     if (if(aoip_enabled or wasapi_profile!=null or aes67_profile!=null) @as(?[]const u8,null) else if(desktop) |settings| @as(?[]const u8,settings.value.driver) else u.option(args, "--asio-driver")) |driver| {
         const device_dll = if(desktop) |settings| settings.value.asioDll else u.option(args, "--asio-dll") orelse return error.AsioDllRequired;
@@ -678,6 +694,9 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
                 writeAes67Diagnostics(out, session) catch |err| {
                     std.log.warn("AES67 diagnostics write failed: {s}", .{@errorName(err)});
                 };
+                writeAes67Sdp(out, session) catch |err| {
+                    std.log.warn("AES67 SDP write failed: {s}", .{@errorName(err)});
+                };
             }
         }
         if(aoip_source) |source| {
@@ -747,6 +766,23 @@ fn writeAes67Diagnostics(out: []const u8, session: *aes67_module.Session) !void 
     const path = try u.join(&.{ out, "aes67-diagnostics.json" });
     defer u.a.free(path);
     try u.writeJson(path, try session.diagnostics());
+}
+
+/// One active SDP per flow, refreshed with the same cadence. This gives the
+/// field a product path to nsp_aes67_sdp (it previously existed only in tests)
+/// and makes the advertised session inspectable without a packet capture.
+fn writeAes67Sdp(out: []const u8, session: *aes67_module.Session) !void {
+    const path = try u.join(&.{ out, "aes67-sdp.txt" });
+    defer u.a.free(path);
+    var text = std.ArrayList(u8).init(u.a);
+    defer text.deinit();
+    for (0..8) |flow| {
+        const sdp = (try session.sdpText(@intCast(flow))) orelse continue;
+        defer u.a.free(sdp);
+        try text.writer().print("--- flow{d} ---\n{s}\n", .{ flow, sdp });
+    }
+    if (text.items.len == 0) try text.appendSlice("no active SDP (no media clock yet)\n");
+    try u.write(path, text.items);
 }
 
 fn shutdown(hook: *n.Hook, receiver: *n.Receiver, pipelines: []n.Pipeline, bridge: *Bridge, thread: *std.Thread, recorder: *Recorder, recordThread: *?std.Thread, out: []const u8) !void {

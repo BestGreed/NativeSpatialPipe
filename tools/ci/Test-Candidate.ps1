@@ -13,6 +13,13 @@ try {
  # no third-party dependencies, so the suite runs locked and offline.
  $cargo = if($env:CARGO_HOME -and (Test-Path (Join-Path $env:CARGO_HOME 'bin/cargo.exe'))){Join-Path $env:CARGO_HOME 'bin/cargo.exe'} else {(Get-Command cargo.exe -ErrorAction SilentlyContinue).Source}
  if(-not $cargo){throw 'cargo.exe not found for the AES67 module tests'}
+ # Load-smoke the real cdylib: the export test is vacuous without this variable,
+ # so CI builds the DLL and points the test at it instead of silently passing.
+ & $cargo build --release --locked --offline --manifest-path modules/aes67/Cargo.toml
+ if($LASTEXITCODE){throw 'AES67 module release build failed'}
+ $dll = Join-Path $root 'modules/aes67/target/release/nsp_aes67.dll'
+ if(-not (Test-Path -LiteralPath $dll)){throw "AES67 release DLL missing: $dll"}
+ $env:NSP_AES67_TEST_DLL = (Resolve-Path -LiteralPath $dll).Path
  & $cargo test --locked --offline --manifest-path modules/aes67/Cargo.toml
  if($LASTEXITCODE){throw 'AES67 module Rust tests failed'}
  $env:NSP_SCHEDULER_TEST_EXE=Join-Path $root 'build/nsp-product/nsp-scheduler.exe'

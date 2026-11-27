@@ -121,7 +121,9 @@ test "AES67 conditional branch requires config and 48 kHz while ASIO/AoIP/WASAPI
     try std.testing.expect(containsString(source_policy, "unified"));
     try std.testing.expect(!containsString(source_policy, "active"));
     try std.testing.expectEqualStrings("object", field(field(thenProperties, "aes67"), "type").string);
-    try std.testing.expect(field(field(thenProperties, "sampleRate"), "enum") == .array);
+    // The renderer rate must equal the (now 48 kHz-only) AES67 rate, otherwise
+    // the module would timestamp 48 kHz frames at a different cadence.
+    try std.testing.expectEqual(@as(i64, 48_000), field(field(thenProperties, "sampleRate"), "const").integer);
     const asio = findBranch(all, "asio");
     const aoip = findBranch(all, "aoip").?;
     const wasapi = findBranch(all, "wasapi").?;
@@ -170,7 +172,7 @@ test "every schema backend enum value is accepted by runtime validation" {
         .bridgeDll = "C:\\fixture\\bridge.dll",
         .outputBackend = "aes67",
         .outputLayout = "5.1.2",
-        .aes67 = .{ .flows = &.{.{ .destIp = "192.168.50.20", .channels = 8 }} },
+        .aes67 = .{ .srcInterfaceIp = "192.168.50.1", .flows = &.{.{ .destIp = "192.168.50.20", .channels = 8 }} },
     };
     try aes67.validate();
     var wasapi = playback.Config{

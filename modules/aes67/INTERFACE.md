@@ -68,13 +68,14 @@ One SDP document is available per active flow; the serialized order is v=, o=, s
 
 Build.ps1 uses Rust 1.97.1 x86_64-pc-windows-gnullvm and LLVM-MinGW. The default target is build/nsp-product/runtime. The DLL is at release/nsp_aes67.dll beneath that target. With repo-relative tooling, the script defaults to work/rust/cargo, work/rust/rustup and work/rust-bootstrap/llvm-fast/llvm-mingw-20261006-ucrt-x86_64/bin.
 
-The portable tools used for loopback verification are selected as follows from the assigned worktree:
+The pinned Windows cross toolchain is installed by tools/ci/Prepare-Windows.ps1 under the checkout's
+work/ directory (never a machine-specific path). The same layout is used for a local run:
 
 ~~~powershell
-$tools = 'C:/WorkSpace/Claw/scratch/lead/nsp-pr1-ci/wt/work'
-$llvm = "$tools/rust-bootstrap/llvm-fast/llvm-mingw-20261006-ucrt-x86_64/bin"
-$env:CARGO_HOME = "$tools/rust/cargo"
-$env:RUSTUP_HOME = "$tools/rust/rustup"
+# Run from the repository root after tools/ci/Prepare-Windows.ps1 has provisioned work/.
+$llvm = "$PWD/work/rust-bootstrap/llvm-fast/llvm-mingw-20261006-ucrt-x86_64/bin"
+$env:CARGO_HOME = "$PWD/work/rust/cargo"
+$env:RUSTUP_HOME = "$PWD/work/rust/rustup"
 $env:PATH = "$env:CARGO_HOME/bin;$llvm;$env:PATH"
 $env:CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER = 'x86_64-w64-mingw32-clang'
 $env:TEMP = $PWD.Path

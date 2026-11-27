@@ -39,9 +39,11 @@ pub fn ptime_milliseconds(timing: PacketTiming) -> String {
     if timing.sample_rate() % 48_000 == 0 {
         let microseconds = timing.packet_time_us();
         if microseconds == 333 {
-            // Table 2 line 1521-1527 names 333 1/3 us; 16/48000 s is a
-            // repeating decimal, so print six fractional digits.
-            return "0.333333".into();
+            // Table 2 line 1521-1527 names 333 1/3 us; 16/48000 s repeats, and
+            // this project's receiver-side SDP parser accepts at most three
+            // fractional digits, so emit 0.333 (short by 0.33 us per packet,
+            // -1 ppm: inside the PTP servo's tolerance).
+            return "0.333".into();
         }
         if microseconds % 1_000 == 0 {
             return format!("{}", microseconds / 1_000);
@@ -212,9 +214,10 @@ pub fn describe(
     let flow = &output.flow;
     let dest = flow.destination.ip();
     let mut s = format!(
-        "v=0\r\no={} {session_id} {version} IN IP4 {}\r\ns={name} flow{index}\r\n",
+        "v=0\r\no={} {session_id} {version} IN IP4 {}\r\ns={} flow{index}\r\n",
         origin_username(name),
-        output.source
+        output.source,
+        media_information(name)
     );
     let _ = write!(s, "c=IN IP4 {dest}");
     if dest.is_multicast() {
@@ -418,7 +421,7 @@ mod tests {
                 Encoding::L24,
                 8,
                 "L24/48000/8",
-                "0.333333",
+                "0.333",
                 "16",
             ),
             (44_100, 333, Encoding::L16, 8, "L16/44100/8", "0.36", "16"),
@@ -708,6 +711,12 @@ mod tests {
             .unwrap();
         assert_eq!(lines[media + 1], "i=StageIN IP4 10.0.0.1 flow0 IN/2");
         assert_eq!(lines.iter().filter(|line| line.starts_with("i=")).count(), 1);
+        // s= is sanitized with the same rule; a configured name cannot inject a
+        // bogus session line (the old test only counted i= lines).
+        assert_eq!(
+            *lines.iter().find(|line| line.starts_with("s=")).unwrap(),
+            "s=StageIN IP4 10.0.0.1 flow0"
+        );
     }
 
     #[test]

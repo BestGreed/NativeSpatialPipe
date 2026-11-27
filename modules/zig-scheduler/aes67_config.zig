@@ -279,6 +279,14 @@ pub fn isMulticastIpv4(address: [4]u8) bool {
     return address[0] >= 224 and address[0] <= 239;
 }
 
+/// 224.0.0.0/24 is the local-network control block (RFC 5771 sec 4): all-hosts
+/// 224.0.0.1, all-routers, PTP 224.0.1.129's neighbours and similar control
+/// traffic. It is never forwarded, so an explicit media/SAP destination in it
+/// would produce an unusable stream instead of an administrative-scope group.
+pub fn isLinkLocalControlIpv4(address: [4]u8) bool {
+    return address[0] == 224 and address[1] == 0 and address[2] == 0;
+}
+
 pub const Destination = struct {
     address: [4]u8,
     multicast: bool,
@@ -287,6 +295,7 @@ pub const Destination = struct {
 fn resolveDestination(text: []const u8) !Destination {
     var dest: [4]u8 = undefined;
     if (!parseIpv4(text, &dest)) return error.InvalidAes67Destination;
+    if (isLinkLocalControlIpv4(dest)) return error.InvalidAes67Destination;
     if (isMulticastIpv4(dest)) return .{ .address = dest, .multicast = true };
     if (!isUnicastIpv4(dest)) return error.InvalidAes67Destination;
     return .{ .address = dest, .multicast = false };
@@ -462,7 +471,7 @@ pub fn prepare(file: File, channels: usize) !Prepared {
     var sap_address: [4]u8 = .{ 224, 2, 127, 254 };
     if (file.sapAddress.len != 0) {
         var value: [4]u8 = undefined;
-        if (!parseIpv4(file.sapAddress, &value) or !isMulticastIpv4(value))
+        if (!parseIpv4(file.sapAddress, &value) or !isMulticastIpv4(value) or isLinkLocalControlIpv4(value))
             return error.InvalidAes67SapAddress;
         sap_address = value;
     }
@@ -579,7 +588,13 @@ pub fn prepare(file: File, channels: usize) !Prepared {
     prepared.payload_type = prepared.flows[0].payload_type;
     prepared.ssrc = prepared.flows[0].ssrc;
     for (prepared.flows[0..prepared.flow_count]) |flow| {
-        if (flow.multicast and flow.source_ip == null) return error.Aes67MulticastRequiresSourceInterface;
+        // Every flow needs a concrete originating address: it becomes SDP o=,
+        // the SAP originating source and the socket's egress selection. Deriving
+        // it from the route would report 0.0.0.0 to receivers, which RFC 2974
+        // lets them discard, so a unicast flow without srcInterfaceIp is now
+        // rejected just like a multicast flow.
+        if (flow.source_ip == null)
+            return if (flow.multicast) error.Aes67MulticastRequiresSourceInterface else error.Aes67UnicastRequiresSourceInterface;
     }
     prepared.multicast = prepared.flows[0].multicast;
     prepared.ttl = prepared.flows[0].ttl;

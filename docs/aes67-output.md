@@ -12,11 +12,11 @@ AES67 is a session-scoped output backend. The standalone module owns the PCM rin
 | Tier 0 | SDP over ABI (static export) and RFC 2974 SAP with CRC-16 hash/TTL 255/30 s interval/deletion x3 | Supported |
 | Tier 0 | DSCP AF41 for media, EF for PTP; media-clock pacing (bounded catch-up) | Supported |
 | Tier 0 | Receiver side (IGMP join, jitter buffer, L16/L24 receive, 16ch aggregation) | Not in this branch (receiver lives in TSPI / aoip-aes67) |
-| Tier 0 | 16-channel layout delivered as 2 x 8ch | Supported by flowMode=standard (default) |
-| EXTENSION | 16/64-channel single flow (flowMode=extension) | Automatic in extension mode when samples x bytes x channels <= 1440 B; not AES67 media-profile conformance |
+| Tier 0 | 16-channel layout delivered as 2 x 8ch | Supported by flowMode=standard (default); 16 channels is the current product maximum |
+| EXTENSION | 16-channel single flow (flowMode=extension) | Automatic in extension mode when samples x bytes x channels <= 1440 B; not AES67 media-profile conformance. 64 channels are not enabled: aes67_config max_channels is 16 |
 | Tier 1 | 44.1 / 96 kHz | Module-level only: the scheduler rejects non-48 kHz until the renderer path resamples (see Configuration) |
 | Tier 1 | 125/250/333 us and 2/4 ms packet times | Supported |
-| Tier 1 | HTTP/RTSP SDP service, mDNS advertisement/browse, 64ch as 8 x 8ch | 64ch splitting supported; HTTP/RTSP/mDNS not in this branch |
+| Tier 1 | HTTP/RTSP SDP service, mDNS advertisement/browse, 64ch as 8 x 8ch | 64ch is not enabled (channel maximum is 16); HTTP/RTSP/mDNS not in this branch |
 | Tier 2 | 176.4/192 kHz, RTCP, ST 2022-7 redundancy | 192/176.4 module-level only (scheduler rejects until resampling); redundancy flag + port 5006 implemented; RTCP deferred |
 
 AES67 mandates 48 kHz and the "1 millisecond" packet profile; 125/250/333 us and 4 ms are optional capabilities listed in AES67-2023 Table 2. The module carries 44.1-192 kHz, but this build's scheduler accepts only 48 kHz because the renderer path does not resample; RAVENNA-style extensions and a 16-channel single stream are outside AES67 and are marked EXTENSION where supported.
@@ -35,7 +35,7 @@ Select AES67 in the playback configuration panel or set outputBackend to "aes67"
         "sampleRate": 48000,
         "ptimeUs": 1000,
         "codec": "L24",
-        "flowMode": "auto",
+        "flowMode": "standard",
         "groupBase": "239.69.0.1",
         "payloadType": 96,
         "ssrc": 0,

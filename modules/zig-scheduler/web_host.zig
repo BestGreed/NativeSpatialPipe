@@ -191,7 +191,10 @@ fn materializeAes67Flows(config: *u.Value, arena: std.mem.Allocator) !void {
         const flow_dest = cfg.parseIpv4Address(dest_text.?) orelse return error.InvalidAes67Destination;
         const multicast = cfg.isMulticastIpv4(flow_dest);
         if (try fieldNumber(map, "port")) |port| {
-            if (port == 0 or port > 65535) return error.InvalidAes67Port;
+            if (port > 65535) return error.InvalidAes67Port;
+            // 0 selects the session base port (schema contract); materialize it
+            // so the saved file is self-describing, matching destIp/ttl handling.
+            if (port == 0) try map.put("port", .{ .integer = @intCast(base_port) });
         } else {
             // Multicast shares the AES67 default port (Plan A); unicast needs a
             // unique port per flow on the same host (continuation of flow 0).

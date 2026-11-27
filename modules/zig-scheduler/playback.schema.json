@@ -604,7 +604,7 @@
           "minimum": 0,
           "maximum": 4294967295,
           "default": 0,
-          "description": "0 derives the fixed default SSRC 0x4E535036."
+          "description": "0 derives a random SSRC base for this session; flow k uses base + k (RFC 3550 sec 5.1 recommends a random unique SSRC, and a fixed value would collide between senders)."
         },
         "srcInterfaceIp": {
           "type": "string",
@@ -660,7 +660,7 @@
           "type": "array",
           "minItems": 1,
           "maxItems": 8,
-          "description": "Optional explicit flows. When omitted, flowMode derives the plan and groupBase supplies the base class-D group (flow k = base + k). When present, 1-8 flows carry contiguous channelOffset covering the layout exactly; one unique destination per flow (two multicast flows may never share a group). standard keeps 1-8 channels per flow (16ch = 2 x 8ch, 64ch = 8 x 8ch); extension packs each flow to the 1440-byte payload limit and may use a single 16ch/64ch flow as an EXTENSION. Every flow uses the standard RTP port 5004 in strict policy; ST 2022-7 redundant legs use 5006. Legacy per-flow ports 5010/5012 are rejected and must migrate to 5004 + unique groups.",
+          "description": "Optional explicit flows. When omitted, flowMode derives the plan and groupBase supplies the base class-D group (flow k = base + k). When present, 1-8 flows carry contiguous channelOffset covering the layout exactly; one unique destination per flow (two multicast flows may never share a group). standard keeps 1-8 channels per flow (16ch = 2 x 8ch; the current product maximum is 16 channels); extension packs each flow to the 1440-byte payload limit and may use a single 16ch flow as an EXTENSION. Every flow uses the standard RTP port 5004 in strict policy; ST 2022-7 redundant legs use 5006. Legacy per-flow ports 5010/5012 are rejected and must migrate to 5004 + unique groups.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -668,7 +668,7 @@
             "properties": {
               "destIp": {"type": "string", "description": "Explicit IPv4 unicast destination or class-D multicast group (224/4) of this flow. Required per flow: the sender rejects a flow without it; the web save path materializes the documented base+index allocation into the file before validation, so a saved config always shows every per-flow address."},
               "ttl": {"type": "integer", "minimum": 1, "maximum": 255, "default": 0, "description": "Per-flow multicast TTL override (0 = inherit the session-level ttl; ignored for unicast). The save path materializes the inherited value into each multicast flow so the saved file is self-describing."},
-              "port": {"type": "integer", "minimum": 1, "maximum": 65535, "default": 5004, "description": "UDP port of this flow. Strict policy requires the standard 5004 (unique multicast group per flow distinguishes streams); 0 selects basePort. Legacy per-flow ports 5010/5012 are rejected."},
+              "port": {"type": "integer", "minimum": 0, "maximum": 65535, "default": 5004, "description": "UDP port of this flow. Strict policy requires the standard 5004 (unique multicast group per flow distinguishes streams); 0 selects the session basePort and the web save path materializes it. Legacy per-flow ports 5010/5012 are rejected."},
               "channels": {"type": "integer", "minimum": 1, "maximum": 16, "description": "Wire channels in this flow. AES67 media profile is 1-8 (sec 7.3 line 1556-1558) and flowMode=standard rejects more than 8; flowMode=extension may use 9-16 channels when samples x bytes x channels <= 1440 B (EXTENSION, not AES67 conformance). 16ch layouts split as 2 x 8ch in standard mode."},
               "channelOffset": {"type": "integer", "minimum": 0, "maximum": 15, "description": "First wire channel of this flow in the session-wide interleaved input (flow0=0, flow1=8 for 16ch)."},
               "payloadType": {"type": "integer", "minimum": 96, "maximum": 127, "description": "Omitted inherits the session-level payloadType."},
@@ -1079,7 +1079,7 @@
             },
             "sourcePolicy": { "enum": ["fixed", "unified"] },
             "sampleRate": {
-              "enum": [44100, 48000, 88200, 96000, 176400, 192000]
+              "const": 48000
             }
           }
         },

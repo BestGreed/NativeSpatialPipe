@@ -200,11 +200,14 @@ test "multicast requires an explicit egress interface and unique groups" {
         .groupBase = "239.1.0.1",
         .flowMode = .standard,
     };
-    _ = cfg.prepare(file, 8) catch |err| {
-        try std.testing.expectEqual(error.Aes67MulticastRequiresSourceInterface, err);
-    };
+    try std.testing.expectError(error.Aes67MulticastRequiresSourceInterface, cfg.prepare(file, 8));
     file.srcInterfaceIp = "192.0.2.63";
     _ = try cfg.prepare(file, 8);
+    // 224.0.0.0/24 is the link-local control block (all-hosts, routing, PTP),
+    // never an administrative-scope media group (RFC 5771 sec 4).
+    file.groupBase = "224.0.0.1";
+    try std.testing.expectError(error.InvalidAes67Destination, cfg.prepare(file, 8));
+    file.groupBase = "239.1.0.1";
     var duplicate_rows = [_]cfg.Flow{
         .{ .destIp = "239.1.0.1", .channels = 8, .channelOffset = 0 },
         .{ .destIp = "239.1.0.1", .channels = 8, .channelOffset = 8 },
@@ -219,6 +222,20 @@ test "multicast requires an explicit egress interface and unique groups" {
     try std.testing.expectError(error.InvalidAes67Port, cfg.prepare(file, 16));
 }
 
+test "flow port 0 selects the session basePort (schema contract)" {
+    var file = multicastFile();
+    file.flowMode = .standard;
+    file.portPolicy = .strict;
+    var rows = [_]cfg.Flow{
+        .{ .destIp = "239.1.0.10", .channels = 8, .channelOffset = 0 },
+        .{ .destIp = "239.1.0.11", .channels = 8, .channelOffset = 8 },
+    };
+    file.flows = &rows;
+    const prepared = try cfg.prepare(file, 16);
+    try std.testing.expectEqual(@as(u16, 5004), prepared.flows[0].port);
+    try std.testing.expectEqual(@as(u16, 5004), prepared.flows[1].port);
+}
+
 test "SAP address defaults to 224.2.127.254 and is configurable" {
     const defaults = try cfg.prepare(multicastFile(), 2);
     try std.testing.expectEqual([4]u8{ 224, 2, 127, 254 }, defaults.sap_address);
@@ -229,6 +246,8 @@ test "SAP address defaults to 224.2.127.254 and is configurable" {
     const configured = try cfg.prepare(file, 2);
     try std.testing.expectEqual([4]u8{ 239, 255, 255, 255 }, configured.sap_address);
     file.sapAddress = "192.0.2.1";
+    try std.testing.expectError(error.InvalidAes67SapAddress, cfg.prepare(file, 2));
+    file.sapAddress = "224.0.0.1";
     try std.testing.expectError(error.InvalidAes67SapAddress, cfg.prepare(file, 2));
     file.sapAddress = "";
     file.sapIntervalMs = 500;

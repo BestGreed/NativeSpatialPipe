@@ -127,6 +127,9 @@ pub const Session = struct {
     const Submit = *const @TypeOf(@import("output_stream.zig").publishPool);
     const CountersFn = *const fn (*anyopaque, *Counters) callconv(.C) c_int;
     const PtpStatusFn = *const fn (*anyopaque, *PtpStatus) callconv(.C) c_int;
+    /// nsp_aes67_sdp(handle, flow_index, out, capacity): required bytes
+    /// including NUL, negative on invalid/state.
+    const SdpFn = *const fn (*anyopaque, u32, ?[*]u8, usize) callconv(.C) c_int;
     lib: std.DynLib,
     handle: *anyopaque,
     start_fn: Start,
@@ -136,6 +139,7 @@ pub const Session = struct {
     submit_leased: Submit,
     counters_fn: ?CountersFn = null,
     ptp_status_fn: ?PtpStatusFn = null,
+    sdp_fn: ?SdpFn = null,
     stop_timeout_ms: u32,
     started: bool = false,
     failed: bool = false,
@@ -242,6 +246,7 @@ pub const Session = struct {
         // Optional observability exports: older DLLs lack them.
         const counters_fn = lib.lookup(CountersFn, "nsp_aes67_counters");
         const ptp_status_fn = lib.lookup(PtpStatusFn, "nsp_aes67_ptp_status");
+        const sdp_fn = lib.lookup(SdpFn, "nsp_aes67_sdp");
         var handle: ?*anyopaque = null;
         try check("create", create(&handle));
         const session = handle orelse return error.Aes67MissingHandle;
@@ -251,7 +256,7 @@ pub const Session = struct {
         try check("configure", configure(session, &config));
         return .{ .lib = lib, .handle = session, .start_fn = start_fn, .stop_fn = stop_fn, .close_fn = close_fn,
             .poll_fn = poll_fn, .submit_leased = submit_leased, .counters_fn = counters_fn,
-            .ptp_status_fn = ptp_status_fn, .stop_timeout_ms = playback.drainTimeoutMs };
+            .ptp_status_fn = ptp_status_fn, .sdp_fn = sdp_fn, .stop_timeout_ms = playback.drainTimeoutMs };
     }
 
     pub fn start(self: *Session) !void {
@@ -277,6 +282,19 @@ pub const Session = struct {
                 break :blk status;
             } else null,
         };
+    }
+
+    /// One flow's SDP text, or null when no SDP exists yet (before the first
+    /// media clock) or the DLL predates the export. Caller owns the slice.
+    pub fn sdpText(self: *Session, flow: u32) !?[]u8 {
+        const function = self.sdp_fn orelse return null;
+        var buffer: [4096]u8 = undefined;
+        const result = function(self.handle, flow, &buffer, buffer.len);
+        if (result <= 0) return null;
+        const size: usize = @intCast(result);
+        if (size > buffer.len) return null;
+        // size includes the terminating NUL.
+        return try u.a.dupe(u8, buffer[0 .. size - 1]);
     }
 
     pub fn checkRunning(self: *Session) !void {

@@ -1113,6 +1113,7 @@ fn windows_product_dll_exports_and_loads() {
             c"nsp_aes67_stop",
             c"nsp_aes67_poll_lifecycle_event",
             c"nsp_aes67_counters",
+            c"nsp_aes67_ptp_status",
             c"nsp_aes67_sdp",
             c"nsp_aes67_submit_leased",
         ] {

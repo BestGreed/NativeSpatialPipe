@@ -445,6 +445,7 @@ impl Network {
             self.outputs.len() + self.secondary.len(),
             run.config.timing,
         );
+        stream.version = initial_session_version();
         let holdover_ms = std::env::var("NSP_AES67_HOLDOVER_MS")
             .ok()
             .and_then(|value| value.parse::<u32>().ok())
@@ -889,6 +890,20 @@ impl Network {
     }
 }
 
+/// First SDP session version. The session id below is derived from the
+/// transport configuration and is stable across restarts; starting the version
+/// again at 1 would make a restarted sender look older than the description a
+/// receiver already holds (RFC 8866 section 5.2 wants a monotonically
+/// increasing version). Wall-clock seconds at start keeps that monotonic while
+/// the session id stays stable.
+fn initial_session_version() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs())
+        .unwrap_or(1)
+        .max(1)
+}
+
 /// Stable per-configuration session id for the SDP origin line. Using a
 /// launch timestamp makes the daemon's auto_sinks_update see a brand new
 /// session on every restart; hashing the transport configuration keeps o=
@@ -1129,6 +1144,15 @@ mod tests {
             hash,
             sdp: String::new(),
         }
+    }
+
+    #[test]
+    fn the_first_sdp_version_is_not_one_on_a_restart() {
+        // Seconds since the epoch: a restart produces a larger version for the
+        // same stable session id instead of restarting at 1.
+        let version = initial_session_version();
+        assert!(version > 1, "version {version}");
+        assert!(initial_session_version() >= version);
     }
 
     #[test]
