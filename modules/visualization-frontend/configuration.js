@@ -1,4 +1,4 @@
-import {channelLabels,orders,getPath,setPath,prepare,numeric,finish,outputLayouts,layoutFor,deviceChannels,migrateLayout,supportsActiveSource,updateSourceSelection,validateAes67,problemText,deriveAes67Flows,proposeAes67Flows,materializeAes67Destinations,effectiveAes67FlowSsrc,aes67MaxFlowChannels,aes67MaxChannelsPerFlow,parseAes67Ssrc,formatAes67Ssrc} from './configuration-model.js';
+import {channelLabels,orders,getPath,setPath,prepare,numeric,finish,outputLayouts,layoutFor,deviceChannels,migrateLayout,supportsActiveSource,updateSourceSelection,validateAes67,problemText,deriveAes67Flows,proposeAes67Flows,materializeAes67Destinations,replanAes67ForLayout,effectiveAes67FlowSsrc,aes67MaxFlowChannels,aes67MaxChannelsPerFlow,parseAes67Ssrc,formatAes67Ssrc} from './configuration-model.js';
 import {translate,uiReady} from './i18n.js';
 await uiReady;
 const $=id=>document.getElementById(id);
@@ -44,11 +44,9 @@ function field(container,path,label,type='number',options=null,note='',offset=0)
      next=migrateLayout(next,working.outputLayout,next.outputLayout);
      if(Array.isArray(next.aes67?.flows)&&next.aes67.flows.length){
       const count=layoutFor(next.outputLayout).channels.length;
-      if(next.aes67.flows.reduce((sum,flow)=>sum+(flow?.channels??0),0)!==count){
-       next.aes67.flows=proposeAes67Flows(count,next.aes67.flows[0]??{});
-       materializeAes67Destinations(next.aes67);
-       if(next.aes67.channelMap?.length!==count)delete next.aes67.channelMap;
-      }
+      // Same re-plan as the ptime/flowMode path: extension widths and per-flow
+      // explicit overrides survive a layout change.
+      if(next.aes67.flows.reduce((sum,flow)=>sum+(flow?.channels??0),0)!==count)replanAes67ForLayout(next.aes67,count);
      }
     }
    if(backendChanged||path==='renderer'||path==='sourcePolicy'||path==='outputLayout')updateSourceSelection(next,backendChanged?working.outputBackend:undefined);
@@ -104,7 +102,7 @@ function render(){
   const ptime=field(advanced,'aes67.ptimeUs','包时间（ptime）','integer',[{value:1000,label:'1 ms · 48 帧'},{value:125,label:'125 µs · 6 帧'},{value:250,label:'250 µs · 12 帧'},{value:333,label:'333 µs · 16 帧'},{value:500,label:'500 µs · 24 帧'},{value:2000,label:'2 ms · 96 帧'},{value:4000,label:'4 ms · 192 帧'}],'每包帧数由采样率与包时间推导（48 kHz 下 1 ms = 48 帧）。');
   field(advanced,'aes67.payloadType','RTP payloadType','integer',null,'动态负载类型范围 96–127，AES67 默认 96。');
   field(advanced,'aes67.ttl','组播 TTL（1–255）','integer',null,'仅组播目标生效，默认 32；单播忽略。逐流 TTL 为 0 时继承此值。');
-  const baseSsrc=field(advanced,'aes67.ssrc','SSRC（0x0 = 默认）','ssrc',null,'0x0 使用固定默认 0x4E535036（NSP6）；非 0 时按填写值发送并在 SDP 通告。逐流 SSRC 见下方逐流编辑。');baseSsrc.value=formatAes67Ssrc(working.aes67?.ssrc??0);
+  const baseSsrc=field(advanced,'aes67.ssrc','SSRC（0x0 = 自动）','ssrc',null,'0x0 时每次会话随机生成基准 SSRC，流 k = 基准 + k；非 0 时按填写值发送并在 SDP 通告。逐流 SSRC 见下方逐流编辑。');baseSsrc.value=formatAes67Ssrc(working.aes67?.ssrc??0);
   const flowMode=field(advanced,'aes67.flowMode','流打包模式','text',[{value:'standard',label:'standard（AES67 标准，每流 ≤ 8 声道）'},{value:'extension',label:'extension（按 1440B 预算打包，非 AES67 合规）'}],'standard 是对接第三方接收端的推荐值；extension 是本产品扩展。');
   field(advanced,'aes67.portPolicy','端口策略','text',[{value:'strict',label:'strict（所有流使用标准 5004）'},{value:'explicit',label:'explicit（允许逐流端口，迁移/实验用）'}],'strict 为默认；explicit 需要接收端支持非标准端口。');
   field(advanced,'aes67.sapAddress','SAP 公告组（可空）','text',null,'留空使用 224.2.127.254:9875；也可填自定义组播组。');
@@ -115,6 +113,9 @@ function render(){
   advancedHeading('PTP 时钟');
   const ptpMode=field(advanced,'aes67.ptp.mode','PTP 拓扑模式','text',[{value:'slave',label:'slave（跟随外部 GM，默认）'},{value:'auto',label:'auto（先监听，超时回退）'},{value:'gm',label:'gm（本机作为 GM）'},{value:'local',label:'local（无 PTP 本地时钟）'}],'slave 跟随网络 PTP 主时钟；gm 需要可读取网卡 MAC 作为 EUI-64 时钟标识。');
   field(advanced,'aes67.ptp.domain','PTP domain（0–127）','integer');
+  // The scheduler derives the GMID from the locked master; a legacy non-empty
+  // value blocks saving and previously had no field to clear it (P2-27).
+  field(advanced,'aes67.ptpGmid','PTP GMID（必须留空）','text',null,'由模块从锁定的主时钟取得；旧配置若填了值，请清空后再保存。');
   field(advanced,'aes67.ptp.lockTimeoutMs','PTP 锁定超时（ms）','integer');
   field(advanced,'aes67.ptp.timestamping','时间戳模式','text',[{value:'auto',label:'auto（优先硬件，失败回退软件）'},{value:'software',label:'software'},{value:'hardware',label:'hardware（需要网卡与驱动支持）'}],'Windows 网卡驱动通常只提供软件时间戳；hardware 失败会返回 TIMESTAMP_UNAVAILABLE。');
   const gmWrap=document.createElement('div');gmWrap.className='config-advanced-sub';advanced.append(gmWrap);
@@ -159,7 +160,7 @@ function render(){
   });
   flowWrap.append(flowTable);advanced.append(flowWrap);
   const flowNote=document.createElement('p');flowNote.className='aes67-flow-note';
-  flowNote.textContent='空白的目标/端口/PT/TTL/SSRC 表示继承或自动分配：组播组按流序号递增、端口默认 5004、SSRC 为基准 + 流序号。逐流 TTL 为 0 时继承会话 TTL。';advanced.append(flowNote);
+  flowNote.textContent='空白的目标/端口/PT/TTL/SSRC 表示继承或自动分配：组播组按流序号递增、端口默认使用会话 basePort（5004）、SSRC 为基准 + 流序号。逐流 TTL 为 0 时继承会话 TTL。';advanced.append(flowNote);
   const auto=document.createElement('button');auto.type='button';auto.textContent='重新自动分配流地址';
   auto.addEventListener('click',()=>{try{
    const next=collect();

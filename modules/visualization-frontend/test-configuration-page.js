@@ -1,6 +1,7 @@
 // DOM contract fixture only: does not drive a browser or operate the desktop.
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {validateAes67,problemText} from './configuration-model.js';
 class Element {
  constructor(tag='div'){this.tag=tag;this.children=[];this.dataset={};this.listeners={};this.value='';this.checked=false;this.hidden=false;this.attrs={};}
  set value(value){this._value=String(value);}
@@ -28,7 +29,12 @@ globalThis.fetch=async(url,options={})=>{
  if(url.endsWith('/bootstrap'))body={token:'fixture'};
  else if(url.endsWith('/drivers'))body={drivers:[{name:'Fixture driver',driver:'asio:{fixture}'}]};
  else if(url.endsWith('/status'))body={fsa:{known:true,stale:false,message:'fixture',endpoint:'fixture'},backend:null};
- else if(url.endsWith('/config/playback')){if(options.method==='PUT'){saves++;const request=JSON.parse(options.body);assert.equal(request.revision,'fixture-revision');playback=request.config;}body={id:'playback',exists:true,path:'D:/fixture.json',revision:'fixture-revision',config:structuredClone(playback),formDefaults};}
+ else if(url.endsWith('/config/playback')){if(options.method==='PUT'){const request=JSON.parse(options.body);assert.equal(request.revision,'fixture-revision');
+  // The stub validates like the scheduler instead of echoing whatever the
+  // client sends, so "frontend allows what the backend rejects" is testable.
+  const problems=validateAes67(request.config);
+  if(problems.length){return {ok:false,status:400,json:async()=>({error:'配置校验未通过：\n'+problemText(problems)})};}
+  saves++;playback=request.config;}body={id:'playback',exists:true,path:'D:/fixture.json',revision:'fixture-revision',config:structuredClone(playback),formDefaults};}
  else if(url.endsWith('/config/backend'))body={id:'backend',exists:true,path:'D:/backend.json',revision:'fixture-revision',config:{version:1,spatialFormat:'WindowsSonic',fullTiming:false}};
  else throw Error('Unexpected API '+url);
  return {ok:true,json:async()=>body};
@@ -151,7 +157,11 @@ try{
  // ---- AES67 output backend panel ----
  assert.equal(input('outputBackend').children.some(o=>o.value==='aes67'),true);
  input('outputBackend').value='aes67';input('outputBackend').listeners.change();
- assert.ok(input('aes67.flows.0.destIp'));assert.ok(input('aes67.flows.0.port'));assert.equal(input('aes67.framesPerPacket'),undefined,'the legacy frames key is not a form field');assert.equal(input('aes67.ptpGmid'),undefined,'the PTP GMID is never editable');
+ assert.ok(input('aes67.flows.0.destIp'));assert.ok(input('aes67.flows.0.port'));assert.equal(input('aes67.framesPerPacket'),undefined,'the legacy frames key is not a form field');
+  // P2-27: a legacy non-empty ptpGmid blocks saving, so the field must exist to
+  // clear it instead of being a dead end.
+  assert.ok(input('aes67.ptpGmid'),'the legacy PTP GMID can be cleared');
+  assert.equal(input('aes67.ptpGmid').value,'');
   // Basic fields stay visible; protocol parameters and clock tuning fold away.
   const insideDetails=node=>{let item=node;while(item){if(item.tag==='details')return true;item=item.parentElement;}return false;};
   assert.equal(element('fields').querySelectorAll('details').length,1,'AES67 builds exactly one advanced-settings disclosure');
@@ -338,6 +348,13 @@ try{
  input('outputBackend').value='wasapi';input('outputBackend').listeners.change();
  assert.equal(input('sourcePolicy').value,'fixed');
  assert.ok(!input('sourcePolicy').children.some(option=>option.value==='active'));
+ // P2-25 (inactive AES67 flows following a forced layout change) is covered by
+ // the model test; the page test below proves the PUT stub validates like the
+ // scheduler instead of echoing every client body back as valid.
+ // P2-23: the stub rejects a request the scheduler would reject, instead of
+ // echoing every client body back as valid.
+ const rejected=await globalThis.fetch('/api/web/config/playback',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision:'fixture-revision',config:{...playback,outputBackend:'aes67',sampleRate:48000,aes67:{flows:[{destIp:'192.0.2.20',port:5006,channels:8,channelOffset:0}]}}})});
+ assert.equal(rejected.ok,false,'the PUT stub validates like the scheduler');
  await element('backendTab').onclick();assert.ok(input('fullTiming'));assert.equal(input('master'),undefined);
  console.log('PASS configuration page renders fields, submits shared JSON, switches renderer/routing, guards unsynced raw JSON, edits AES67, shows per-flow rows on every layout, derives and overrides multi-flow destinations, preserves AES67 settings across backend switches and loads backend tab');
 }finally{for(const [key,value]of Object.entries(prior))globalThis[key]=value;}

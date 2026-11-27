@@ -119,6 +119,28 @@ export function prepare(config,id){
    const bass=value.lsac.virtualBass;bass.enabled??=false;bass.amount??=0.18;bass.highpassHz??=130;
   }
   value.outputLayout??='7.1.4';const count=deviceChannels(value).length;
+  // AES67 flow coverage follows the render layout, not the device's channel
+  // limit: validateAes67 compares flows against layoutFor().channels (a WASAPI
+  // backend can report 2 device channels while the layout is 7.1.4).
+  const layoutCount=layoutFor(value.outputLayout).channels.length;
+  if(value.aes67&&typeof value.aes67==='object'){
+   // A hand-written groupBase plan is legal for the scheduler; materialize it
+   // into flow rows so the editor can display and keep it (P2-27).
+   if(!Array.isArray(value.aes67.flows)&&String(value.aes67.groupBase??'').trim()){
+    const base=String(value.aes67.groupBase).trim();
+    if(parseIpv4(base)){value.aes67.flows=proposeAes67Flows(layoutCount,{destIp:base,port:Number(value.aes67.basePort??5004)});materializeAes67Destinations(value.aes67);}
+   }
+   // Selecting AES67 with a preserved (flow-less) block re-creates the editor
+   // rows from the current layout; the start destination is still required.
+   if(value.outputBackend==='aes67'&&!Array.isArray(value.aes67.flows))value.aes67.flows=proposeAes67Flows(layoutCount);
+   // The scheduler validates the AES67 block even for another backend, so a
+   // layout/backend switch must re-plan stale flow widths instead of leaving a
+   // block the hidden AES67 panel can no longer fix (P2-25).
+   if(value.outputBackend!=='aes67'&&Array.isArray(value.aes67.flows)&&value.aes67.flows.length){
+    const sum=value.aes67.flows.reduce((total,flow)=>total+Number(flow?.channels??0),0);
+    if(sum!==layoutCount)replanAes67ForLayout(value.aes67,layoutCount);
+   }
+  }
   if(value.renderer==='olr')value.renderer='roar';
   value.mode=value.renderer==='lira'?null:(value.mode??'olr');value.channelOrder??='olr';value.rendererDll??='';
   value.outputProcessing??={};value.outputProcessing.bypass??=false;
@@ -143,7 +165,13 @@ export function finish(value){
  // placeholder (empty flow-1 destination) the user never filled in.
  if(value.outputBackend!=='aes67'&&Array.isArray(value.aes67?.flows)&&value.aes67.flows.length>0&&
     !Object.hasOwn(value.aes67,'destIp')&&!Object.hasOwn(value.aes67,'port')&&
-    value.aes67.flows.every(flow=>flow?.destIp===''))delete value.aes67;
+    value.aes67.flows.every(flow=>String(flow?.destIp??'').trim()==='')){
+    // Keep the user's device name / source interface / PTP block for the next
+    // AES67 session; only the empty placeholder rows are dropped. A block with
+    // no user data at all is removed as before.
+    if(aes67HasUserData(value.aes67))delete value.aes67.flows;
+    else delete value.aes67;
+ }
  // One sample-rate control: for AES67 the renderer rate is the RTP media-clock
  // rate, so materialize it into the block the scheduler validates.
  if(value.outputBackend==='aes67'&&value.aes67&&typeof value.aes67==='object')value.aes67.sampleRate=value.sampleRate;
@@ -216,6 +244,51 @@ export function materializeAes67Destinations(aes){
   if(flowMulticast&&(flow.ttl==null||flow.ttl===0))flow.ttl=aes.ttl??32;
   if(!flow.srcInterfaceIp&&aes.srcInterfaceIp)flow.srcInterfaceIp=aes.srcInterfaceIp;
  });
+}
+// Re-plan flow widths to a new channel count while keeping each flow's
+// explicit destination/port/SSRC overrides (same rule the ptime/flowMode
+// replan uses). Shared by layout changes and backend switches so both paths
+// agree and extension packing is honored.
+export function replanAes67ForLayout(aes,channels){
+ if(!aes||typeof aes!=='object'||!Array.isArray(aes.flows)||aes.flows.length===0)return aes;
+ if(!Number.isInteger(channels)||channels<=0)return aes;
+ const current=aes.flows;
+ const proposal=proposeAes67Flows(channels,current[0]??{},aes67MaxChannelsPerFlow(aes));
+ aes.flows=proposal.map((flow,index)=>{const old=current[index]??{};return {...old,...flow,destIp:flow.destIp||old.destIp||'',port:old.port??flow.port};});
+ materializeAes67Destinations(aes);
+ if(Array.isArray(aes.channelMap)&&aes.channelMap.length!==channels)delete aes.channelMap;
+ return aes;
+}
+// True when a block carries a user decision that must not be discarded when
+// the editor drops its placeholder flows. Defaults alone are not user data.
+export function aes67HasUserData(aes){
+ if(!aes||typeof aes!=='object')return false;
+ if(String(aes.name??'').trim()||String(aes.srcInterfaceIp??'').trim()||String(aes.groupBase??'').trim())return true;
+ if(String(aes.sapAddress??'').trim())return true;
+ if(aes.sapIntervalMs!=null&&Number(aes.sapIntervalMs)!==30000)return true;
+ if(aes.basePort!=null&&Number(aes.basePort)!==5004)return true;
+ if(aes.sampleRate!=null&&Number(aes.sampleRate)!==48000)return true;
+ if(aes.ptimeUs!=null&&Number(aes.ptimeUs)!==1000)return true;
+ if(aes.flowMode&&aes.flowMode!=='standard')return true;
+ if(aes.portPolicy&&aes.portPolicy!=='strict')return true;
+ if(aes.payloadType!=null&&Number(aes.payloadType)!==96)return true;
+ if(aes.ssrc!=null&&Number(aes.ssrc)!==0)return true;
+ if(aes.ttl!=null&&Number(aes.ttl)!==32)return true;
+ if(aes.ringPackets!=null&&Number(aes.ringPackets)!==64)return true;
+ if(aes.prebufferFrames!=null&&Number(aes.prebufferFrames)!==480)return true;
+ const ptpDefaults={mode:'slave',domain:0,lockTimeoutMs:5000,timestamping:'auto',priority1:128,priority2:128,announceTimeoutMs:6000,gmCapable:false,gmUtcOffset:null};
+ if(aes.ptp&&typeof aes.ptp==='object')for(const [key,value]of Object.entries(ptpDefaults)){const current=aes.ptp[key];if(current!==undefined&&current!==null&&current!==value)return true;}
+ if(String(aes.ptpGmid??'').trim())return true;
+ if(Array.isArray(aes.flows))for(const flow of aes.flows){
+  if(!flow||typeof flow!=='object')continue;
+  if(String(flow.destIp??'').trim())return true;
+  if(flow.port!=null&&Number(flow.port)!==5004)return true;
+  if(flow.ssrc!=null&&Number(flow.ssrc)!==0)return true;
+  if(flow.payloadType!=null&&Number(flow.payloadType)!==96)return true;
+  if(flow.ttl!=null&&Number(flow.ttl)!==0&&Number(flow.ttl)!==32)return true;
+  if(String(flow.srcInterfaceIp??'').trim())return true;
+ }
+ return false;
 }
 export function deriveAes67Flows(aes,channels){
  const first=aes?.flows?.[0];

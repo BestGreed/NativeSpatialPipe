@@ -272,10 +272,14 @@ pub const Config = struct {
 
         if(!network and !aes67 and !wasapi and !std.mem.eql(u8,self.outputBackend,"asio"))return error.InvalidOutputBackend;
         if(self.aoip) |settings| _=try @import("aoip_config.zig").native(settings);
-        if (self.aes67) |settings| {
+        // An inactive AES67 block is transport state kept for the next AES67
+        // session; the editor may leave it incomplete while another backend is
+        // selected (P2-24), so it is validated only when AES67 is active. The
+        // web save path still materializes destinations before validation.
+        if (self.aes67) |settings| if (aes67) {
             if (settings.ptp) |ptp| try ptp.validate();
             _ = try @import("aes67_config.zig").prepare(settings, core.labels.len);
-        }
+        };
         if(network) {
             if(self.aoip==null)return error.AoipConfigRequired;
             // Keep inactive ASIO settings for switching back; native AoIP uses

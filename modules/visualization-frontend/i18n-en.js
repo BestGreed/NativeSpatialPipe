@@ -1140,4 +1140,10 @@ AES67 默认使用固定源流。=AES67 defaults to a fixed source stream.
 的偶数=an even number
 端口策略要求所有流使用基准端口=the strict port policy requires every flow to use base port
 可在高级设置改为=override the policy to explicit under advanced settings
+自动=automatic
+时每次会话随机生成基准=a random base SSRC is generated per session,
+由模块从锁定的主时钟取得=is taken by the module from the locked master clock
+旧配置若填了值=if a legacy config filled it in
+请清空后再保存=clear it before saving
+端口默认使用会话=the port defaults to the session
 `.trim().split('\n').map(line=>{const at=line.indexOf('=');return [line.slice(0,at).trim(),line.slice(at+1).trim()];})));

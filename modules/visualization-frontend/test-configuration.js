@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {prepare,numeric,finish,setPath,orders,updateSourceSelection,aes67Defaults,validateAes67,deviceChannels,isIpv4,isPtpGmid,deriveAes67Flows,aes67StandardChannelMap916,effectiveAes67FlowSsrc,proposeAes67Flows,materializeAes67Destinations,parseAes67Ssrc,formatAes67Ssrc,aes67MaxChannelsPerFlow,aes67SamplesPerPacket} from './configuration-model.js';
+import {prepare,numeric,finish,setPath,orders,updateSourceSelection,aes67Defaults,validateAes67,deviceChannels,isIpv4,isPtpGmid,deriveAes67Flows,aes67StandardChannelMap916,effectiveAes67FlowSsrc,proposeAes67Flows,materializeAes67Destinations,parseAes67Ssrc,formatAes67Ssrc,aes67MaxChannelsPerFlow,aes67SamplesPerPacket,replanAes67ForLayout,aes67HasUserData} from './configuration-model.js';
 const original={renderer:'roar',bridgeDll:'C:/bridge.dll',asioDll:'C:/asio.dll',driver:'asio:{test}',startupTimeoutMs:120000};
 const prepared=prepare(original,'playback');
 assert.equal(original.outputProcessing,undefined);
@@ -269,6 +269,35 @@ assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,flowMode:'packed'},outpu
 assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,portPolicy:'loose'},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.portPolicy'));
 assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,sapAddress:'192.0.2.1'},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.sapAddress'));
 assert.ok(validateAes67({...aesPrepared,aes67:{...aes67,sapAddress:'239.255.255.255',sapIntervalMs:500},outputBackend:'aes67',sourcePolicy:'fixed',sampleRate:48000}).some(problem=>problem.path==='aes67.sapIntervalMs'));
+// P2-27: a hand-written groupBase plan is legal for the scheduler; the editor
+// materializes it into flow rows instead of flagging the block incomplete.
+const groupBaseValue=prepare({...asioBase,outputBackend:'aes67',outputLayout:'9.1.6',sampleRate:48000,aes67:{...aes67Defaults,groupBase:'239.69.7.1',srcInterfaceIp:'192.0.2.63'}},'playback');
+assert.equal(validateAes67(groupBaseValue).length,0,'a groupBase plan validates once materialized');
+assert.deepEqual(groupBaseValue.aes67.flows.map(flow=>flow.destIp),['239.69.7.1','239.69.7.2']);
+// P2-26: a layout change re-plans extension widths and keeps per-flow
+// overrides instead of hard-coding eight-channel rows.
+const extensionAes={...aes67Defaults,flowMode:'extension',portPolicy:'explicit',srcInterfaceIp:'192.0.2.63',flows:[{destIp:'239.9.0.1',port:5010,channels:16,channelOffset:0,payloadType:96,ssrc:42,ttl:32}]};
+replanAes67ForLayout(extensionAes,12);
+assert.deepEqual(extensionAes.flows.map(flow=>flow.channels),[10,2],'extension packs 12ch as 10+2');
+assert.deepEqual(extensionAes.flows.map(flow=>flow.port),[5010,5004],'the explicit flow-1 port survives; later multicast flows use the session basePort');
+assert.equal(extensionAes.flows[0].ssrc,42,'per-flow SSRC override survives the re-plan');
+// P2-24: switching to another backend keeps the user's name/source/PTP block;
+// only the empty editor placeholder rows are dropped.
+const placeholderFlows=[{destIp:'',port:5004,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:0}];
+const withUserData=finish({...asioBase,outputBackend:'asio',outputLayout:'5.1.2',aes67:{...aes67Defaults,name:'NSP-Studio',srcInterfaceIp:'192.0.2.63',flows:structuredClone(placeholderFlows)}});
+assert.ok(withUserData.aes67,'a configured AES67 block survives a backend switch');
+assert.equal(withUserData.aes67.name,'NSP-Studio');
+assert.equal(withUserData.aes67.srcInterfaceIp,'192.0.2.63');
+assert.equal(withUserData.aes67.flows,undefined,'empty placeholder rows are not persisted');
+const untouched=finish({...asioBase,outputBackend:'asio',outputLayout:'5.1.2',aes67:{...aes67Defaults,flows:structuredClone(placeholderFlows)}});
+assert.equal(untouched.aes67,undefined,'an untouched placeholder is removed');
+assert.equal(aes67HasUserData({...aes67Defaults}),false);
+assert.equal(aes67HasUserData({...aes67Defaults,ptp:{mode:'gm'}}),true);
+// P2-25: a 16ch AES67 block left inactive when the backend switches to a WASAPI
+// 7.1.4 layout is re-planned to 12ch, so the hidden panel cannot block saving.
+const stale=prepare({...asioBase,outputBackend:'wasapi',outputLayout:'7.1.4',sampleRate:48000,aes67:{...aes67Defaults,srcInterfaceIp:'192.0.2.63',flows:[{destIp:'239.1.0.1',port:5004,channels:8,channelOffset:0,payloadType:96,ssrc:0,ttl:32},{destIp:'239.1.0.2',port:5004,channels:8,channelOffset:8,payloadType:96,ssrc:0,ttl:32}]}},'playback');
+assert.equal(stale.aes67.flows.reduce((sum,flow)=>sum+flow.channels,0),12,'inactive AES67 flows follow the forced layout');
+assert.deepEqual(stale.aes67.flows.map(flow=>flow.channels),[8,4]);
 // finish() materializes the single sample-rate control into the AES67 block.
 assert.equal(finish(prepare({...asioBase,outputBackend:'aes67',outputLayout:'5.1.2',aes67},'playback')).aes67.sampleRate,48000);
 assert.equal(prepare({...asioBase,outputBackend:'aes67',outputLayout:'5.1.2',aes67},'playback').aes67.ptimeUs,1000,'ptimeUs defaults to 1 ms');

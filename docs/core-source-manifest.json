@@ -4816,8 +4816,8 @@
     {
       "path": "modules/visualization-frontend/configuration-model.js",
       "sourcePath": "modules/visualization-frontend/configuration-model.js",
-      "sourceSha256": "c4c92d99029c6a09e20f0f5b532aa82f39aec560cf93d9ad4846589d75679295",
-      "sha256": "c4c92d99029c6a09e20f0f5b532aa82f39aec560cf93d9ad4846589d75679295"
+      "sourceSha256": "67780b6b3c9daf0051706e021efc11f180915aca615b55218d67ed7c97d82831",
+      "sha256": "67780b6b3c9daf0051706e021efc11f180915aca615b55218d67ed7c97d82831"
     },
     {
       "path": "modules/visualization-frontend/configuration.css",
@@ -4834,8 +4834,8 @@
     {
       "path": "modules/visualization-frontend/configuration.js",
       "sourcePath": "modules/visualization-frontend/configuration.js",
-      "sourceSha256": "9155631774f6a45ce598fef329f54994a5705cede6b2031cdbc75e21b11e539f",
-      "sha256": "0bd02cb6dd25347ad3e7fd4aa9f562a5de957bf2e7032398a033f0811e5d3a18"
+      "sourceSha256": "89a0ce074fc9f57e6b555b5a20cd8272986e5c01f443ddb00a7b233742aa7160",
+      "sha256": "89a0ce074fc9f57e6b555b5a20cd8272986e5c01f443ddb00a7b233742aa7160"
     },
     {
       "path": "modules/visualization-frontend/data.js",
@@ -4858,8 +4858,8 @@
     {
       "path": "modules/visualization-frontend/i18n-en.js",
       "sourcePath": "modules/visualization-frontend/i18n-en.js",
-      "sourceSha256": "2d5a291bf569d8eee26c48adb9bf4d961f79b3df73edc613fa170a60428988fe",
-      "sha256": "67a2d9da76a9e4f68acca28cfd3cdc8017f4a92b3788f2eb2e49d4dd409a4522"
+      "sourceSha256": "15ed1d9520fc6694e27a13028ccf7152b551ce2d8a27d0be7e12746f65d87d17",
+      "sha256": "15ed1d9520fc6694e27a13028ccf7152b551ce2d8a27d0be7e12746f65d87d17"
     },
     {
       "path": "modules/visualization-frontend/i18n.js",
@@ -4975,14 +4975,14 @@
     {
       "path": "modules/visualization-frontend/test-configuration-page.js",
       "sourcePath": "modules/visualization-frontend/test-configuration-page.js",
-      "sourceSha256": "5552783469ffb6b44b697f6c278e23cf1b033d46930caf597bc4102c48a80365",
-      "sha256": "22b325f0cf4c1409e0d3082164a43cd078a004b33853d8c2d1cf87f3bb268b95"
+      "sourceSha256": "03a9a59fcbab293014b6117641e05e79ecb101d07a7d9e45b1e781210783ff73",
+      "sha256": "03a9a59fcbab293014b6117641e05e79ecb101d07a7d9e45b1e781210783ff73"
     },
     {
       "path": "modules/visualization-frontend/test-configuration.js",
       "sourcePath": "modules/visualization-frontend/test-configuration.js",
-      "sourceSha256": "9fef05060b796bfd5eb72110ee541d1be97f420cf48886785463857965dbc499",
-      "sha256": "9fef05060b796bfd5eb72110ee541d1be97f420cf48886785463857965dbc499"
+      "sourceSha256": "b29e6f8ff375918dd791b19e48e91fb041dff0897a391e1af0cff0469400e5af",
+      "sha256": "b29e6f8ff375918dd791b19e48e91fb041dff0897a391e1af0cff0469400e5af"
     },
     {
       "path": "modules/visualization-frontend/test-data.js",
@@ -5245,8 +5245,8 @@
     {
       "path": "modules/zig-scheduler/desktop_playback.zig",
       "sourcePath": "modules/zig-scheduler/desktop_playback.zig",
-      "sourceSha256": "5ad90278e0cc2dd0b2f14b294519fb7eead04ff5a5317d9c6f4ae22c201fb3a4",
-      "sha256": "5ad90278e0cc2dd0b2f14b294519fb7eead04ff5a5317d9c6f4ae22c201fb3a4"
+      "sourceSha256": "6d5a4ff14799ccad18bd370393e42845c622d7d1dbfe92f74afae61e082e87bf",
+      "sha256": "6d5a4ff14799ccad18bd370393e42845c622d7d1dbfe92f74afae61e082e87bf"
     },
     {
       "path": "modules/zig-scheduler/desktop_playback_tests.zig",
