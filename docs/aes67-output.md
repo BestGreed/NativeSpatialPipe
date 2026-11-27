@@ -91,7 +91,7 @@ The previous FLP01 sender carried 8ch flows on ports 5010/5012. AES67 uses one s
 1. Keep the existing groups (for example 239.69.16.150 and 239.69.16.151).
 2. Set both flow ports to 5004. Remove the 5010/5012 entries; strict validation now rejects them with InvalidAes67Port.
 3. Keep the per-flow SSRC pair unique (or leave 0 for the random base + index).
-4. Recreate the N150 sinks from the sender's current SDP so the sink port matches 5004: PUT /api/sink/N with the SDP from nsp_aes67_sdp or the SAP announcement. Existing sinks that still say 5010/5012 will not receive after the migration.
+4. Recreate the N150 sinks from the sender's current SDP so the sink port matches 5004: PUT /api/sink/N with the SDP captured from the SAP announcement or read from <output-dir>/aes67-sdp.txt (the scheduler exports one SDP per active flow through nsp_aes67_sdp). Existing sinks that still say 5010/5012 will not receive after the migration.
 5. Verify with RTP captures that both flows use 5004 and different group addresses, and that /api/sink/status/N shows receiving with no payload-type errors.
 
 portPolicy "explicit" exists only to keep a lab receiver working during a staged rollout; it is not the production configuration.
