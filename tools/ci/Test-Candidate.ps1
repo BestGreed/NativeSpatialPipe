@@ -8,6 +8,13 @@ Start-Transcript build/ci-logs/contracts.txt
 try {
  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File modules/zig-scheduler/Build.ps1 -TargetDirectory build/nsp-product
  if($LASTEXITCODE){throw 'Zig unit tests failed'}
+ # The AES67 module's Rust suite (PTP/RTP/ring/ABI lifecycle) protects the
+ # network data plane; the product build only compiles the cdylib. The crate has
+ # no third-party dependencies, so the suite runs locked and offline.
+ $cargo = if($env:CARGO_HOME -and (Test-Path (Join-Path $env:CARGO_HOME 'bin/cargo.exe'))){Join-Path $env:CARGO_HOME 'bin/cargo.exe'} else {(Get-Command cargo.exe -ErrorAction SilentlyContinue).Source}
+ if(-not $cargo){throw 'cargo.exe not found for the AES67 module tests'}
+ & $cargo test --locked --offline --manifest-path modules/aes67/Cargo.toml
+ if($LASTEXITCODE){throw 'AES67 module Rust tests failed'}
  $env:NSP_SCHEDULER_TEST_EXE=Join-Path $root 'build/nsp-product/nsp-scheduler.exe'
  $env:NSP_RENDER_BRIDGE_TEST_DLL=Join-Path $root 'build/nsp-product/runtime/release/nsp_croksor.dll'
  & $Python modules/zig-scheduler/Test-Scheduler.py

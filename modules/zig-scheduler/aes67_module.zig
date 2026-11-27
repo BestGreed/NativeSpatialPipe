@@ -145,11 +145,19 @@ pub const Session = struct {
             channel_map[index] = source;
             labels[index] = try arena.allocator().dupeZ(u8, preset.labels[source]);
         }
+        // The ABI field is milliseconds, while the config stores source frames.
+        // Round up so the ring always covers the requested frames, and reject a
+        // prebuffer the ring cannot hold before configure() can only answer -22.
+        const prebuffer_ms = prebufferMilliseconds(net.prebufferFrames, prepared.sample_rate);
+        if (prebuffer_ms == 0 or prebuffer_ms > @min(net.ringPackets, 1000)) {
+            std.log.err("AES67 prebuffer {d} frames needs {d} ms; ring holds {d} ms", .{ net.prebufferFrames, prebuffer_ms, net.ringPackets });
+            return error.Aes67PrebufferExceedsRing;
+        }
         const config = Config{
             .channels = @intCast(channels),
             .sample_rate = prepared.sample_rate,
             .buffer_ms = net.ringPackets,
-            .prebuffer_ms = (net.prebufferFrames + prepared.frames_per_packet - 1) / prepared.frames_per_packet,
+            .prebuffer_ms = prebuffer_ms,
             .timestamping = @intFromEnum(ptp.timestamping),
             .lock_timeout_ms = ptp.lockTimeoutMs,
             .ptp_domain = ptp.domain,
@@ -239,17 +247,39 @@ pub const Session = struct {
     }
 
     pub fn close(self: *Session) void {
-        // A timed-out join leaves the handle valid. Keep the module loaded
-        // and retry until the module confirms that it can be unloaded.
+        // A timed-out join leaves the handle valid. Retry until the module
+        // confirms that it can be unloaded, but never sleep forever: the host
+        // process may exit and an unloadable module must stay loaded instead of
+        // hanging shutdown. Unloading the library while the handle is live
+        // would leave a dangling callback, so the timeout leaves it loaded.
+        const deadline = std.time.milliTimestamp() + @as(i64, self.stop_timeout_ms) + 5_000;
         while (true) {
             const result = self.close_fn(self.handle, self.stop_timeout_ms);
-            if (result == 0) break;
+            if (result == 0) {
+                self.lib.close();
+                return;
+            }
             std.log.err("AES67 close could not retire the backend (code {d})", .{result});
-            u.c.Sleep(1000);
+            if (std.time.milliTimestamp() >= deadline) {
+                std.log.err("AES67 close exceeded its {d} ms budget; keeping the module loaded", .{self.stop_timeout_ms + 5_000});
+                return;
+            }
+            u.c.Sleep(200);
         }
-        self.lib.close();
     }
 };
+
+/// Source frames to ABI milliseconds (the ABI prebuffer field is time, not
+/// packets; the old ceil(frames / frames_per_packet) only worked for 1 ms).
+fn prebufferMilliseconds(frames: u32, sample_rate: u32) u32 {
+    return (frames * 1000 + sample_rate - 1) / sample_rate;
+}
+
+test "prebuffer is expressed in milliseconds for every packet time" {
+    try std.testing.expectEqual(@as(u32, 10), prebufferMilliseconds(480, 48_000));
+    try std.testing.expectEqual(@as(u32, 1), prebufferMilliseconds(48, 48_000));
+    try std.testing.expectEqual(@as(u32, 10), prebufferMilliseconds(960, 96_000));
+}
 
 fn check(operation: []const u8, code: c_int) !void {
     if (code == 0) return;

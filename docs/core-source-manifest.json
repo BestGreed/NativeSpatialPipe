@@ -4711,7 +4711,7 @@
       "path": "modules/visualization-frontend/configuration.js",
       "sourcePath": "modules/visualization-frontend/configuration.js",
       "sourceSha256": "9155631774f6a45ce598fef329f54994a5705cede6b2031cdbc75e21b11e539f",
-      "sha256": "06dbbc7149b2e460e6916a4bdf23ff4391e6f2d47f55975a4ddd64e973f6adad"
+      "sha256": "0bd02cb6dd25347ad3e7fd4aa9f562a5de957bf2e7032398a033f0811e5d3a18"
     },
     {
       "path": "modules/visualization-frontend/data.js",
@@ -4852,7 +4852,7 @@
       "path": "modules/visualization-frontend/test-configuration-page.js",
       "sourcePath": "modules/visualization-frontend/test-configuration-page.js",
       "sourceSha256": "5552783469ffb6b44b697f6c278e23cf1b033d46930caf597bc4102c48a80365",
-      "sha256": "653d5bb9f590f79c0689feb1672616599e5f25db2d94d1898104674c8d65b8ed"
+      "sha256": "faff52570ce00355d27e71eb8990738861ded2f6907dc278ca66229ed46989d7"
     },
     {
       "path": "modules/visualization-frontend/test-configuration.js",
@@ -5146,7 +5146,7 @@
       "path": "modules/zig-scheduler/host.zig",
       "sourcePath": "modules/zig-scheduler/host.zig",
       "sourceSha256": "98ef7a8a87220f8e6b5e6c2124fd2939067b80529c1f7a4a9faeb62fd8ae385a",
-      "sha256": "d45aa4cbc23cb5c2ef7515fd9183306ef81c65c2b67edfb30b0ae228e0a2348d"
+      "sha256": "4aca416d07869c3cb60a9e80b08699e0025b8676736920ac7e4936167af446ce"
     },
     {
       "path": "modules/zig-scheduler/json_processing_probe.zig",
@@ -5534,7 +5534,7 @@
     },
     {
       "path": "tools/ci/Test-Candidate.ps1",
-      "sha256": "4289b611d0014138c1bb0f5db3264a7e6a237e0730b06d8ae44e86cdfca11824",
+      "sha256": "0600909c947f9893c3fe5a7e823b966f4dbce96d57e195b4bf247a9d4e4ad8dc",
       "origin": "public-maintained",
       "publicBaseRevision": "cf9badb42061e90250489a6e336325bb42b8da10"
     },
@@ -5812,7 +5812,7 @@
       "path": "modules/zig-scheduler/aes67_module.zig",
       "sourcePath": "modules/zig-scheduler/aes67_module.zig",
       "sourceSha256": "04ba732a394ba3e20a4357d07c16f8b5707f410018fcdb757188160378b20d47",
-      "sha256": "128a4c29f8d7ffe94890cbf5f7574fe16a003a039b32567325482dc43fefaa48"
+      "sha256": "f2a05033b49ed6bf4f977b72c96d5efdf35de65ecf86bece4ab26bc6175ada2c"
     },
     {
       "path": "modules/aes67/src/session/pacer.rs",

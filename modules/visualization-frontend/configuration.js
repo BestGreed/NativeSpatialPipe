@@ -122,7 +122,7 @@ function render(){
   field(gmWrap,'aes67.ptp.priority1','GM priority1（0–255）','integer',null,'gm 模式广播的 BMCA priority1，默认 128。');
   field(gmWrap,'aes67.ptp.priority2','GM priority2（0–255）','integer',null,'gm 模式广播的 BMCA priority2，默认 128。');
   field(gmWrap,'aes67.ptp.gmCapable','auto 可成为 GM','text',[{value:'false',label:'false'},{value:'true',label:'true'}],'仅 auto 模式使用；gm 模式隐含 true。');
-  field(gmWrap,'aes67.ptp.gmUtcOffset','GM UTC 偏移（秒，可空）','text',null,'留空为 ARB（ptpTimescale=0）；0–127 时广播 ptpTimescale=1。');
+  field(gmWrap,'aes67.ptp.gmUtcOffset','GM UTC 偏移（秒，可空）','integer',null,'留空为 ARB（ptpTimescale=0）；0–127 时广播 ptpTimescale=1。');
   const updateGmVisibility=()=>{gmWrap.hidden=!['gm','auto'].includes(String(ptpMode.value));};
   ptpMode.addEventListener('change',updateGmVisibility);updateGmVisibility();
 

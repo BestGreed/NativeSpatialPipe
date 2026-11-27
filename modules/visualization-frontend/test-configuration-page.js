@@ -192,6 +192,7 @@ try{
  assert.match(element('result').textContent,/(校验未通过|validation failed)/i);
  input('aes67.flows.0.destIp').value='192.0.2.222';input('aes67.ssrc').value='1314082870';
  input('aes67.ringPackets').value='512';
+ input('aes67.ptp.gmUtcOffset').value='5';
  input('sourcePolicy').value='fixed';input('sourcePolicy').listeners.change();
  assert.ok(input('sourceStream'));
  assert.equal(input('unifiedSlotProfile'),undefined);
@@ -200,6 +201,10 @@ try{
  assert.equal(playback.outputBackend,'aes67');
  assert.equal(playback.sourcePolicy,'fixed');
  assert.equal(playback.aes67.ptp.lockTimeoutMs,5000);
+ assert.equal(playback.aes67.ptp.gmUtcOffset,5,'a typed UTC offset is saved as a number');
+ input('aes67.ptp.gmUtcOffset').value='';
+ await element('configForm').listeners.submit({preventDefault(){}});
+ assert.equal(playback.aes67.ptp.gmUtcOffset,undefined,'clearing the UTC offset removes it (ARB)');
  await element('reload').onclick();
  assert.equal(input('sourcePolicy').value,'fixed');
  assert.ok(input('sourceStream'));

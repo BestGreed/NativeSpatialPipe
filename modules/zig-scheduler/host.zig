@@ -458,22 +458,31 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         aoip_source=0; // all source slots share the same network fault status.
     }
     defer if (aes67) |*session| {
+        var safe_to_close = true;
         if (aes67_source) |source| {
             const pipeline = &pipelines[source];
             // Only a joined writer proves that the DLL callback is no longer
             // reachable. Before capture starts, this host can join it directly.
+            // Every wait is bounded: a stuck capture side must not turn process
+            // shutdown into an infinite sleep (FSA can only kill the child).
+            const deadline = std.time.milliTimestamp() + @as(i64, session.stop_timeout_ms) + 10_000;
             if (!capture_may_have_started) {
-                while (!pipeline.finished) {
+                while (!pipeline.finished and std.time.milliTimestamp() < deadline) {
                     var summary = pipeline.finish() catch {
-                        c.Sleep(1000);
+                        c.Sleep(200);
                         continue;
                     };
                     summary.deinit();
                 }
             }
-            while (!pipeline.finished) c.Sleep(1000);
+            while (!pipeline.finished and std.time.milliTimestamp() < deadline) c.Sleep(200);
+            if (!pipeline.finished) {
+                std.log.err("AES67 pipeline did not finish within {d} ms; keeping the module loaded instead of unloading a live callback", .{session.stop_timeout_ms + 10_000});
+                // Leave the DLL loaded: its submit callback may still be reachable.
+                safe_to_close = false;
+            }
         }
-        session.close();
+        if (safe_to_close) session.close();
     };
     if (aes67_profile != null) {
         if (aoip_enabled or wasapi_profile != null) return error.DuplicateOutputBackend;
@@ -612,6 +621,10 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         .audioRoute=if(outputRoute) |*route| route else null,
         .audioAutomatic=aoip_automatic,
         .audioSelected=aoip_selected };
+    // Parse the optional deadline before capture can start: a malformed value
+    // must fail through the normal error path, not after the cleanup defer has
+    // committed to waiting for a pipeline nobody will finish.
+    const duration_ms: ?u64 = if (u.option(args, "--duration-ms")) |v| try std.fmt.parseInt(u64, v, 10) else null;
     var thread = try std.Thread.spawn(.{}, Bridge.run, .{&bridge});
     errdefer if (!capture_may_have_started) {
         bridge.stop.store(true, .release);
@@ -644,7 +657,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         try shutdown(&hook, &receiver, pipelines, &bridge, &thread, &recorder, &recordThread, out);
         return err;
     };
-    const deadline = if (u.option(args, "--duration-ms")) |v| c.GetTickCount64() + try std.fmt.parseInt(u64, v, 10) else std.math.maxInt(u64);
+    const deadline = if (duration_ms) |ms| c.GetTickCount64() + ms else std.math.maxInt(u64);
     var nextCheck: u64 = 0;
     var reportedAoipFault:u32=0;
     var aes67_poll_failure: ?anyerror = null;
