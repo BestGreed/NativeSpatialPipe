@@ -365,6 +365,17 @@ pub(crate) fn catch_up_slots(slot_period_ns: i128, budget_ns: i128) -> u32 {
 /// ptime under the previous 8-slot limit.
 const CATCH_UP_BUDGET_NS: i128 = 2_000_000;
 
+/// Whether a new SDP set needs the previous SAP session withdrawn. Identical
+/// hashes are a plain refresh; a changed hash must be deleted per RFC 2974
+/// section 3.2 or receivers keep the stale session until the implicit timeout.
+fn descriptions_changed(old: &[Description], new: &[Description]) -> bool {
+    old.len() != new.len()
+        || old
+            .iter()
+            .map(|description| description.hash)
+            .ne(new.iter().map(|description| description.hash))
+}
+
 mod pacer;
 
 struct Network {
@@ -536,8 +547,8 @@ impl Network {
             }
             // SAP follows the media: announce while there is a media clock and
             // while RTP is still flowing in holdover. A role change raises the
-            // SDP version and changes the hash instead of delete+re-announce
-            // flapping (DESIGN-TOPO.md section 4).
+            // SDP version, so activate() withdraws the previous session hash
+            // and announces the new one (RFC 2974 section 3.2).
             if now >= stream.next_sap
                 && !self.sap.is_empty()
                 && !stream.descriptions.is_empty()
@@ -701,7 +712,7 @@ impl Network {
         }
         stream.version += 1;
         stream.next_sap = now;
-        stream.descriptions = self
+        let descriptions: Vec<Description> = self
             .outputs
             .iter()
             .enumerate()
@@ -728,6 +739,17 @@ impl Network {
                 }
             })
             .collect();
+        // RFC 2974 section 3.2: a changed SDP changes the session id hash and a
+        // receiver keeps the old hash until the implicit timeout
+        // (max(10 x announcement period, 1 h)). Withdraw the previous session
+        // once when the hash set changes; re-announcing an unchanged document
+        // stays a plain refresh without a delete/re-add flap.
+        if descriptions_changed(&stream.descriptions, &descriptions)
+            && !stream.descriptions.is_empty()
+        {
+            self.announce(run, &stream.descriptions, true);
+        }
+        stream.descriptions = descriptions;
         *lock(&run.descriptions) = stream.descriptions.clone();
         lock(&run.audio).discard = false;
         stream.prebuffered = false;
@@ -1100,6 +1122,22 @@ mod tests {
             encoding: Encoding::L24,
             redundant: false,
         }
+    }
+
+    fn description(hash: u16) -> Description {
+        Description {
+            hash,
+            sdp: String::new(),
+        }
+    }
+
+    #[test]
+    fn only_a_changed_sdp_hash_set_requests_a_sap_delete() {
+        let old = [description(0x1111), description(0x2222)];
+        assert!(!descriptions_changed(&old, &old));
+        assert!(descriptions_changed(&old, &[description(0x1111), description(0x3333)]));
+        assert!(descriptions_changed(&old, &[description(0x1111)]));
+        assert!(descriptions_changed(&[], &[description(0x1111)]));
     }
 
     #[test]

@@ -109,7 +109,7 @@ DESIGN audit D8: they live inside the nested aes67.ptp object.
 | aes67.ptp.timestamping | auto, software, hardware | auto | No PHC is integrated in this Windows sender: software timestamps come from QPC at the socket boundaries, and explicit hardware reports TIMESTAMP_UNAVAILABLE at start. Intel I225/I226 advertises 1588 only for its Linux drivers, so a Windows hardware path needs another NIC/stack. |
 | aes67.ptp.priority1 | 0-255 | 128 | GM BMCA priority1 (AES67 Annex A Table A.1 default). |
 | aes67.ptp.priority2 | 0-255 | 128 | GM BMCA priority2 (AES67 Annex A Table A.1 default). |
-| aes67.ptp.announceTimeoutMs | 1000-60000 ms | 6000 | AUTO listening window and foreign-master receipt timeout (announceReceiptTimeout 3 x 2 s). |
+| aes67.ptp.announceTimeoutMs | 1000-60000 ms | 6000 | AUTO listening window and the floor for the follower's foreign-master timeout, which is max(this, 5 x the accepted announce interval clamped to 125 ms-8 s). |
 | aes67.ptp.gmCapable | boolean | false | auto mode may announce a GM when no external GM appears. gm mode implies true. |
 | aes67.ptp.gmUtcOffset | null or 0-127 s | null | null = ARB (ptpTimescale=0, offsetValid=0). 0-127 = IEEE 1588-2008 8.2.3 currentUtcOffset seconds, announced with ptpTimescale=1 and currentUtcOffsetValid=1. |
 
@@ -148,7 +148,8 @@ TIME_TRACEABLE flag (0x0010) or a traceable clockClass (6/7/166/187), never from
 The announced SDP follows the role: locked slave or active GM emits a=clock-domain:PTPv2 <domain>,
 a=ts-refclk:ptp=IEEE1588-2008:<GMID>:<domain> and a=mediaclk:direct=0; local mode emits
 a=ts-refclk:local and a=mediaclk:direct=0 with no ptp and no localmac. Every role change raises the
-SDP version and re-announces, so receivers see a new o= version. Legacy ts-refclk:localmac is never
+SDP version; the changed hash is first withdrawn through SAP (RFC 2974 section 3.2), then the new
+session is announced, so receivers do not keep a stale session for up to an hour. Legacy ts-refclk:localmac is never
 emitted; receivers that still need it during migration must run their own strict=false mode
 (aes67_refclk_strict=false on the receiver side). mediaclk:sender is legal RFC 7273 but not
 AES67-conformant, so it is not emitted (reserved EXTENSION behind a future local_mediaclk setting);

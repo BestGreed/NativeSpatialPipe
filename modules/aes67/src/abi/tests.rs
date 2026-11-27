@@ -414,7 +414,9 @@ fn check_udp_mock_gm(version: u8) {
     gm.impair.store(false, Ordering::Release);
 
     drop(gm);
-    let deadline = Instant::now() + Duration::from_secs(4);
+    // The configured announce timeout (6 s floor) is the master timeout now, so
+    // losing the mock takes longer than the old five-cadence budget.
+    let deadline = Instant::now() + Duration::from_secs(8);
     let loss = loop {
         if let Some(event) = handle.poll() {
             break event;
@@ -466,7 +468,7 @@ fn check_udp_mock_gm(version: u8) {
         .recv_from(&mut packet)
         .expect("RTP did not resume after reacquisition");
     drop(gm);
-    let deadline = Instant::now() + Duration::from_secs(4);
+    let deadline = Instant::now() + Duration::from_secs(8);
     loop {
         if let Some(lost_again) = handle.poll() {
             assert_eq!(lost_again.kind, 4);

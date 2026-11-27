@@ -625,7 +625,7 @@
             },
             "priority1": { "type": "integer", "minimum": 0, "maximum": 255, "default": 128, "description": "BMCA priority1 announced in gm mode (AES67 Annex A Table A.1 default 128)." },
             "priority2": { "type": "integer", "minimum": 0, "maximum": 255, "default": 128, "description": "BMCA priority2 announced in gm mode (AES67 Annex A Table A.1 default 128)." },
-            "announceTimeoutMs": { "type": "integer", "minimum": 1000, "maximum": 60000, "default": 6000, "description": "AUTO listening window and foreign-master receipt timeout (AES67 Annex A Table A.1 announceReceiptTimeout 3 x 2 s)." },
+            "announceTimeoutMs": { "type": "integer", "minimum": 1000, "maximum": 60000, "default": 6000, "description": "AUTO listening window and floor for the follower's foreign-master timeout: max(this, 5 x the accepted announce interval clamped to 125 ms-8 s)." },
             "gmCapable": { "type": "boolean", "default": false, "description": "In auto mode, announce as grandmaster when no external GM appears. gm mode implies true." },
             "gmUtcOffset": { "type": ["integer", "null"], "minimum": 0, "maximum": 127, "default": null, "description": "IEEE 1588-2008 8.2.3 currentUtcOffset in seconds. null means not configured: the GM announces an ARB timescale (ptpTimescale=0)." }
           }

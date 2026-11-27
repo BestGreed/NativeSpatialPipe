@@ -199,7 +199,7 @@
       "path": "docs/aes67-output.md",
       "sourcePath": "docs/aes67-output.md",
       "sourceSha256": "5fae9bafba7ad5484ba6d730e25b85c9acbc9d323f26301bf80c1e6db37ffff6",
-      "sha256": "8870224a7f997190bdb75ba5ef535c6487f1ec3c986241d53f7c418f28479666"
+      "sha256": "28064989e7f7ddfdbf4cd5cb9303b894ca222724e54dcdf89590c3f82309d538"
     },
     {
       "path": "docs/alpha-dev.md",
@@ -5062,7 +5062,7 @@
       "path": "modules/zig-scheduler/aes67_config.zig",
       "sourcePath": "modules/zig-scheduler/aes67_config.zig",
       "sourceSha256": "6402ca0058bc5af780a40ae1828ffca7c6618e1f5dc3d0b3a8db9a0057327b1e",
-      "sha256": "1ec484b2aa1e231035173de14027d2b36c50ef2245d4969075b90f9e1e76b3b0"
+      "sha256": "2a21e9564df82cb344146bd65295be6239ed0b86fce72c49ffe79b699c9bf4c0"
     },
     {
       "path": "modules/zig-scheduler/aes67_config_tests.zig",
@@ -5293,7 +5293,7 @@
       "path": "modules/zig-scheduler/playback.schema.json",
       "sourcePath": "modules/zig-scheduler/playback.schema.json",
       "sourceSha256": "763455f1e492e37bb570a606ddc6cdec417f8d4572c09adc053ad5c93d274e51",
-      "sha256": "7092e59d28f7413fc47bbd2cf29f5d1489c6c3ea88ea50b66704fecaf1bbc922"
+      "sha256": "79fc1ff739294792721e2c728768e4a77da420eca8e3ceff7b4f7ab1e4d293d7"
     },
     {
       "path": "modules/zig-scheduler/playback.wasapi.example.json",
@@ -5716,7 +5716,7 @@
       "path": "modules/aes67/INTERFACE.md",
       "sourcePath": "modules/aes67/INTERFACE.md",
       "sourceSha256": "f571d4081790264d8f137dfec2e3651672a25ef835b6c761db48fc47b8c02bcd",
-      "sha256": "356d4a734037750c20f46ba905d0bc39845cfca9739fa724c1e65874a452d918"
+      "sha256": "785048eca1b39606bff356b60f7cde7ddd38c1482b270900997cdb2e0ba2678f"
     },
     {
       "path": "modules/aes67/nsp_aes67.h",
@@ -5734,7 +5734,7 @@
       "path": "modules/aes67/src/abi/tests.rs",
       "sourcePath": "modules/aes67/src/abi/tests.rs",
       "sourceSha256": "72be6ddb220dac9598fe2d1c9822e893ceb079dcc0e466d9d37c16ae406ba254",
-      "sha256": "4663cc10717ac71b7c01dee745a7ba043073c5ab8f969f89f7cfa89cded6b523"
+      "sha256": "2f2aac6d3db9eaf9d67094690b1386e14522e02d7d542ae0238f3396e1aa60cd"
     },
     {
       "path": "modules/aes67/src/lib.rs",
@@ -5770,7 +5770,7 @@
       "path": "modules/aes67/src/ptp/mod.rs",
       "sourcePath": "modules/aes67/src/ptp/mod.rs",
       "sourceSha256": "733554e3d145f159653d49570d2907eaa5af2d64dec0427e97f411556d98d7ff",
-      "sha256": "c00bfd9a136ed8623427f40790c1c4f320840a9ec33b55f3cf87c03e7004602a"
+      "sha256": "65f42110da94e9989026aab38d252595a67919b0a8ef17aa2e817d658383605f"
     },
     {
       "path": "modules/aes67/src/ptp/role.rs",
@@ -5800,7 +5800,7 @@
       "path": "modules/aes67/src/session/mod.rs",
       "sourcePath": "modules/aes67/src/session/mod.rs",
       "sourceSha256": "fc4ed7eda6aa7306b9d174161bc466b2e8d70ef9bd6371f245d78651dd8d98d9",
-      "sha256": "1f252c7dc3ab49fa77c3d30c38b3c5e847ec1dfb4602d78e8c946da490e8f3a8"
+      "sha256": "8ef6b5cab58482facbc5c8fefab66e4a8d582de6a9024548ed15c11d32bbcd99"
     },
     {
       "path": "modules/aes67/src/time/mod.rs",

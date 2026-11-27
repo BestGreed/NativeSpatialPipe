@@ -138,8 +138,8 @@ pub const Ptp = struct {
     mode: PtpMode = .slave,
     priority1: u8 = default_ptp_priority,
     priority2: u8 = default_ptp_priority,
-    /// aes67.ptp.announceTimeoutMs: AUTO listening window and foreign-master
-    /// receipt timeout (1000..60000 ms).
+    /// aes67.ptp.announceTimeoutMs: AUTO listening window and the floor for the
+    /// follower's foreign-master timeout (1000..60000 ms).
     announceTimeoutMs: u32 = default_ptp_announce_timeout_ms,
     /// aes67.ptp.gmCapable: auto mode may announce a GM after the timeout.
     gmCapable: bool = false,

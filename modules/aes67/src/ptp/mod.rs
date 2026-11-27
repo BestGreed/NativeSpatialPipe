@@ -37,6 +37,13 @@ const EXCHANGE_MAX_AGE: i128 = 2_000_000_000;
 const MAX_ROUND_TRIP: i128 = 40_000_000;
 const SYNC_HISTORY: usize = 16;
 const ANNOUNCE_MISSES: i128 = 5;
+/// AES67 Annex A fixes the announce interval at 2 s (logMessageInterval 1) and
+/// IEEE 1588 deployments stay within -3..=3. A malformed log interval (up to
+/// 2^20 s) must not stretch the foreign-master timeout into days, so the
+/// accepted cadence is clamped instead of rejected: Sync/Follow_Up following
+/// still works for an unusual but reachable master.
+const MIN_ANNOUNCE_INTERVAL_NS: i128 = 125_000_000;
+const MAX_ANNOUNCE_INTERVAL_NS: i128 = 8_000_000_000;
 const DELAY_RESPONSE_TIMEOUT: i128 = 1_000_000_000;
 
 /// PTP multicast TTL. TTL is an IEEE 1588-2008 Annex D/E profile choice and a
@@ -155,6 +162,21 @@ pub struct Diagnostics {
     announce_interval_ns: i128,
 }
 
+/// IEEE 1588-2008 9.3.4 dataset comparison key. These senders are ordinary
+/// clocks (no boundary clock between them), so stepsRemoved is always zero and
+/// the order is priority1, clockClass, clockAccuracy,
+/// offsetScaledLogVariance, priority2, grandmasterIdentity. A lower value is a
+/// better master.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct Dataset {
+    priority1: u8,
+    clock_class: u8,
+    clock_accuracy: u8,
+    variance: u16,
+    priority2: u8,
+    gm: ClockId,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Master {
     gm: ClockId,
@@ -164,6 +186,7 @@ struct Master {
     time_traceable: bool,
     /// PTP_TIMESCALE flag of the accepted announce: PTP (TAI) timescale in use.
     ptp_timescale: bool,
+    dataset: Dataset,
 }
 
 struct SyncPair {
@@ -194,6 +217,9 @@ pub(crate) struct FollowerState {
     diagnostics: Diagnostics,
     port: PortId,
     master: Option<Master>,
+    /// Foreign-master timeout budget from the configured announce timeout;
+    /// expire() takes max(this, 5 x clamped cadence).
+    announce_timeout_ns: i128,
     announce_at: i128,
     last_good: Option<i128>,
     sync_pairs: VecDeque<(u16, SyncPair)>,
@@ -213,6 +239,7 @@ impl FollowerState {
             diagnostics: Diagnostics::default(),
             port,
             master: None,
+            announce_timeout_ns: config.announce_timeout_ns,
             announce_at: 0,
             last_good: None,
             sync_pairs: VecDeque::with_capacity(SYNC_HISTORY),
@@ -249,7 +276,12 @@ impl FollowerState {
     }
 
     fn expire(&mut self, now: i128) {
-        let budget = self.diagnostics.announce_interval_ns * ANNOUNCE_MISSES;
+        // The configured announce timeout is the floor: a sender advertising a
+        // slow cadence may stretch it, but never to the days a hostile
+        // logMessageInterval of 20 would imply (clamped at accept time).
+        let budget = self
+            .announce_timeout_ns
+            .max(self.diagnostics.announce_interval_ns * ANNOUNCE_MISSES);
         if self.master.is_some() && now - self.announce_at >= budget {
             if self.clock.fit().is_some() {
                 self.diagnostics.last_lost_reason = Some("announce_timeout");
@@ -331,19 +363,39 @@ impl FollowerState {
             if self.pin.is_some_and(|pin| pin != announce.grandmaster) {
                 return Err("wrong_grandmaster");
             }
-            let cadence = announce_interval(msg.log_interval).ok_or("invalid_announce_interval")?;
+            // Unusual but reachable cadences are clamped, not rejected: the
+            // master would otherwise get a timeout measured in days.
+            let cadence = announce_interval(msg.log_interval)
+                .ok_or("invalid_announce_interval")?
+                .clamp(MIN_ANNOUNCE_INTERVAL_NS, MAX_ANNOUNCE_INTERVAL_NS);
             let master = Master {
                 gm: announce.grandmaster,
                 port: msg.source,
                 ip,
                 time_traceable: time_traceable(&msg),
                 ptp_timescale: msg.flags & codec::PTP_TIMESCALE != 0,
+                dataset: Dataset {
+                    priority1: announce.priority1,
+                    clock_class: announce.clock_class,
+                    clock_accuracy: announce.clock_accuracy,
+                    variance: announce.offset_scaled_log_variance,
+                    priority2: announce.priority2,
+                    gm: announce.grandmaster,
+                },
             };
             if let Some(existing) = self.master {
                 if existing.port != master.port || existing.ip != master.ip {
-                    return Err("wrong_master");
-                }
-                if existing != master {
+                    // BMCA-lite: the first accepted announce no longer pins the
+                    // follower forever. A strictly better foreign dataset takes
+                    // over; anything else is rejected as before.
+                    if master.dataset >= existing.dataset {
+                        return Err("wrong_master");
+                    }
+                    if self.clock.fit().is_some() {
+                        self.diagnostics.last_lost_reason = Some("better_master");
+                    }
+                    self.clear();
+                } else if existing != master {
                     if self.clock.fit().is_some() {
                         self.diagnostics.last_lost_reason = Some("grandmaster_changed");
                     }
@@ -1119,6 +1171,16 @@ mod tests {
         })
     }
 
+    fn announce_dataset(priority1: u8, gm: ClockId) -> Body {
+        match announce(gm) {
+            Body::Announce(mut body) => {
+                body.priority1 = priority1;
+                Body::Announce(body)
+            }
+            _ => unreachable!(),
+        }
+    }
+
     fn message(source: PortId, body: Body, seq: u16, flags: u16, log_interval: i8) -> Message {
         Message {
             domain: 42,
@@ -1132,9 +1194,66 @@ mod tests {
     }
 
     #[test]
+    fn announce_timeout_uses_the_config_and_clamps_a_hostile_cadence() {
+        let ip = Ipv4Addr::LOCALHOST;
+        let config = Config {
+            domain: 42,
+            interface: ip,
+            unicast_master: Some(ip),
+            announce_timeout_ns: 2 * NS_PER_S,
+            ..Config::default()
+        };
+        let mut state = FollowerState::new(&config, PORT, TimestampMode::Software);
+        // logMessageInterval 20 is about twelve days per announce. The cadence
+        // is clamped to 8 s and the budget is max(configured 2 s, 5 x 8 s).
+        state.receive(message(MASTER, announce(GM), 0, 0, 20), ip, 0, false);
+        assert!(state.master.is_some());
+        assert_eq!(state.diagnostics.announce_interval_ns, 8 * NS_PER_S);
+        state.expire(39 * NS_PER_S);
+        assert!(state.master.is_some(), "39 s is inside the 40 s budget");
+        state.expire(41 * NS_PER_S);
+        assert!(state.master.is_none(), "the master must never live for days");
+    }
+
+    #[test]
+    fn a_better_foreign_announce_replaces_the_first_master() {
+        let ip = Ipv4Addr::LOCALHOST;
+        let config = Config {
+            domain: 42,
+            interface: ip,
+            unicast_master: Some(ip),
+            ..Config::default()
+        };
+        let mut state = FollowerState::new(&config, PORT, TimestampMode::Software);
+        let better_source = [9; 10];
+        let other_ip = Ipv4Addr::new(127, 0, 0, 2);
+        state.receive(message(MASTER, announce_dataset(128, GM), 0, 0, 1), ip, 0, false);
+        assert_eq!(state.master.unwrap().gm, GM);
+        // A worse foreign dataset is still rejected.
+        state.receive(
+            message(better_source, announce_dataset(200, [8; 8]), 0, 0, 1),
+            other_ip,
+            0,
+            false,
+        );
+        assert_eq!(state.master.unwrap().gm, GM);
+        // A strictly better one takes over, even from a different source.
+        state.receive(
+            message(better_source, announce_dataset(10, [9; 8]), 0, 0, 1),
+            other_ip,
+            0,
+            false,
+        );
+        assert_eq!(state.master.unwrap().gm, [9; 8]);
+    }
+
+    #[test]
     fn two_step_pin_domain_corrections_loss_and_recovery() {
         let ip = Ipv4Addr::LOCALHOST;
-        let config = follower_config(ip);
+        let mut config = follower_config(ip);
+        // Keep the configured floor below 5 x the 125 ms cadence this test
+        // advertises, so the expiry deadline stays at 625 ms as before.
+        config.announce_timeout_ns = 125_000_000;
         let mut state = FollowerState::new(&config, PORT, TimestampMode::Software);
         let announce_body = || announce(GM);
         let msg = |body, seq, flags, correction_scaled_ns| Message {
