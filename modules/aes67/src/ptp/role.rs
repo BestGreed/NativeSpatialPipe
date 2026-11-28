@@ -1,5 +1,5 @@
-//! Role state machine for the AES67 PTP topology modes (DESIGN-TOPO.md
-//! section 2): Init -> Listening -> {Slave, Gm, Local}; Slave carries the
+//! Role state machine for the AES67 PTP topology modes:
+//! Init -> Listening -> {Slave, Gm, Local}; Slave carries the
 //! Locked/Holdover sub-state in the session worker and Gm carries
 //! Active/Passive in [super::gm].
 //!
@@ -442,7 +442,7 @@ impl RoleMachine {
             }
             Role::Listening => {
                 if let Some(announce) = inputs.announce {
-                    // Step 2 of DESIGN-TOPO.md section 2: an external GM wins.
+                    // Step 2: an external GM wins.
                     self.set(
                         Role::Slave,
                         Source::ExternalGm,

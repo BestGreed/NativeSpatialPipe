@@ -26,8 +26,8 @@ pub const DEFAULT_CLOCK_CLASS: u8 = 248;
 /// clockAccuracy unknown (IEEE 1588-2008 7.6.2.2, 0xFE). IMPLEMENTATION
 /// CHOICE matching the board profile, not an AES67 numeric requirement.
 pub const DEFAULT_CLOCK_ACCURACY: u8 = 0xFE;
-/// offsetScaledLogVariance 0xFFFF (unknown). EXTENSION choice recorded in
-/// DESIGN-TOPO.md section 3: consistent with the board's linuxptp profile.
+/// offsetScaledLogVariance 0xFFFF (unknown). EXTENSION choice consistent with
+/// the board's linuxptp profile.
 pub const DEFAULT_OFFSET_SCALED_LOG_VARIANCE: u16 = 0xFFFF;
 /// AES67-2023 Annex A Table A.1 line 2092-2099: default priority1/priority2 128.
 pub const DEFAULT_PRIORITY: u8 = 128;
@@ -103,7 +103,7 @@ pub struct Config {
     pub clock_accuracy: u8,
     pub offset_scaled_log_variance: u16,
     /// Some(offset) => ptpTimescale=1, currentUtcOffsetValid=1, time traceable
-    /// claim per DESIGN-TOPO.md section 3; None => ARB (ptpTimescale=0).
+    /// claim; None => ARB (ptpTimescale=0).
     pub utc_offset: Option<i16>,
     pub announce_interval_ns: i128,
     pub sync_interval_ns: i128,
@@ -180,7 +180,7 @@ pub enum StepReason {
     /// A foreign Announce carried a better data set (BMCA-lite).
     BetterForeignGm,
     /// A worse foreign GM kept announcing for two announce intervals: dual-GM
-    /// watchdog, yield rather than run two GMs (DESIGN-TOPO.md section 2.5).
+    /// watchdog, yield rather than run two GMs.
     DualGm,
 }
 
@@ -686,7 +686,7 @@ mod tests {
             panic!()
         };
         // ptpTimescale=1 + currentUtcOffsetValid=1 when configured; ARB
-        // otherwise (DESIGN-TOPO.md section 3, IEEE 1588-2008 8.2.3).
+        // otherwise (IEEE 1588-2008 8.2.3).
         assert_eq!(
             packets[0].message.flags & (PTP_TIMESCALE | CURRENT_UTC_OFFSET_VALID),
             PTP_TIMESCALE | CURRENT_UTC_OFFSET_VALID

@@ -97,7 +97,7 @@ pub struct Config {
     pub general_port: u16,
     pub local_event_port: u16,
     pub local_general_port: u16,
-    /// Topology mode (DESIGN-TOPO.md sections 0-2).
+    /// Topology mode.
     pub mode: PtpMode,
     pub priority1: u8,
     pub priority2: u8,
@@ -108,7 +108,7 @@ pub struct Config {
     pub announce_timeout_ns: i128,
     /// IEEE 1588-2008 8.2.3 timePropertiesDS currentUtcOffset in seconds; when
     /// set the GM announces ptpTimescale=1 and currentUtcOffsetValid=1
-    /// (field text absent locally, dataset semantics per DESIGN-TOPO section 3).
+    /// (field text absent locally; dataset semantics follow IEEE 1588-2008 8.2.3).
     pub gm_utc_offset: Option<i16>,
     /// Test/embedding explicit clock identity. Production GM mode leaves this
     /// None and derives the EUI-64 identity from the interface MAC; it never
@@ -354,7 +354,7 @@ impl FollowerState {
             return Err("wrong_domain_or_self");
         }
         if let Body::Announce(announce) = msg.body {
-            // EXTENSION per DESIGN-TOPO.md section 4: ptpTimescale=0 (ARB) is
+            // EXTENSION: ptpTimescale=0 (ARB) is
             // accepted for frequency-only locking; the traceability flag is
             // tracked separately. Malformed bodies are still rejected.
             if event || announce.validate().is_err() || announce.clock_class == 255 {
@@ -563,7 +563,7 @@ pub enum MediaSource {
     Local,
 }
 
-/// Reported role/source snapshot (DESIGN-TOPO.md section 6). The counters ABI
+/// Reported role/source snapshot. The counters ABI
 /// struct is size-stable, so this is surfaced through the extra
 /// nsp_aes67_ptp_status export and the diagnostics log line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1409,8 +1409,7 @@ mod tests {
 
     #[test]
     fn arb_announce_locks_frequency_only_and_reports_untraceable() {
-        // EXTENSION / DEVIATION (DESIGN-TOPO.md sections 4 and 7, SPEC-REFS
-        // G7): ptpTimescale=0 (ARB) is accepted for frequency lock, but the
+        // EXTENSION / DEVIATION: ptpTimescale=0 (ARB) is accepted for frequency lock, but the
         // media clock epoch is then an arbitrary anchor, so time_traceable
         // must stay false. AES67 section 5's shared TAI epoch is not met.
         let ip = Ipv4Addr::LOCALHOST;

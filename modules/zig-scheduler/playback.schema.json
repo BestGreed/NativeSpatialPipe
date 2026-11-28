@@ -621,7 +621,7 @@
             "mode": {
               "enum": ["slave", "auto", "gm", "local"],
               "default": "slave",
-              "description": "PTP topology mode (DESIGN-TOPO.md): slave follows an external GM (pre-existing default), auto listens then falls back to gm (when gmCapable) or local, gm announces this sender as the grandmaster, local uses a local media clock and advertises a=ts-refclk:local."
+              "description": "PTP topology mode: slave follows an external GM (pre-existing default), auto listens then falls back to gm (when gmCapable) or local, gm announces this sender as the grandmaster, local uses a local media clock and advertises a=ts-refclk:local."
             },
             "priority1": { "type": "integer", "minimum": 0, "maximum": 255, "default": 128, "description": "BMCA priority1 announced in gm mode (AES67 Annex A Table A.1 default 128)." },
             "priority2": { "type": "integer", "minimum": 0, "maximum": 255, "default": 128, "description": "BMCA priority2 announced in gm mode (AES67 Annex A Table A.1 default 128)." },

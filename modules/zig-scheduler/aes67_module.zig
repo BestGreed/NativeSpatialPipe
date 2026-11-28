@@ -60,7 +60,7 @@ const Config = extern struct {
     bit_depth: u8 = 0,
     port_policy: u8 = 0,
     reserved: [6]u8 = .{0} ** 6,
-    // Appended 168-byte revision: PTP topology mode (DESIGN-TOPO.md).
+    // Appended 168-byte revision: PTP topology mode.
     ptp_announce_timeout_ms: u32 = 6000,
     ptp_mode: u8 = 0,
     ptp_priority1: u8 = 128,

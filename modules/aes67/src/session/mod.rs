@@ -141,7 +141,7 @@ struct Run {
     cancel: AtomicBool,
     counters: Mutex<Counters>,
     /// Latest PTP status snapshot, refreshed every worker iteration for the
-    /// nsp_aes67_ptp_status export (DESIGN-TOPO.md section 6).
+    /// nsp_aes67_ptp_status export.
     ptp_status: Mutex<Option<ptp::PtpStatus>>,
     descriptions: Mutex<Vec<Description>>,
 }

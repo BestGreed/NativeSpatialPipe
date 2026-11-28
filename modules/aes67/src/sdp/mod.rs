@@ -5,7 +5,7 @@ use std::{
     net::{Ipv4Addr, UdpSocket},
 };
 
-/// Clock reference signalled for a stream (DESIGN-TOPO.md section 5).
+/// Clock reference signalled for a stream.
 ///
 /// Ptp: a=clock-domain:PTPv2 <domain> + a=ts-refclk:ptp=IEEE1588-2008:<GMID>:<domain>
 /// + a=mediaclk:direct=0. Local: a=ts-refclk:local + a=mediaclk:direct=0 (mode C
@@ -92,7 +92,7 @@ fn media_information(name: &str) -> String {
 /// described as a user-defined group. A sequence without a standard prefix is
 /// described as one user-defined group when it has 1..=8 channels. Anything
 /// else is omitted rather than guessed: a wrong channel-order makes a
-/// receiver decode the wrong speakers, so silence is safer (DESIGN-TOPO.md).
+/// receiver decode the wrong speakers, so silence is safer.
 fn channel_order(labels: &[String]) -> Option<String> {
     // Longest first: 7.1 starts with 5.1, which starts with the stereo pair.
     const PREFIXES: [(&str, &[&str]); 6] = [
@@ -548,7 +548,7 @@ mod tests {
         let timing = PacketTiming::new(48_000, 1_000).unwrap();
         let output = output(5004, 2, Encoding::L24, false);
         let labels = ["other".to_owned(), "FL".to_owned(), "FR".to_owned()];
-        // DESIGN-TOPO.md section 7.5: slave-locked / gm-active exact lines.
+        // Slave-locked / gm-active exact lines.
         let gm = [0xae, 0x6f, 0x0d, 0xff, 0xfe, 0x8e, 0x86, 0xfc];
         let ptp = describe(
             "test",

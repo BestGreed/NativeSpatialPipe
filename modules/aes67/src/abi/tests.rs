@@ -1272,7 +1272,7 @@ fn ptp_gm_mode_without_a_readable_identity_is_refused() {
     let v3 = topology_config(2, 48_000, 1_000, 0, 2, 1);
     assert_eq!(handle.configure_v3(&v3), 0);
     // The loopback adapter has no EUI-48 MAC; gm mode must refuse rather than
-    // invent an identity (DESIGN-TOPO.md section 3).
+    // invent an identity.
     assert_eq!(unsafe { nsp_aes67_start(handle.0) }, session::PTP_IDENTITY);
     let mut status = PtpStatusV1::default();
     assert_eq!(

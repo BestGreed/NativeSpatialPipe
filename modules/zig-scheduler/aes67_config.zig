@@ -126,7 +126,7 @@ pub const Flow = struct {
 };
 
 pub const Timestamping = enum(u32) { auto, software, hardware };
-/// PTP topology mode (DESIGN-TOPO.md section 2 / appended ABI ptp_mode):
+/// PTP topology mode (appended ABI ptp_mode):
 /// slave follows an external GM (pre-existing behavior), auto listens then
 /// falls back to gm when gmCapable else local, gm announces this sender,
 /// local uses a local media clock.

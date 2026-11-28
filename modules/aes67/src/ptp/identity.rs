@@ -1,6 +1,6 @@
 //! Interface MAC discovery and the IEEE 1588 clock identity.
 //!
-//! IEEE 1588-2008 8.2.1 and DESIGN-TOPO.md section 3: the clockIdentity of an
+//! IEEE 1588-2008 8.2.1: the clockIdentity of an
 //! ordinary clock is the 8-octet EUI-64 of its interface, formed from the
 //! 48-bit MAC as MAC[0..3] || FF FE || MAC[3..6]. Local corroboration: the
 //! board's GMID AE-6F-0D-FF-FE-8E-86-FC is the EUI-64 form of the interface
@@ -210,7 +210,7 @@ mod tests {
 
     #[test]
     fn board_mac_maps_to_the_documented_gmid() {
-        // DESIGN-TOPO.md section 3 corroboration: MAC ae:6f:0d:8e:86:fc is
+        // Board corroboration: MAC ae:6f:0d:8e:86:fc is
         // advertised by the board GM as AE-6F-0D-FF-FE-8E-86-FC.
         let identity = eui64_from_mac([0xae, 0x6f, 0x0d, 0x8e, 0x86, 0xfc]);
         assert_eq!(identity, [0xae, 0x6f, 0x0d, 0xff, 0xfe, 0x8e, 0x86, 0xfc]);

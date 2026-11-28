@@ -119,7 +119,7 @@ impl ConfigV2 {
 }
 
 /// Third configuration revision (168 bytes). Appends the PTP topology fields
-/// (DESIGN-TOPO.md sections 1-2); 128- and 152-byte callers keep working with
+/// topology fields; 128- and 152-byte callers keep working with
 /// the pre-existing slave-mode defaults. Sender JSON keys (frozen, DESIGN
 /// audit D8) map to: aes67.ptp.mode -> ptp_mode, aes67.ptp.priority1/priority2
 /// -> ptp_priority1/ptp_priority2, aes67.ptp.announceTimeoutMs ->

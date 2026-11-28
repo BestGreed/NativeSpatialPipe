@@ -98,7 +98,7 @@ portPolicy "explicit" exists only to keep a lab receiver working during a staged
 
 ## PTP topology modes and network discovery
 
-The sender supports four PTP topology modes (DESIGN-TOPO.md section 2). Key names are frozen per
+The sender supports four PTP topology modes. Key names are frozen per
 DESIGN audit D8: they live inside the nested aes67.ptp object.
 
 | Setting | Accepted values | Default | Meaning |
