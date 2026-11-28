@@ -28,8 +28,9 @@ fn execute() !void {
         const aoip=std.mem.eql(u8,parsed.value.outputBackend,"aoip");
         const active=std.mem.eql(u8,parsed.value.sourcePolicy,"active");
         const unified=std.mem.eql(u8,parsed.value.sourcePolicy,"unified");
+        const follows_active=active and aoip;
         const result=try u.json(.{.valid=true,.renderer=selection.backend,.rendererMode=selection.mode,.playback=parsed.value,
-            .effectiveOutputSelection=.{.sourcePolicy=parsed.value.sourcePolicy,.sourceStream=if(aoip and active) null else @as(?u32,parsed.value.sourceStream),.hotSwitch=aoip and !unified},
+            .effectiveOutputSelection=.{.sourcePolicy=parsed.value.sourcePolicy,.sourceStream=if(follows_active) null else @as(?u32,parsed.value.sourceStream),.hotSwitch=(aoip and !unified) or follows_active},
             .sourceChannels=channels,.outputLayout=(try parsed.value.preset()).id,.deviceOutputLayout=parsed.value.deviceLayout(),.sourceSampleRate=@as(u32,48000),.sourceChannelIndices=try parsed.value.sources(),
             .physicalChannelIndices=try parsed.value.physical(),.outputChannelLabels=labels[0..channels],
             .effectiveOutputLifecycle=.{.lifetime=if(std.mem.eql(u8,parsed.value.outputBackend,"aoip")) "fsa" else "session",.noInput="silence",.startupTimeoutMs=@as(u32,0),.rebufferTimeoutMs=@as(u32,0),.maxRebuffers=@as(u32,0),.drainTimeoutMs=parsed.value.drainTimeoutMs},

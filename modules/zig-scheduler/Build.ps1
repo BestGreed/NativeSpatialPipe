@@ -28,6 +28,12 @@ if(-not $SkipTests){
  if($LASTEXITCODE){throw 'Common output processing tests failed'}
  & $Zig test "$PSScriptRoot/aoip_config_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/aoip-config-tests.exe"
  if($LASTEXITCODE){throw 'AoIP configuration tests failed'}
+ & $Zig test "$PSScriptRoot/playback_schema_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/playback-schema-tests.exe"
+ if($LASTEXITCODE){throw 'Playback schema consistency tests failed'}
+ & $Zig test "$PSScriptRoot/aes67_config_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/aes67-config-tests.exe"
+ if($LASTEXITCODE){throw 'AES67 configuration tests failed'}
+ & $Zig test "$PSScriptRoot/aes67_module.zig" @flags "-femit-bin=$out/aes67-module-tests.exe"
+ if($LASTEXITCODE){throw 'AES67 module adapter tests failed'}
  & $Zig test "$PSScriptRoot/output_stream_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/output-stream-tests.exe"
  if($LASTEXITCODE){throw 'Reliable output stream tests failed'}
  & $Zig test "$PSScriptRoot/output_layout_tests.zig" -target x86_64-windows-gnu -O ReleaseSafe "-femit-bin=$out/output-layout-tests.exe"

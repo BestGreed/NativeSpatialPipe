@@ -181,6 +181,7 @@ pub const Controller = struct {
         try self.tick();
         return u.json(.{ .backend = "ready", .scheduler = "zig", .root = self.root, .capabilities = .{ .desktopPlayback = true, .guardedStop = true, .hotOutputRouting = true }, .pid = c.GetCurrentProcessId(), .sessionState = self.state, .dataState = if (std.mem.eql(u8, self.state, "running")) (if (telemetryLive(self.telemetryPort)) "live" else "waiting-or-stale") else "disconnected", .@"error" = self.err, .session = self.session, .config = self.config });
     }
+
     pub fn command(self: *Controller, action: []const u8, value: u.Value) ![]u8 {
         try self.tick();
         if (std.mem.eql(u8, action, "status")) return self.status();
@@ -349,6 +350,7 @@ pub const Controller = struct {
         return self.status();
     }
 };
+
 fn telemetryLive(port: u16) bool {
     const address = std.net.Address.parseIp4("127.0.0.1", port) catch return false;
     const stream = std.net.tcpConnectToAddress(address) catch return false;

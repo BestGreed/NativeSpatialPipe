@@ -653,8 +653,8 @@ function watchSignalPath(http, generation) {
     if (pending || document.hidden || generation !== socketGeneration) return;
     pending = true;
     try {
-      const response = await fetch(url, {signal:AbortSignal.timeout(1800), cache:'no-store'});
-      const status = response.ok ? await response.json() : null;
+      const response = await fetch(url, {signal:AbortSignal.timeout(1800), cache:'no-store'}).catch(()=>null);
+      const status = response?.ok ? await response.json() : null;
       if (generation !== socketGeneration) return;
       const input = status?.input;
       $('signalPath').hidden = !status;

@@ -1,0 +1,71 @@
+{
+  "outputBackend": "aes67",
+  "sourcePolicy": "fixed",
+  "sourceStream": 0,
+  "recording": {
+    "pcm": false,
+    "telemetrySnapshots": false
+  },
+  "renderer": "roar",
+  "mode": "olr",
+  "bridgeDll": "C:/path/to/nsp_croksor.dll",
+  "asioDll": "",
+  "driver": "",
+  "aes67": {
+    "framesPerPacket": 48,
+    "payloadType": 96,
+    "ssrc": 0,
+    "srcInterfaceIp": "192.0.2.63",
+    "ptpGmid": "",
+    "ptpDomain": 0,
+    "ringPackets": 256,
+    "prebufferFrames": 480,
+    "ttl": 32,
+    "sourceFilter": true,
+    "flows": [
+      {
+        "destIp": "239.1.0.1",
+        "port": 5004,
+        "channels": 8,
+        "channelOffset": 0,
+        "payloadType": 96,
+        "ssrc": 0,
+        "ttl": 32,
+        "srcInterfaceIp": "192.0.2.63"
+      },
+      {
+        "destIp": "239.1.0.2",
+        "port": 5004,
+        "channels": 8,
+        "channelOffset": 8,
+        "payloadType": 96,
+        "ssrc": 0,
+        "ttl": 32,
+        "srcInterfaceIp": "192.0.2.63"
+      }
+    ],
+    "channelMap": [
+      6,
+      7,
+      2,
+      3,
+      8,
+      9,
+      4,
+      5,
+      0,
+      1,
+      10,
+      11,
+      14,
+      15,
+      12,
+      13
+    ]
+  },
+  "outputLayout": "9.1.6",
+  "channelOrder": "olr",
+  "clockSync": true,
+  "prebufferFrames": 0,
+  "drainTimeoutMs": 5000
+}

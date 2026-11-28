@@ -79,6 +79,7 @@ pub const Config = struct {
     unifiedSlotProfile: UnifiedSlotProfile = .standard,
     unifiedPrimaryPolicy: UnifiedPrimaryPolicy = .legacy,
     aoip:?@import("aoip_config.zig").File=null,
+    aes67:?@import("aes67_config.zig").File=null,
     wasapi:?Wasapi=null,
     pcmCapture:?PcmCapture=null,
     mediaFoundation:?MediaFoundation=null,
@@ -236,6 +237,7 @@ pub const Config = struct {
 
     pub fn validate(self: Config) !void {
         const network=std.mem.eql(u8,self.outputBackend,"aoip");
+        const aes67=std.mem.eql(u8,self.outputBackend,"aes67");
         const wasapi=std.mem.eql(u8,self.outputBackend,"wasapi");
         const unified = std.mem.eql(u8, self.sourcePolicy, "unified");
         if (!unified and (self.unifiedSlotProfile != .standard or self.unifiedPrimaryPolicy != .legacy))
@@ -268,13 +270,31 @@ pub const Config = struct {
         if (unified and self.pcmCapture != null and self.pcmCapture.?.routeToOutput)
             return error.UnifiedInputConflictsWithDedicatedPcm;
 
-        if(!network and !wasapi and !std.mem.eql(u8,self.outputBackend,"asio"))return error.InvalidOutputBackend;
+        if(!network and !aes67 and !wasapi and !std.mem.eql(u8,self.outputBackend,"asio"))return error.InvalidOutputBackend;
         if(self.aoip) |settings| _=try @import("aoip_config.zig").native(settings);
+        // An inactive AES67 block is transport state kept for the next AES67
+        // session; the editor may leave it incomplete while another backend is
+        // selected (P2-24), so it is validated only when AES67 is active. The
+        // web save path still materializes destinations before validation.
+        if (self.aes67) |settings| if (aes67) {
+            if (settings.ptp) |ptp| try ptp.validate();
+            _ = try @import("aes67_config.zig").prepare(settings, core.labels.len);
+        };
         if(network) {
             if(self.aoip==null)return error.AoipConfigRequired;
             // Keep inactive ASIO settings for switching back; native AoIP uses
             // standard renderer channels and its own buffering configuration.
             if(self.sampleRate!=48000)return error.AoipRequires48000;
+        } else if(aes67) {
+            // The RTP transport replaces the device side only. Channels and
+            // order come from outputLayout/sources(); no device is opened.
+            if(self.aes67==null)return error.Aes67ConfigRequired;
+            // The renderer rate must equal the AES67 transport rate. The
+            // transport rate itself is validated by aes67_config.prepare, which
+            // currently accepts only 48 kHz because this renderer path does not
+            // resample; the error name therefore describes the mismatch.
+            if(self.aes67.?.sampleRate==0 or self.sampleRate!=@as(f64,@floatFromInt(self.aes67.?.sampleRate)))return error.Aes67SampleRateMismatch;
+            if (std.mem.eql(u8, self.sourcePolicy, "active")) return error.Aes67RequiresFixedOrUnifiedSource;
         } else if(wasapi) {
             const settings=self.wasapi orelse return error.WasapiConfigRequired;
             if(!std.mem.eql(u8,settings.mode,"shared") and !std.mem.eql(u8,settings.mode,"exclusive"))return error.InvalidWasapiMode;

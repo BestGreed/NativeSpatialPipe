@@ -411,9 +411,11 @@
       "enum": [
         "asio",
         "aoip",
+        "aes67",
         "wasapi"
       ],
-      "default": "asio"
+      "default": "asio",
+      "description": "Output transport. aes67 is a transport-only RTP/L24 sink; layout and downmix stay in the renderer/layout pipeline."
     },
     "wasapi": {
       "type": [
@@ -505,6 +507,186 @@
         "mac"
       ]
     },
+    "aes67": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^[\\x20-\\x7E]*$",
+          "description": "Optional device/session name advertised in SDP and in receiver device lists. Omitted or empty selects NSP-<COMPUTERNAME> at runtime; the trimmed name is at most 63 printable ASCII bytes (0x20-0x7E)."
+        },
+        "ttl": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255,
+          "default": 32,
+          "description": "IPv4 multicast TTL. Emitted in SDP as c=IN IP4 <group>/<ttl> and applied with IP_MULTICAST_TTL. Ignored for unicast destinations."
+        },
+        "sourceFilter": {
+          "type": "boolean",
+          "default": true,
+          "description": "Emit an RFC 4570 single-source a=source-filter line for multicast flows. Default on: the reference daemon always emits it and SSM/IGMPv3 receivers require it; AES67 itself treats it as optional."
+        },
+        "sampleRate": {
+          "type": "integer",
+          "enum": [48000],
+          "default": 48000,
+          "description": "RTP sampling rate / media-clock rate. 48 kHz only: the renderer path feeds 48 kHz PCM and does not resample, so the scheduler rejects other rates until processingConfig() carries a rate. The module itself can carry 44.1/88.2/96/176.4/192 kHz; those stay disabled in the UI."
+        },
+        "ptimeUs": {
+          "type": "integer",
+          "enum": [125, 250, 333, 500, 1000, 2000, 4000],
+          "default": 1000,
+          "description": "Packet time in microseconds. The 1 ms profile carries 48 samples at both 48 kHz and 44.1 kHz (AES67-2023 sec 7.2.1 line 1473-1476); other rows follow Table 2 (6/12/16/24/96/192 samples at 1FS). The 44.1 kHz 1 ms packet lasts 1.088 ms (SDP a=ptime:1.09, 918.75 pps)."
+        },
+        "codec": {
+          "enum": ["L16", "L24"],
+          "description": "Linear PCM encoding. Omitted selects L16 for the 44.1 kHz family (AES67-2023 sec 7.1 line 1423-1424) and L24 otherwise. 16-bit is 2 bytes/sample, 24-bit 3 bytes/sample, both big-endian per RFC 3551/RFC 3190."
+        },
+        "flowMode": {
+          "enum": ["standard", "extension"],
+          "default": "standard",
+          "description": "standard (default) keeps the AES67 media profile: at most 8 channels per flow, with every flow still checked against the 1440-byte RTP payload limit; 16ch = 2 x 8ch, 64ch = 8 x 8ch (a layout whose standard split needs more than 8 flows or exceeds 1440 B per flow is rejected). extension packs to the payload limit instead: max_ch_per_flow = floor(1440 / (samples x bytes)) and flow_count = ceil(total_ch / max_ch_per_flow), so a single 16ch flow is used when it fits (48k/250us/16ch L24 = 576 B, 48k/125us/16ch L24 = 288 B, 192k/125us/16ch L24 = 1152 B) and only oversized payloads split. Extension flows wider than 8 channels are a product EXTENSION, not AES67 conformance; use standard for third-party interop."
+        },
+        "portPolicy": {
+          "enum": ["strict", "explicit"],
+          "default": "strict",
+          "description": "strict requires the standard shared RTP port 5004 for every flow and rejects divergent per-flow ports; redundant legs use 5006 (primary + 2). explicit allows even per-flow ports for migration/lab use. Legacy FLP01 sender ports 5010/5012 must migrate to 5004 with unique multicast groups."
+        },
+        "redundant": {
+          "type": "boolean",
+          "default": false,
+          "description": "ST 2022-7 duplicate legs on primary port + 2 (5006 when primary is 5004). Tier 2/optional."
+        },
+        "basePort": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65534,
+          "default": 5004,
+          "description": "Even base RTP port for derived flows; strict mode requires every flow to use it."
+        },
+        "groupBase": {
+          "type": "string",
+          "default": "",
+          "description": "Base class-D multicast group used by derived planning (flow k = base + k, AES67 sec 6.1.3). Required when flows are omitted."
+        },
+        "sapAddress": {
+          "type": "string",
+          "default": "",
+          "description": "SAP announcement group. Empty selects RFC 2974 global scope 224.2.127.254:9875; the N150 deployment can be configured to 239.255.255.255. TTL is always 255 on SAP."
+        },
+        "sapIntervalMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 300000,
+          "default": 30000,
+          "description": "SAP repeat interval. RFC 2974 computes max(300 s, bandwidth-based) and adds a random offset; 30 s matches the reference daemon's default."
+        },
+        "framesPerPacket": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 768,
+          "description": "LEGACY fixed samples-per-packet. Omitted derives the AES67 Table 2 count from sampleRate/ptimeUs; when present it must match that count (48 at 48k/1ms, 48 at 44.1k/1ms, 96 at 96k/1ms, 16 at 48k/333us, ...)."
+        },
+        "payloadType": {
+          "type": "integer",
+          "minimum": 96,
+          "maximum": 127,
+          "default": 96
+        },
+        "ssrc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "default": 0,
+          "description": "0 derives a random SSRC base for this session; flow k uses base + k (RFC 3550 sec 5.1 recommends a random unique SSRC, and a fixed value would collide between senders)."
+        },
+        "srcInterfaceIp": {
+          "type": "string",
+          "default": "",
+          "description": "Session-level local IPv4 address used for egress selection: binds the sending sockets and drives IP_MULTICAST_IF. Required when any flow destination is a multicast group and that flow does not carry its own srcInterfaceIp; optional for unicast."
+        },
+        "ptp": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "domain": { "type": "integer", "minimum": 0, "maximum": 127, "default": 0 },
+            "lockTimeoutMs": { "type": "integer", "minimum": 100, "maximum": 120000, "default": 5000 },
+            "timestamping": { "enum": ["auto", "software", "hardware"], "default": "auto" },
+            "mode": {
+              "enum": ["slave", "auto", "gm", "local"],
+              "default": "slave",
+              "description": "PTP topology mode: slave follows an external GM (pre-existing default), auto listens then falls back to gm (when gmCapable) or local, gm announces this sender as the grandmaster, local uses a local media clock and advertises a=ts-refclk:local."
+            },
+            "priority1": { "type": "integer", "minimum": 0, "maximum": 255, "default": 128, "description": "BMCA priority1 announced in gm mode (AES67 Annex A Table A.1 default 128)." },
+            "priority2": { "type": "integer", "minimum": 0, "maximum": 255, "default": 128, "description": "BMCA priority2 announced in gm mode (AES67 Annex A Table A.1 default 128)." },
+            "announceTimeoutMs": { "type": "integer", "minimum": 1000, "maximum": 60000, "default": 6000, "description": "AUTO listening window and floor for the follower's foreign-master timeout: max(this, 5 x the accepted announce interval clamped to 125 ms-8 s)." },
+            "gmCapable": { "type": "boolean", "default": false, "description": "In auto mode, announce as grandmaster when no external GM appears. gm mode implies true." },
+            "gmUtcOffset": { "type": ["integer", "null"], "minimum": 0, "maximum": 127, "default": null, "description": "IEEE 1588-2008 8.2.3 currentUtcOffset in seconds. null means not configured: the GM announces an ARB timescale (ptpTimescale=0)." }
+          }
+        },
+        "ptpGmid": {
+          "type": "string",
+          "const": "",
+          "default": "",
+          "description": "Leave empty. The module derives the advertised grandmaster identity from the locked PTP source."
+        },
+        "ptpDomain": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127,
+          "default": 0
+        },
+        "ringPackets": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 1024,
+          "default": 64,
+          "description": "Bounded sender ring in 1 ms packets; oldest audio is dropped if the owner falls behind."
+        },
+        "prebufferFrames": {
+          "type": "integer",
+          "minimum": 48,
+          "maximum": 48000,
+          "default": 480,
+          "description": "Frames buffered before the session leaves the waiting state; must fit inside ringPackets."
+        },
+        "flows": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "description": "Optional explicit flows. When omitted, flowMode derives the plan and groupBase supplies the base class-D group (flow k = base + k). When present, 1-8 flows carry contiguous channelOffset covering the layout exactly; one unique destination per flow (two multicast flows may never share a group). standard keeps 1-8 channels per flow (16ch = 2 x 8ch; the current product maximum is 16 channels); extension packs each flow to the 1440-byte payload limit and may use a single 16ch flow as an EXTENSION. Every flow uses the standard RTP port 5004 in strict policy; ST 2022-7 redundant legs use 5006. Legacy per-flow ports 5010/5012 are rejected and must migrate to 5004 + unique groups.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["destIp", "channels"],
+            "properties": {
+              "destIp": {"type": "string", "description": "Explicit IPv4 unicast destination or class-D multicast group (224/4) of this flow. Required per flow: the sender rejects a flow without it; the web save path materializes the documented base+index allocation into the file before validation, so a saved config always shows every per-flow address."},
+              "ttl": {"type": "integer", "minimum": 1, "maximum": 255, "default": 0, "description": "Per-flow multicast TTL override (0 = inherit the session-level ttl; ignored for unicast). The save path materializes the inherited value into each multicast flow so the saved file is self-describing."},
+              "port": {"type": "integer", "minimum": 0, "maximum": 65535, "default": 5004, "description": "UDP port of this flow. Strict policy requires the standard 5004 (unique multicast group per flow distinguishes streams); 0 selects the session basePort and the web save path materializes it. Legacy per-flow ports 5010/5012 are rejected."},
+              "channels": {"type": "integer", "minimum": 1, "maximum": 16, "description": "Wire channels in this flow. AES67 media profile is 1-8 (sec 7.3 line 1556-1558) and flowMode=standard rejects more than 8; flowMode=extension may use 9-16 channels when samples x bytes x channels <= 1440 B (EXTENSION, not AES67 conformance). 16ch layouts split as 2 x 8ch in standard mode."},
+              "channelOffset": {"type": "integer", "minimum": 0, "maximum": 15, "description": "First wire channel of this flow in the session-wide interleaved input (flow0=0, flow1=8 for 16ch)."},
+              "payloadType": {"type": "integer", "minimum": 96, "maximum": 127, "description": "Omitted inherits the session-level payloadType."},
+              "ssrc": {"type": "integer", "minimum": 0, "maximum": 4294967295, "default": 0, "description": "0 derives a unique per-flow SSRC from the base default."},
+              "srcInterfaceIp": {"type": "string", "default": "", "description": "Per-flow egress interface override (unicast IPv4). Empty inherits the session-level srcInterfaceIp; the save path materializes the inherited value so each flow's full destination tuple (group + port + TTL + source interface) is persisted per flow."}
+            }
+          }
+        },
+        "channelMap": {
+          "type": ["array", "null"],
+          "minItems": 2,
+          "maxItems": 16,
+          "description": "Optional explicit wire-order permutation: transmitted channel k is renderer source channel channelMap[k]; omitted keeps the renderer source order. A reference example maps the 9.1.6 renderer order onto the 16ch container order (indices 6,7,2,3,8,9,4,5,0,1,10,11,14,15,12,13); that is an example, not a fixed layout policy. When present it must be a permutation of 0..channels-1.",
+          "items": {"type": "integer", "minimum": 0, "maximum": 15}
+        }
+      },
+      "description": "AES67 RTP/L16/L24 transport only. Channel count, channel order and labels come from outputLayout and routing; no downmix happens here."
+    },
     "unifiedSlotProfile": {
       "enum": ["standard", "dtsxHtCompact"],
       "default": "standard",
@@ -522,7 +704,7 @@
         "unified"
       ],
       "default": "fixed",
-      "description": "AoIP active follows live-render selection; fixed uses sourceStream; unified sends the combined spatial and PCM renderer to the selected backend."
+      "description": "AoIP and AES67 active follow live-render selection; fixed uses sourceStream; unified sends the combined spatial and PCM renderer to the selected backend."
     },
     "pcmCapture": {
       "type": [
@@ -879,13 +1061,39 @@
         "if": {
           "properties": {
             "outputBackend": {
-              "const": "wasapi"
+              "const": "aes67"
             }
           },
           "required": [
             "outputBackend"
           ]
         },
+        "then": {
+          "required": [
+            "aes67",
+            "outputLayout"
+          ],
+          "properties": {
+            "aes67": {
+              "type": "object"
+            },
+            "sourcePolicy": { "enum": ["fixed", "unified"] },
+            "sampleRate": {
+              "const": 48000
+            }
+          }
+        },
+        "else": {
+          "if": {
+            "properties": {
+              "outputBackend": {
+                "const": "wasapi"
+              }
+            },
+            "required": [
+              "outputBackend"
+            ]
+          },
         "then": {
           "required": [
             "wasapi",
@@ -935,6 +1143,7 @@
               "pattern": "^asio:"
             }
           }
+        }
         }
       }
     },

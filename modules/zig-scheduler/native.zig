@@ -4,6 +4,7 @@ const profile_refresh = @import("profile_refresh.zig");
 const a = u.a;
 const c = u.c;
 pub const default_render_bridge = "build/nsp-product/runtime/release/nsp_croksor.dll";
+pub const default_aes67_module = "build/nsp-product/runtime/release/nsp_aes67.dll";
 /// Capture layout resolved from a build profile. The runtime never derives these
 /// values itself: it consumes a profile and refuses when none is usable.
 const Profile = struct {
@@ -296,14 +297,23 @@ pub const Pipeline = struct {
         if (self.enableFn(self.handle, @intFromBool(value)) != 0) return error.TelemetryEnable;
     }
     pub fn bindOutput(self: *Pipeline, stream: *@import("output_stream.zig").Stream) !void {
-        const pool = @import("output_stream.zig");
-        const Publish = *const @TypeOf(pool.publishPool);
-        const Config = @import("output_processing.zig").NativeConfig;
-        const Bind = *const fn (?*anyopaque, *const Config, Publish, ?*anyopaque) callconv(.C) c_int;
-        const bind = try u.symbol(Bind, &self.lib, "nsp_pipeline_set_native_pool_output");
-        const config = Config.from(stream.processing_config orelse return error.OutputNotConfigured);
+        const config = stream.processing_config orelse return error.OutputNotConfigured;
         try stream.holdLibrary(self.dll_path);
-        if (bind(self.handle, &config, pool.publishPool, stream) != 0) return error.OutputPoolBind;
+        try self.bindPoolOutput(config, @import("output_stream.zig").publishPool, stream);
+    }
+    pub fn bindPoolOutput(self: *Pipeline, processing: @import("output_processing.zig").Config, publish: *const @TypeOf(@import("output_stream.zig").publishPool), context: *anyopaque) !void {
+        const Config = @import("output_processing.zig").NativeConfig;
+        const Bind = *const fn (?*anyopaque, *const Config, @TypeOf(publish), ?*anyopaque) callconv(.C) c_int;
+        const bind = try u.symbol(Bind, &self.lib, "nsp_pipeline_set_native_pool_output");
+        const config = Config.from(processing);
+        if (bind(self.handle, &config, publish, context) != 0) return error.OutputPoolBind;
+    }
+    pub fn bindAes67(self: *Pipeline, processing: @import("output_processing.zig").Config, submit_leased: *const @TypeOf(@import("output_stream.zig").publishPool), session: *anyopaque) !void {
+        // The pool writer owns the lease until submit accepts it. AES67 copies
+        // PCM and releases the token synchronously on success. On rejection,
+        // the pool writer releases it. Finish the writer before closing the
+        // session or unloading the callback DLL.
+        try self.bindPoolOutput(processing, submit_leased, session);
     }
     pub fn bindAoip(self:*Pipeline, processing:@import("output_processing.zig").Config, json:[]const u8) !void {
         const Config=@import("output_processing.zig").NativeConfig;

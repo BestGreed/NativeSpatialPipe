@@ -5,6 +5,7 @@ const routing = @import("routing.zig");
 const primary_election = @import("primary_election.zig");
 const playback = @import("output_playback.zig");
 const asio = @import("asio_control.zig");
+const aes67_module = @import("aes67_module.zig");
 const a = u.a;
 const c = u.c;
 const Telemetry = struct {
@@ -401,13 +402,19 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     const aoip_profile=if(desktop) |settings| (if(std.mem.eql(u8,settings.value.outputBackend,"aoip")) settings.value.aoip else null) else null;
     const aoip_enabled=aoip_path!=null or aoip_profile!=null;
     const wasapi_profile=if(desktop) |settings| (if(std.mem.eql(u8,settings.value.outputBackend,"wasapi")) settings.value.wasapi else null) else null;
+    const aes67_profile=if(desktop) |settings| (if(std.mem.eql(u8,settings.value.outputBackend,"aes67")) settings.value.aes67 else null) else null;
+    var aes67: ?aes67_module.Session = null;
+    var aes67_source: ?usize = null;
+    // Pipeline the AES67 callback is bound to (session stream or, when
+    // pcmCapture.routeToOutput is set, the PCM capture pipeline).
+    var aes67_pipeline: ?*@TypeOf(pipelines[0]) = null;
     var wasapi:?@import("wasapi_control.zig").Session=null;
     const wasapi_source:usize=if(desktop) |settings| @intCast(settings.value.sourceStream) else 0;
     const wasapi_pipeline=if(pcm_settings!=null and pcm_settings.?.enabled and pcm_settings.?.routeToOutput) &pcm.?.pipeline.? else &pipelines[wasapi_source];
     const wasapi_report=try u.join(&.{out,"wasapi-output.json"});
     defer a.free(wasapi_report);
     if(wasapi_profile) |settings| {
-        if(aoip_enabled)return error.DuplicateOutputBackend;
+        if(aoip_enabled or aes67_profile!=null)return error.DuplicateOutputBackend;
         for([_][]const u8{"--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
             if(u.option(args,key)!=null)return error.DuplicateOutputBackend;
         }
@@ -435,6 +442,7 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
     var outputRoute:?@import("output_route.zig").Route=null;
     defer if(outputRoute) |*route| route.deinit();
     if(aoip_enabled) {
+        if(aes67_profile!=null)return error.DuplicateOutputBackend;
         if(aoip_path!=null and aoip_profile!=null)return error.DuplicateOutputBackend;
         for([_][]const u8{"--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
             if(u.option(args,key)!=null)return error.DuplicateOutputBackend;
@@ -452,7 +460,57 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         }
         aoip_source=0; // all source slots share the same network fault status.
     }
-    if (if(aoip_enabled or wasapi_profile!=null) @as(?[]const u8,null) else if(desktop) |settings| @as(?[]const u8,settings.value.driver) else u.option(args, "--asio-driver")) |driver| {
+    defer if (aes67) |*session| {
+        var safe_to_close = true;
+        const target: ?*@TypeOf(pipelines[0]) = aes67_pipeline orelse
+            (if (aes67_source) |source| &pipelines[source] else null);
+        if (target) |pipeline| {
+            // Only a joined writer proves that the DLL callback is no longer
+            // reachable. Before capture starts, this host can join it directly.
+            // Every wait is bounded: a stuck capture side must not turn process
+            // shutdown into an infinite sleep (FSA can only kill the child).
+            const deadline = std.time.milliTimestamp() + @as(i64, session.stop_timeout_ms) + 10_000;
+            if (!capture_may_have_started) {
+                while (!pipeline.finished and std.time.milliTimestamp() < deadline) {
+                    var summary = pipeline.finish() catch {
+                        c.Sleep(200);
+                        continue;
+                    };
+                    summary.deinit();
+                }
+            }
+            while (!pipeline.finished and std.time.milliTimestamp() < deadline) c.Sleep(200);
+            if (!pipeline.finished) {
+                std.log.err("AES67 pipeline did not finish within {d} ms; keeping the module loaded instead of unloading a live callback", .{session.stop_timeout_ms + 10_000});
+                // Leave the DLL loaded: its submit callback may still be reachable.
+                safe_to_close = false;
+            }
+        }
+        if (safe_to_close) session.close();
+    };
+    if (aes67_profile != null) {
+        if (aoip_enabled or wasapi_profile != null) return error.DuplicateOutputBackend;
+        // AES67 is a full output backend like aoip/wasapi: an ASIO override in
+        // the same invocation is a configuration conflict, not something to
+        // silently ignore.
+        for([_][]const u8{"--asio-driver","--asio-dll","--asio-stream","--asio-channel-order"}) |key| {
+            if(u.option(args,key)!=null)return error.DuplicateOutputBackend;
+        }
+        const settings = desktop.?.value;
+        const source: usize = settings.sourceStream;
+        if (source >= pipelines.len) return error.InvalidAes67Stream;
+        // Respect pcmCapture.routeToOutput like the WASAPI branch: the AES67
+        // callback then consumes the PCM capture pipeline instead of the
+        // session stream, and teardown joins whichever pipeline it bound.
+        const route_pcm = pcm_settings != null and pcm_settings.?.enabled and pcm_settings.?.routeToOutput;
+        const target = if (route_pcm) &pcm.?.pipeline.? else &pipelines[source];
+        aes67 = try aes67_module.Session.open(root, settings);
+        try aes67.?.start();
+        try target.bindAes67(settings.processingConfig(), aes67.?.submit_leased, aes67.?.handle);
+        aes67_pipeline = target;
+        if (!route_pcm) aes67_source = source;
+    }
+    if (if(aoip_enabled or wasapi_profile!=null or aes67_profile!=null) @as(?[]const u8,null) else if(desktop) |settings| @as(?[]const u8,settings.value.driver) else u.option(args, "--asio-driver")) |driver| {
         const device_dll = if(desktop) |settings| settings.value.asioDll else u.option(args, "--asio-dll") orelse return error.AsioDllRequired;
         var config = try asio.Backend.Config.init(device_dll, driver);
         audio_order = if(desktop) |settings| settings.value.channelOrder else u.option(args, "--asio-channel-order") orelse "olr";
@@ -579,6 +637,10 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         .audioRoute=if(outputRoute) |*route| route else null,
         .audioAutomatic=aoip_automatic,
         .audioSelected=aoip_selected };
+    // Parse the optional deadline before capture can start: a malformed value
+    // must fail through the normal error path, not after the cleanup defer has
+    // committed to waiting for a pipeline nobody will finish.
+    const duration_ms: ?u64 = if (u.option(args, "--duration-ms")) |v| try std.fmt.parseInt(u64, v, 10) else null;
     var thread = try std.Thread.spawn(.{}, Bridge.run, .{&bridge});
     errdefer if (!capture_may_have_started) {
         bridge.stop.store(true, .release);
@@ -599,15 +661,44 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         return err;
     };
     activation.deinit();
+    if (aes67) |*session| {
+        session.checkRunning() catch |err| {
+            if (pcm) |*pcm_session| pcm_session.stopAndFinish();
+            try shutdown(&hook, &receiver, pipelines, &bridge, &thread, &recorder, &recordThread, out);
+            return err;
+        };
+    }
     publishReady(out, ready_event) catch |err| {
         if (pcm) |*session| session.stopAndFinish();
         try shutdown(&hook, &receiver, pipelines, &bridge, &thread, &recorder, &recordThread, out);
         return err;
     };
-    const deadline = if (u.option(args, "--duration-ms")) |v| c.GetTickCount64() + try std.fmt.parseInt(u64, v, 10) else std.math.maxInt(u64);
+    const deadline = if (duration_ms) |ms| c.GetTickCount64() + ms else std.math.maxInt(u64);
     var nextCheck: u64 = 0;
+    var next_aes67_diagnostics: u64 = 0;
     var reportedAoipFault:u32=0;
+    var aes67_poll_failure: ?anyerror = null;
     while (c.GetTickCount64() < deadline and !u.exists(stopFile)) {
+        if (aes67) |*session| {
+            session.poll() catch |err| {
+                aes67_poll_failure = err;
+                break;
+            };
+            if (session.failed) break;
+            // Field diagnosis previously had only host-stderr.txt and packet
+            // captures: counters and PTP status are written where the other
+            // output diagnostics live (aoip-output-fault.json uses the same dir).
+            const now_ticks = c.GetTickCount64();
+            if (now_ticks >= next_aes67_diagnostics) {
+                next_aes67_diagnostics = now_ticks + 1000;
+                writeAes67Diagnostics(out, session) catch |err| {
+                    std.log.warn("AES67 diagnostics write failed: {s}", .{@errorName(err)});
+                };
+                writeAes67Sdp(out, session) catch |err| {
+                    std.log.warn("AES67 SDP write failed: {s}", .{@errorName(err)});
+                };
+            }
+        }
         if(aoip_source) |source| {
             const fault=try pipelines[source].aoipFault();
             if(fault!=reportedAoipFault){
@@ -662,7 +753,38 @@ pub fn run(args: []const []const u8, root: []const u8) !void {
         session.finish();
         if (session.stream.snapshot().failure != null) return error.AsioOutputFailed;
     }
+    if (aes67) |*session| {
+        try session.stop();
+        if (aes67_poll_failure) |err| return err;
+        if (session.failed) return error.Aes67OutputFailed;
+    }
 }
+/// Periodic AES67 snapshot for field diagnosis: sent/silent/dropped/late
+/// packets, RTP bytes, lock flags and the PTP role/identity/reason. Written
+/// once a second next to the other output diagnostics.
+fn writeAes67Diagnostics(out: []const u8, session: *aes67_module.Session) !void {
+    const path = try u.join(&.{ out, "aes67-diagnostics.json" });
+    defer u.a.free(path);
+    try u.writeJson(path, try session.diagnostics());
+}
+
+/// One active SDP per flow, refreshed with the same cadence. This gives the
+/// field a product path to nsp_aes67_sdp (it previously existed only in tests)
+/// and makes the advertised session inspectable without a packet capture.
+fn writeAes67Sdp(out: []const u8, session: *aes67_module.Session) !void {
+    const path = try u.join(&.{ out, "aes67-sdp.txt" });
+    defer u.a.free(path);
+    var text = std.ArrayList(u8).init(u.a);
+    defer text.deinit();
+    for (0..8) |flow| {
+        const sdp = (try session.sdpText(@intCast(flow))) orelse continue;
+        defer u.a.free(sdp);
+        try text.writer().print("--- flow{d} ---\n{s}\n", .{ flow, sdp });
+    }
+    if (text.items.len == 0) try text.appendSlice("no active SDP (no media clock yet)\n");
+    try u.write(path, text.items);
+}
+
 fn shutdown(hook: *n.Hook, receiver: *n.Receiver, pipelines: []n.Pipeline, bridge: *Bridge, thread: *std.Thread, recorder: *Recorder, recordThread: *?std.Thread, out: []const u8) !void {
     // Never free a mapping/renderer until Hook stop and receiver join are proven.
     var stats: ?std.json.Parsed(u.Value) = null;
@@ -727,6 +849,16 @@ fn shutdown(hook: *n.Hook, receiver: *n.Receiver, pipelines: []n.Pipeline, bridg
         passed = passed and u.yes(u.field(v.value, "captureLibraryReleased")) and u.yes(u.field(v.value, "transportLibraryReleased"));
         for ([_][]const u8{ "queueDropped", "budgetRejected", "queueRemaining", "concurrentRejected", "faults", "sendErrors" }) |key| passed = passed and (u.number(u.field(v.value, key)) catch 1) == 0;
     }
+    // Once ingress is joined, report errors must still finish all producers
+    // before their output sessions retire and free callback contexts.
+    errdefer for (pipelines) |*pipeline| {
+        if (pipeline.handle == null) continue;
+        if (!pipeline.finished) {
+            var unused = pipeline.finish() catch null;
+            if (unused) |*value| value.deinit();
+        }
+        if (pipeline.finished) pipeline.close();
+    };
     for (pipelines, 0..) |*pipeline, i| {
         var summary = try pipeline.finish();
         defer summary.deinit();

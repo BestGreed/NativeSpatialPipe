@@ -1,4 +1,4 @@
-import {channelLabels,orders,getPath,setPath,prepare,numeric,finish,outputLayouts,layoutFor,deviceChannels,migrateLayout,updateSourceSelection} from './configuration-model.js';
+import {channelLabels,orders,getPath,setPath,prepare,numeric,finish,outputLayouts,layoutFor,deviceChannels,migrateLayout,supportsActiveSource,updateSourceSelection,validateAes67,problemText,deriveAes67Flows,proposeAes67Flows,materializeAes67Destinations,replanAes67ForLayout,effectiveAes67FlowSsrc,aes67MaxFlowChannels,aes67MaxChannelsPerFlow,parseAes67Ssrc,formatAes67Ssrc} from './configuration-model.js';
 import {translate,uiReady} from './i18n.js';
 await uiReady;
 const $=id=>document.getElementById(id);
@@ -18,7 +18,7 @@ function field(container,path,label,type='number',options=null,note='',offset=0)
  if(type==='checkbox')input.checked=value??false;else input.value=value==null?'':offset?value+offset:value;
  if(offset){input.dataset.offset=String(offset);input.min=String(offset);input.max='256';}
  if(path==='driver')input.setAttribute('list','asioDrivers');
- input.addEventListener('input',()=>{markDirty();if(path.startsWith('routing.'))updateRoutePreview();});
+ input.addEventListener('input',()=>{input.removeAttribute?.('aria-invalid');markDirty();if(path.startsWith('routing.'))updateRoutePreview();});
  input.addEventListener('change',()=>{
   if(!['outputBackend','renderer','sourcePolicy','channelOrder','outputLayout'].includes(path)){
    if(path.startsWith('routing.'))updateRoutePreview();
@@ -35,9 +35,21 @@ function field(container,path,label,type='number',options=null,note='',offset=0)
    }else if(backendChanged&&working.outputBackend==='wasapi'){
     next=migrateLayout(next,'2.0',next.outputLayout);
     if(next.lsac)next.lsac.enabled=false;
+   }else if(backendChanged&&next.outputBackend==='aes67'){
+    // Seed a complete transport block; the empty destination is caught by
+    // client validation before saving, and an existing block is preserved.
+    next.sampleRate=48000;
    }
-   if(path==='outputLayout')next=migrateLayout(next,working.outputLayout,next.outputLayout);
-   if(backendChanged||path==='renderer'||path==='sourcePolicy'||path==='outputLayout')updateSourceSelection(next,backendChanged);
+   if(path==='outputLayout'){
+     next=migrateLayout(next,working.outputLayout,next.outputLayout);
+     if(Array.isArray(next.aes67?.flows)&&next.aes67.flows.length){
+      const count=layoutFor(next.outputLayout).channels.length;
+      // Same re-plan as the ptime/flowMode path: extension widths and per-flow
+      // explicit overrides survive a layout change.
+      if(next.aes67.flows.reduce((sum,flow)=>sum+(flow?.channels??0),0)!==count)replanAes67ForLayout(next.aes67,count);
+     }
+    }
+   if(backendChanged||path==='renderer'||path==='sourcePolicy'||path==='outputLayout')updateSourceSelection(next,backendChanged?working.outputBackend:undefined);
    working=prepare(next,id);render();
   }catch(error){message(error.message,true);}
  });
@@ -45,6 +57,7 @@ function field(container,path,label,type='number',options=null,note='',offset=0)
  return input;
 }
 function group(title){const fieldset=document.createElement('fieldset');const legend=document.createElement('legend');legend.textContent=title;fieldset.append(legend);const body=document.createElement('div');body.className='config-fields';fieldset.append(body);$('fields').append(fieldset);return body;}
+function advancedGroup(container,title,note){const details=document.createElement('details');details.className='config-advanced';const summary=document.createElement('summary');summary.textContent=title;details.append(summary);if(note){const help=document.createElement('p');help.className='config-advanced-note';help.textContent=note;details.append(help);}const body=document.createElement('div');body.className='config-fields';details.append(body);container.append(details);return body;}
 function render(){
  routePreview=null;$('fields').replaceChildren();if(!working)return;
  if(id==='backend'){
@@ -52,7 +65,7 @@ function render(){
  }
  const channelLabels=deviceChannels(working);
  const recording=group('诊断录制（默认关闭）');field(recording,'recording.rawStreamStats','原始空间流统计','checkbox',null,'下次启动时启用每路对象和 Bed 声道统计。');field(recording,'recording.pcm','PCM 旁录','checkbox',null,'独立有界录音池，保存 DSP 前音频；磁盘跟不上会丢录音块，不阻塞播放。');field(recording,'recording.telemetrySnapshots','遥测快照存档','checkbox',null,'额外保存 JSONL，可能占用大量磁盘；关闭后实时遥测与可视化仍可使用。');
- let body=group('渲染器与输出设备');field(body,'renderer','渲染后端','text',['roar','lira'],'ROAR 当前使用 OLR 模式；LIRA 是独立渲染后端。');field(body,'outputBackend','输出方式','text',[{value:'aoip',label:'原生 AoIP 网络输出'},{value:'asio',label:'外挂 ASIO 输出'},{value:'wasapi',label:'WASAPI 系统播放端点'}],'保存后下次 NSp 会话生效，不自动中断当前播放。');if(working.outputBackend==='asio')field(body,'driver','ASIO 驱动标识','text',null,'从本机注册驱动中选择，或输入 asio:{CLSID}。这里只读取注册表，不打开设备。');if(working.outputBackend==='wasapi')field(body,'wasapi.endpointId','WASAPI 输出端点 ID','text',null,'共享模式，当前支持 48 kHz 双声道；保留端点 APO 处理。不会改变默认输入端点。');
+ let body=group('渲染器与输出设备');field(body,'renderer','渲染后端','text',['roar','lira'],'ROAR 当前使用 OLR 模式；LIRA 是独立渲染后端。');field(body,'outputBackend','输出方式','text',[{value:'aoip',label:'原生 AoIP 网络输出'},{value:'asio',label:'外挂 ASIO 输出'},{value:'wasapi',label:'WASAPI 系统播放端点'},{value:'aes67',label:'AES67 网络输出（RTP / L24）'}],'保存后下次 NSp 会话生效，不自动中断当前播放。');if(working.outputBackend==='asio')field(body,'driver','ASIO 驱动标识','text',null,'从本机注册驱动中选择，或输入 asio:{CLSID}。这里只读取注册表，不打开设备。');if(working.outputBackend==='wasapi')field(body,'wasapi.endpointId','WASAPI 输出端点 ID','text',null,'共享模式，当前支持 48 kHz 双声道；保留端点 APO 处理。不会改变默认输入端点。');
  field(body,'outputLayout','核心渲染布局','text',[...outputLayouts.map(p=>({value:p.id,label:p.id+' · '+p.channels.length+' 声道',disabled:working.outputBackend==='wasapi'&&p.id!=='7.1.4'})),...(working.renderer==='lira'?[]:[{value:'roar-custom-6dof',label:'6DoF 测量自定义（预留）',disabled:true}])],working.outputBackend==='wasapi'?'LSAC 将 7.1.4 下混至 WASAPI 设备的 2.0 输出。':'切换布局会按声道名称迁移校准和接线。');
  if(working.outputBackend==='wasapi'){
   const wasapiMode=field(body,'wasapi.mode','WASAPI 输出模式','text',[{value:'shared',label:'共享'},{value:'exclusive',label:'独占'}]);
@@ -63,24 +76,132 @@ function render(){
   wasapiMode.addEventListener('change',updateWasapiPeriod);updateWasapiPeriod();
   field(body,'lsac.filterFile','LSAC 实测 FIR 路径','text');
  }
- field(body,'mediaFoundation.enabled','启用 Media Foundation 播放适配','checkbox');
+ if(working.outputBackend==='aes67'){
+  body=group('AES67 网络输出（RTP / L16 · L24）');
+  field(body,'aes67.name','设备名（留空自动）','text',null,'留空时使用 NSP-<计算机名>；该名字会出现在 SDP 与接收端设备列表。');
+  field(body,'aes67.srcInterfaceIp','源网卡绑定 IP（可空）','text',null,'留空由系统路由选择发送网卡；组播目标必填，必须是本机单播 IPv4。');
+  const flows=Array.isArray(working.aes67?.flows)?working.aes67.flows:[];
+  const layoutChannels=deviceChannels(working).length;
+  const maxFlowChannels=aes67MaxChannelsPerFlow(working.aes67);
+  const flowNeeded=Math.ceil(layoutChannels/maxFlowChannels);
+  field(body,'aes67.flows.0.destIp','起始组播组（流 1 目标）','text',null,'流 1 的目标地址；其余流按组播组递增、端口 5004 自动派生，也可在高级设置里逐流覆盖。');
+  field(body,'aes67.flows.0.port','流 1 RTP 端口','integer',null,'AES67 默认 5004。');
+  const basicNote=document.createElement('p');basicNote.className='aes67-flow-note';
+  basicNote.textContent='日常只需设备名、源网卡与起始组播组；采样率、包时间、PTP 与逐流参数都在下面的高级设置里，保持默认即可。';
+  body.parentElement.append(basicNote);
+  const packNote=document.createElement('p');packNote.className='aes67-flow-note';
+  packNote.textContent='打包规则：每流最多 '+maxFlowChannels+' 声道；当前布局 '+layoutChannels+' 声道 → '+flowNeeded+' 条流。其余流的地址与端口在保存时自动分配。';
+  body.parentElement.append(packNote);
+
+  // Advanced settings are collapsed by default: everything that a deployment
+  // can tune but does not need to touch for a standard AES67 session.
+  const advanced=advancedGroup(body.parentElement,'高级设置（协议、时钟与逐流参数）','仅当对接第三方接收端、排障或特殊时钟拓扑时再展开；日常保持默认。');
+  const advancedHeading=text=>{const p=document.createElement('p');p.className='config-advanced-heading';p.textContent=text;advanced.append(p);};
+  advancedHeading('采样与打包');
+  field(advanced,'sampleRate','采样率','number',[{value:48000,label:'48 kHz（AES67 必选，当前可用）'},{value:44100,label:'44.1 kHz（后端未实现，暂不可选）',disabled:true},{value:88200,label:'88.2 kHz（后端未实现，暂不可选）',disabled:true},{value:96000,label:'96 kHz（后端未实现，暂不可选）',disabled:true},{value:176400,label:'176.4 kHz（后端未实现，暂不可选）',disabled:true},{value:192000,label:'192 kHz（后端未实现，暂不可选）',disabled:true}],'48 kHz 是 AES67 必选采样率；其他采样率需要后端重采样，本版本未实现。');
+  const ptime=field(advanced,'aes67.ptimeUs','包时间（ptime）','integer',[{value:1000,label:'1 ms · 48 帧'},{value:125,label:'125 µs · 6 帧'},{value:250,label:'250 µs · 12 帧'},{value:333,label:'333 µs · 16 帧'},{value:500,label:'500 µs · 24 帧'},{value:2000,label:'2 ms · 96 帧'},{value:4000,label:'4 ms · 192 帧'}],'每包帧数由采样率与包时间推导（48 kHz 下 1 ms = 48 帧）。');
+  field(advanced,'aes67.payloadType','RTP payloadType','integer',null,'动态负载类型范围 96–127，AES67 默认 96。');
+  field(advanced,'aes67.ttl','组播 TTL（1–255）','integer',null,'仅组播目标生效，默认 32；单播忽略。逐流 TTL 为 0 时继承此值。');
+  const baseSsrc=field(advanced,'aes67.ssrc','SSRC（0x0 = 自动）','ssrc',null,'0x0 时每次会话随机生成基准 SSRC，流 k = 基准 + k；非 0 时按填写值发送并在 SDP 通告。逐流 SSRC 见下方逐流编辑。');baseSsrc.value=formatAes67Ssrc(working.aes67?.ssrc??0);
+  const flowMode=field(advanced,'aes67.flowMode','流打包模式','text',[{value:'standard',label:'standard（AES67 标准，每流 ≤ 8 声道）'},{value:'extension',label:'extension（按 1440B 预算打包，非 AES67 合规）'}],'standard 是对接第三方接收端的推荐值；extension 是本产品扩展。');
+  field(advanced,'aes67.portPolicy','端口策略','text',[{value:'strict',label:'strict（所有流使用标准 5004）'},{value:'explicit',label:'explicit（允许逐流端口，迁移/实验用）'}],'strict 为默认；explicit 需要接收端支持非标准端口。');
+  field(advanced,'aes67.sapAddress','SAP 公告组（可空）','text',null,'留空使用 224.2.127.254:9875；也可填自定义组播组。');
+  field(advanced,'aes67.sapIntervalMs','SAP 公告间隔（ms）','integer',null,'1000–300000，默认 30000。');
+  advancedHeading('发送缓冲');
+  field(advanced,'aes67.ringPackets','环形缓冲包数','integer',null,'范围 8–1024，以 1 ms 单元计；溢出会丢最旧音频并计入 ringDroppedFrames。');
+  field(advanced,'aes67.prebufferFrames','发送前预缓冲（源帧）','integer',null,'48–48000 帧且不超过 ringPackets × 48；只影响发送状态机。');
+  advancedHeading('PTP 时钟');
+  const ptpMode=field(advanced,'aes67.ptp.mode','PTP 拓扑模式','text',[{value:'slave',label:'slave（跟随外部 GM，默认）'},{value:'auto',label:'auto（先监听，超时回退）'},{value:'gm',label:'gm（本机作为 GM）'},{value:'local',label:'local（无 PTP 本地时钟）'}],'slave 跟随网络 PTP 主时钟；gm 需要可读取网卡 MAC 作为 EUI-64 时钟标识。');
+  field(advanced,'aes67.ptp.domain','PTP domain（0–127）','integer');
+  // The scheduler derives the GMID from the locked master; a legacy non-empty
+  // value blocks saving and previously had no field to clear it (P2-27).
+  field(advanced,'aes67.ptpGmid','PTP GMID（必须留空）','text',null,'由模块从锁定的主时钟取得；旧配置若填了值，请清空后再保存。');
+  field(advanced,'aes67.ptp.lockTimeoutMs','PTP 锁定超时（ms）','integer');
+  field(advanced,'aes67.ptp.timestamping','时间戳模式','text',[{value:'auto',label:'auto（优先硬件，失败回退软件）'},{value:'software',label:'software'},{value:'hardware',label:'hardware（需要网卡与驱动支持）'}],'Windows 网卡驱动通常只提供软件时间戳；hardware 失败会返回 TIMESTAMP_UNAVAILABLE。');
+  const gmWrap=document.createElement('div');gmWrap.className='config-advanced-sub';advanced.append(gmWrap);
+  field(gmWrap,'aes67.ptp.announceTimeoutMs','Announce 超时（ms）','integer',null,'auto 模式的监听窗口与外部 GM 超时，1000–60000，默认 6000。');
+  field(gmWrap,'aes67.ptp.priority1','GM priority1（0–255）','integer',null,'gm 模式广播的 BMCA priority1，默认 128。');
+  field(gmWrap,'aes67.ptp.priority2','GM priority2（0–255）','integer',null,'gm 模式广播的 BMCA priority2，默认 128。');
+  field(gmWrap,'aes67.ptp.gmCapable','auto 可成为 GM','text',[{value:'false',label:'false'},{value:'true',label:'true'}],'仅 auto 模式使用；gm 模式隐含 true。');
+  field(gmWrap,'aes67.ptp.gmUtcOffset','GM UTC 偏移（秒，可空）','integer',null,'留空为 ARB（ptpTimescale=0）；0–127 时广播 ptpTimescale=1。');
+  const updateGmVisibility=()=>{gmWrap.hidden=!['gm','auto'].includes(String(ptpMode.value));};
+  ptpMode.addEventListener('change',updateGmVisibility);updateGmVisibility();
+
+  advancedHeading('逐流编辑');
+  const flowWrap=document.createElement('div');flowWrap.className='config-channels aes67-flows';
+  const flowTable=document.createElement('table');
+  const flowHead=document.createElement('tr');for(const title of ['流','目标地址','端口','payloadType','SSRC','TTL','声道']){const th=document.createElement('th');th.textContent=title;flowHead.append(th);}flowTable.append(flowHead);
+  flows.forEach((flow,index)=>{
+   const row=document.createElement('tr');
+   const name=document.createElement('th');name.scope='row';name.textContent='流 '+(index+1);row.append(name);
+   const destCell=document.createElement('td');
+   const portCell=document.createElement('td');
+   if(index===0){
+    // Flow 1 is edited in the basic panel, but the per-flow editor still
+    // shows its current values so the table never looks like a gap.
+    const destination=document.createElement('span');destination.className='aes67-flow-readonly';
+    destination.textContent=String(flow?.destIp??'').trim()||'（未填写）';
+    destination.title='流 1 的目标与端口在基础设置中编辑';
+    destCell.append(destination);
+    const port=document.createElement('span');port.className='aes67-flow-readonly';
+    port.textContent=flow?.port==null||flow?.port===''?'5004（默认）':String(flow.port);
+    portCell.append(port);
+   }else{
+    field(destCell,'aes67.flows.'+index+'.destIp','流 '+(index+1)+' 目标 IP','text');destCell.querySelector('span').hidden=true;
+    field(portCell,'aes67.flows.'+index+'.port','流 '+(index+1)+' 端口','integer');portCell.querySelector('span').hidden=true;
+   }
+   row.append(destCell);
+   row.append(portCell);
+   const ptCell=document.createElement('td');const ptInput=field(ptCell,'aes67.flows.'+index+'.payloadType','流 '+(index+1)+' payloadType','integer');ptInput.placeholder='继承';ptCell.querySelector('span').hidden=true;row.append(ptCell);
+   const ssrcCell=document.createElement('td');const ssrcInput=field(ssrcCell,'aes67.flows.'+index+'.ssrc','流 '+(index+1)+' SSRC','ssrc');if(flow?.ssrc)ssrcInput.value=formatAes67Ssrc(flow.ssrc);ssrcInput.placeholder=formatAes67Ssrc(effectiveAes67FlowSsrc(working.aes67,index));ssrcInput.title=formatAes67Ssrc(effectiveAes67FlowSsrc(working.aes67,index));ssrcCell.querySelector('span').hidden=true;row.append(ssrcCell);
+   const ttlCell=document.createElement('td');const ttlInput=field(ttlCell,'aes67.flows.'+index+'.ttl','流 '+(index+1)+' TTL','integer');ttlInput.placeholder='继承';ttlCell.querySelector('span').hidden=true;row.append(ttlCell);
+   const channelsCell=document.createElement('td');channelsCell.textContent=(flow?.channels??'?')+' ch · 偏移 '+(flow?.channelOffset??'?');row.append(channelsCell);
+   flowTable.append(row);
+  });
+  flowWrap.append(flowTable);advanced.append(flowWrap);
+  const flowNote=document.createElement('p');flowNote.className='aes67-flow-note';
+  flowNote.textContent='空白的目标/端口/PT/TTL/SSRC 表示继承或自动分配：组播组按流序号递增、端口默认使用会话 basePort（5004）、SSRC 为基准 + 流序号。逐流 TTL 为 0 时继承会话 TTL。';advanced.append(flowNote);
+  const auto=document.createElement('button');auto.type='button';auto.textContent='重新自动分配流地址';
+  auto.addEventListener('click',()=>{try{
+   const next=collect();
+   const count=deviceChannels(next).length;
+   const fresh=deriveAes67Flows(next.aes67,count)??proposeAes67Flows(count,next.aes67?.flows?.[0]??{},aes67MaxChannelsPerFlow(next.aes67));
+   next.aes67.flows=fresh;working=prepare(next,id);markDirty();render();
+  }catch(error){message(error.message,true);}});
+  advanced.append(auto);
+  // Changing ptime/flow mode changes how the channels are packed; re-plan the
+  // widths while keeping each flow's explicit destination/port/SSRC override.
+  const replan=()=>{try{const next=collect();const count=deviceChannels(next).length;const width=aes67MaxChannelsPerFlow(next.aes67);
+   const proposal=proposeAes67Flows(count,next.aes67.flows[0]??{},width);
+   const current=next.aes67.flows;
+   const changed=proposal.length!==current.length||proposal.some((flow,index)=>flow.channels!==current[index]?.channels);
+   if(changed){
+    next.aes67.flows=proposal.map((flow,index)=>{const old=current[index]??{};return {...old,...flow,destIp:flow.destIp||old.destIp||'',port:old.port??flow.port};});
+    materializeAes67Destinations(next.aes67);working=prepare(next,id);markDirty();render();
+   }}catch(error){message(error.message,true);}};
+  flowMode.addEventListener('change',replan);ptime.addEventListener('change',replan);
+ }
+ const session=working.outputBackend==='aes67'?group('会话与渲染'):body;
+ field(session,'mediaFoundation.enabled','启用 Media Foundation 播放适配','checkbox',null,'仅影响 Playback 的 MF 时间戳对齐；AES67 输出同样可开启。');
  const sourcePolicies=[{value:'fixed',label:'固定源流'},{value:'unified',label:'空间流与普通 PCM 统一输入',disabled:working.renderer==='lira'}];
- if(working.outputBackend==='aoip')sourcePolicies.unshift({value:'active',label:'自动跟随活动流'});
- field(body,'sourcePolicy','选流方式','text',sourcePolicies);
+ if(supportsActiveSource(working.outputBackend))sourcePolicies.unshift({value:'active',label:'自动跟随活动流'});
+ field(session,'sourcePolicy','选流方式','text',sourcePolicies,working.outputBackend==='aes67'?'AES67 默认使用固定源流。':'');
  if(working.sourcePolicy==='unified'){
-  const slotProfile=field(body,'unifiedSlotProfile','输入槽位配置','text',[
+  const slotProfile=field(session,'unifiedSlotProfile','输入槽位配置','text',[
    {value:'standard',label:'标准'},
    {value:'dtsxHtCompact',label:'DTS:X HT 紧凑（测试）'}
   ],'紧凑配置仅供 DTS:X 家庭影院端点使用。Bed 和 PCM 各预热 4 路，最多各 8 路。');
   if(!slotProfile.value)slotProfile.value='standard';
-  const primary=field(body,'unifiedPrimaryPolicy','空间主流选举','text',[
+  const primary=field(session,'unifiedPrimaryPolicy','空间主流选举','text',[
    {value:'legacy',label:'沿用当前默认策略'},
    {value:'objectCount',label:'按活跃对象数异步选举（测试）'}
   ],'保存后在下一次会话启动时生效。');
   if(!primary.value)primary.value='legacy';
  }
- if(working.sourcePolicy==='fixed'||(working.outputBackend==='asio'&&working.sourcePolicy!=='unified'))field(body,'sourceStream','固定源流索引（0–3）','integer');
- field(body,'sampleRate','设备采样率（Hz）');if(working.outputBackend==='asio'){field(body,'bufferFrames','驱动缓冲（帧，0 为驱动默认）','integer');field(body,'clockSync','匹配设备时钟','checkbox');field(body,'prebufferFrames','预缓冲（源帧，0 为自动）','integer');}field(body,'drainTimeoutMs','显式停止时排空超时（ms）','integer');
+ if(working.sourcePolicy==='fixed'||(working.outputBackend==='asio'&&working.sourcePolicy!=='unified'))field(session,'sourceStream','固定源流索引（0–3）','integer');
+ if(working.outputBackend!=='aes67')field(session,'sampleRate','设备采样率（Hz）','number',null,working.outputBackend==='aoip'?'AoIP 使用 48000 Hz。':'');
+ if(working.outputBackend==='asio'){field(session,'bufferFrames','驱动缓冲（帧，0 为驱动默认）','integer');field(session,'clockSync','匹配设备时钟','checkbox');field(session,'prebufferFrames','预缓冲（源帧，0 为自动）','integer');}
+ field(session,'drainTimeoutMs','显式停止时排空超时（ms）','integer');
  body=group('普通 PCM 捕获');
  const pcmEnabled=field(body,'pcmCapture.enabled','启用普通 WASAPI PCM 捕获','checkbox',null,
   '选流方式设为「空间流与普通 PCM 统一输入」时，与空间流合流。');
@@ -134,18 +255,23 @@ function render(){
  updateRoutePreview();
 }
 function updateRoutePreview(){if(!routePreview)return;try{const value=collect();const channelLabels=layoutFor(value.outputLayout).channels;const source=value.channelOrder==='custom'?value.routing.sourceChannelIndices:value.channelOrder==='olr'?channelLabels.map((_,i)=>i):orders[value.channelOrder];routePreview.textContent='声道排列：'+source.map(index=>channelLabels[index]??'?').join(' → ')+'\n设备输出：'+source.map((index,slot)=>`${channelLabels[index]??'?'} → 第 ${value.routing.physicalChannels[slot]+1} 路`).join(' ｜ ');}catch{routePreview.textContent='请补全有效配置，查看声道与设备输出的对应关系。';}}
-function collect(){if(!working)throw Error('配置尚未加载');const value=structuredClone(working);for(const input of $('fields').querySelectorAll('[data-path]')){if(input.disabled)continue;const path=input.dataset.path;const kind=input.dataset.kind;if(path==='pcmCapture.enabled'&&!input.checked&&!value.pcmCapture)continue;setPath(value,path,kind==='checkbox'?input.checked:(kind==='integer'||kind==='number'?numeric(input.value,kind==='integer')-Number(input.dataset.offset??0):input.value));}return id==='playback'?finish(value):value;}
+function aes67SsrcInput(text){const value=parseAes67Ssrc(text);if(!Number.isInteger(value)||value<0||value>4294967295)throw Error('SSRC 必须是 0x 十六进制或十进制 32 位值');return value;}
+function collect(){if(!working)throw Error('配置尚未加载');const value=structuredClone(working);for(const input of $('fields').querySelectorAll('[data-path]')){if(input.disabled)continue;const path=input.dataset.path;const kind=input.dataset.kind;if(path==='pcmCapture.enabled'&&!input.checked&&!value.pcmCapture)continue;if(/^aes67\.flows\.\d+\.(port|payloadType|ttl|ssrc)$/.test(path)&&String(input.value).trim()===''){const keys=path.split('.');let target=value;for(const key of keys.slice(0,-1))target=target[key];delete target[keys.at(-1)];continue;}if(path==='aes67.ptp.gmCapable'){setPath(value,path,input.value==='true');continue;}if(path==='aes67.ptp.gmUtcOffset'&&String(input.value).trim()===''){const ptp=getPath(value,'aes67.ptp');if(ptp&&typeof ptp==='object')delete ptp.gmUtcOffset;continue;}if(path==='aes67.name'&&String(input.value).trim()===''){const aes=getPath(value,'aes67');if(aes&&typeof aes==='object')delete aes.name;continue;}setPath(value,path,kind==='checkbox'?input.checked:kind==='ssrc'?aes67SsrcInput(input.value):(kind==='integer'||kind==='number'?numeric(input.value,kind==='integer')-Number(input.dataset.offset??0):input.value));}return id==='playback'?finish(value):value;}
 async function load(next=id){
  if(loading)return;if(dirty&&!confirm(translate('放弃未保存的修改，重新读取配置？')))return;loading=true;$('save').disabled=true;
  try{const value=await api('config/'+next);id=next;loaded=value;dirty=false;working=null;
   if(value.config&&typeof value.config==='object'&&!Array.isArray(value.config)){try{working=prepare(value.config,id);}catch{working=null;}}
   $('configTitle').textContent=id==='playback'?'播放与公共 DSP':'后端默认配置';$('playbackTab').setAttribute('aria-pressed',String(id==='playback'));$('backendTab').setAttribute('aria-pressed',String(id==='backend'));
-  $('applyInfo').textContent=id==='playback'?'输出方式或 AoIP 参数修改后重启 FSA 生效；其他播放配置下次会话读取。不自动重启。':'保存后需要后端服务重启；FSA 重启不一定会重启已驻留的后端。';
+  $('applyInfo').textContent=id==='playback'?'输出方式（含 AES67）或 AoIP 参数修改后重启 FSA 生效；其他播放配置下次会话读取。不自动重启。':'保存后需要后端服务重启；FSA 重启不一定会重启已驻留的后端。';
   $('fileInfo').textContent=translate(value.exists?'文件：':'尚无文件；首次保存会创建并登记：')+' '+value.path;$('revisionInfo').textContent=translate('文件修订：')+' '+value.revision+' · '+translate(' · 当前会话是否已加载：未知（不假定保存即生效）');$('dirtyState').textContent='';
   render();rawDirty=false;$('rawConfig').value=value.raw??JSON.stringify(working??value.config,null,2);message(value.validationError?'当前配置校验：'+value.validationError+'。请修正后保存。':'已读取配置。',Boolean(value.validationError));
  }catch(error){message(error.message,true);}finally{loading=false;$('save').disabled=!loaded;}
 }
-$('configForm').addEventListener('submit',async event=>{event.preventDefault();$('save').disabled=true;try{if(rawDirty)throw Error('请先将修改的 JSON 应用到表单，再保存。');const config=collect();const saved=await api('config/'+id,{method:'PUT',headers:{'Content-Type':'application/json','X-NSP-Token':token},body:JSON.stringify({revision:loaded.revision,config})});loaded=saved;working=prepare(saved.config,id);dirty=false;$('dirtyState').textContent='已保存，未自动应用';$('fileInfo').textContent=translate('文件：')+' '+saved.path;$('revisionInfo').textContent=translate('文件修订：')+' '+saved.revision+' · '+translate(' · 当前会话是否已加载：未知');$('rawConfig').value=JSON.stringify(saved.config,null,2);message('校验通过，已保存。'+(id==='playback'?'输出方式或 AoIP 参数修改后重启 FSA；其他配置下次会话读取。':'重启后端服务后加载。'));}catch(error){message(error.message==='RevisionConflict'?'文件已被其他入口修改，请重新读取后再编辑。':error.message,true);}finally{$('save').disabled=false;}});
+$('configForm').addEventListener('submit',async event=>{event.preventDefault();$('save').disabled=true;try{if(rawDirty)throw Error('请先将修改的 JSON 应用到表单，再保存。');const config=collect();
+  if(id==='playback')materializeAes67Destinations(config.aes67);
+  const problems=id==='playback'?validateAes67(config):[];
+  if(problems.length){const first=problems[0];const input=Array.from($('fields').querySelectorAll('[data-path]')).find(item=>item.dataset.path===first.path);if(input){for(let item=input.parentElement;item;item=item.parentElement){if(item.tag==='details'||item.tagName==='DETAILS'){item.open=true;break;}}input.setAttribute('aria-invalid','true');input.focus?.();input.scrollIntoView?.({block:'center'});}throw Error('配置校验未通过：\n'+problemText(problems));}
+  const saved=await api('config/'+id,{method:'PUT',headers:{'Content-Type':'application/json','X-NSP-Token':token},body:JSON.stringify({revision:loaded.revision,config})});loaded=saved;working=prepare(saved.config,id);render();dirty=false;$('dirtyState').textContent='已保存，未自动应用';$('fileInfo').textContent=translate('文件：')+' '+saved.path;$('revisionInfo').textContent=translate('文件修订：')+' '+saved.revision+' · '+translate(' · 当前会话是否已加载：未知');$('rawConfig').value=JSON.stringify(saved.config,null,2);message('校验通过，已保存。'+(id==='playback'?'输出方式（含 AES67）或 AoIP 参数修改后重启 FSA；其他配置下次会话读取。':'重启后端服务后加载。'));}catch(error){message(error.message==='RevisionConflict'?'文件已被其他入口修改，请重新读取后再编辑。':error.message,true);}finally{$('save').disabled=false;}});
 $('playbackTab').onclick=()=>load('playback');$('backendTab').onclick=()=>load('backend');$('reload').onclick=()=>load();
 $('toJson').onclick=()=>{try{$('rawConfig').value=JSON.stringify(collect(),null,2);rawDirty=false;message('表单已同步到 JSON，尚未保存。');}catch(error){message(error.message,true);}};
 $('rawConfig').addEventListener('input',()=>{rawDirty=true;markDirty();});

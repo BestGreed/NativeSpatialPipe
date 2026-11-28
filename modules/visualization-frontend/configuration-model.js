@@ -1,17 +1,91 @@
 import {outputLayouts} from './layout-presets.js';
 export {outputLayouts};
 export const layoutFor=id=>outputLayouts.find(p=>p.id===id)??outputLayouts.find(p=>p.id==='7.1.4');
+// ASIO, native AoIP and AES67 are transport-only: the channel count and order
+// always follow outputLayout. WASAPI is the only stereo device path.
 export const deviceChannels=value=>value.outputBackend==='wasapi'?['L','R']:layoutFor(value.outputLayout).channels;
+// AES67 RTP/L24 transport defaults, matching modules/zig-scheduler/aes67_config.zig.
+// E16 flows-only: destinations live exclusively in aes67.flows; the legacy
+// top-level destIp/port mirror is gone from the model and from saved files.
+// aes67.name is deliberately absent: an unset name means the runtime picks
+// NSP-<COMPUTERNAME>, and saving must not inject a default for it.
+// framesPerPacket is a LEGACY key (the backend still accepts it when it agrees
+// with sampleRate/ptimeUs); the editor drives packetization through
+// aes67.ptimeUs and strips the legacy field on load so the two can never drift.
+export const aes67Defaults={ptimeUs:1000,payloadType:96,ssrc:0,srcInterfaceIp:'',ptpDomain:0,ringPackets:64,prebufferFrames:480,ttl:32,flowMode:'standard',portPolicy:'strict',sapAddress:'',sapIntervalMs:30000};
+// One AES67 RTP flow carries at most 8 L24 channels (48 frames x 8 ch x 3 B
+// = 1152 B <= the 1440 B RFC 3550 budget). The backend accepts 1-8 explicit
+// flows whose contiguous channel offsets sum to the layout channel count; the
+// panel proposes the minimal ceil(channels/8) split. Destinations live only in
+// playback.json (aes67.flows), addresses are never derived at runtime, and the
+// removed top-level destIp/port mirror is rejected as a legacy format.
+export const aes67MaxFlowChannels=8;
+// AES67-2023 Table 2 packet counts at the 1FS family rate (48 kHz and 44.1 kHz
+// both use these rows; 88.2/96/176.4/192 kHz scale by rate/base). The editor
+// exposes the same list the scheduler accepts (aes67_config.zig).
+export const aes67PtimeFrames={125:6,250:12,333:16,500:24,1000:48,2000:96,4000:192};
+export const aes67Ptimes=Object.keys(aes67PtimeFrames).map(Number);
+export function aes67SamplesPerPacket(rate,ptimeUs){
+ const base=aes67PtimeFrames[Number(ptimeUs)];if(!base)return null;
+ const family=rate%48000===0?48000:rate%44100===0?44100:null;if(!family)return null;
+ return base*Math.round(rate/family);
+}
+// 44.1 kHz family defaults to L16 (AES67-2023 7.1); every other family the
+// editor can select uses L24. The editor does not expose codec yet.
+export function aes67CodecBytes(rate){return rate%44100===0?2:3;}
+// standard keeps the AES67 media profile (<=8 channels per flow); extension
+// packs each flow to the 1440-byte RTP payload budget and may use up to 16
+// channels per flow. This mirrors aes67_config.zig maxChannelsPerFlow.
+export function aes67MaxChannelsPerFlow(aes){
+ const rate=Number(aes?.sampleRate??48000),samples=aes67SamplesPerPacket(rate,aes?.ptimeUs??1000);
+ if(!samples)return aes67MaxFlowChannels;
+ if(aes?.flowMode!=='extension')return aes67MaxFlowChannels;
+ return Math.max(1,Math.min(16,Math.floor(1440/(samples*aes67CodecBytes(rate)))));
+}
+// Optional wire-order permutation example: the 9.1.6 renderer order mapped onto
+// the 16ch container order. Transmitted channel k carries source channel
+// channelMap[k]; without a map the renderer source order is used.
+export const aes67StandardChannelMap916=[6,7,2,3,8,9,4,5,0,1,10,11,14,15,12,13];
+// RTP layer default SSRC, matching aes67_config.zig default_ssrc (NSP6).
+export const aes67DefaultSsrc=0x4E535036;
+// Per-flow SSRC: a flow ssrc of 0/absent means "derived at runtime as
+// base + flow index" (base = top-level ssrc, default 0x4E535036). The UI
+// accepts 0 to preserve runtime derivation and previews the effective value.
+export function effectiveAes67FlowSsrc(aes,index){
+ const explicit=Number(aes?.flows?.[index]?.ssrc);
+ if(Number.isInteger(explicit)&&explicit>0)return explicit;
+ const base=Number.isInteger(Number(aes?.ssrc))&&Number(aes.ssrc)>0?Number(aes.ssrc):aes67DefaultSsrc;
+ return (base+index)>>>0;
+}
+// SSRC is stored as a 32-bit integer (the flows[] JSON storage format) but
+// every human-facing surface shows hexadecimal; input accepts both.
+export function formatAes67Ssrc(value){return '0x'+(Number(value)>>>0).toString(16).toUpperCase();}
+export function parseAes67Ssrc(text){
+ const value=String(text??'').trim().toLowerCase();
+ if(value==='')return null;
+ if(/^0x[0-9a-f]+$/.test(value))return parseInt(value,16);
+ if(/^-?[0-9]+$/.test(value))return Number(value);
+ if(/^[0-9a-f]{1,8}$/.test(value))return parseInt(value,16)>>>0;
+ return NaN;
+}
 // Pure form model: preserve existing optional/legacy fields and avoid coercing
 // empty/invalid numeric entries into valid zero values.
 export const channelLabels=['L','R','C','LFE','Ls','Rs','Lrs','Rrs','Ltf','Rtf','Ltr','Rtr'];
 export const orders={olr:[0,1,2,3,4,5,6,7,8,9,10,11],'dvs-speakers':[0,2,1,5,4,7,6,3,10,8,9,11]};
 export function getPath(object,path){return path.split('.').reduce((value,key)=>value?.[key],object);}
 export function setPath(object,path,value){const keys=path.split('.');let target=object;for(const key of keys.slice(0,-1)){target[key]??={};target=target[key];}target[keys.at(-1)]=value;}
-export function updateSourceSelection(value,backendChanged=false){
+export const supportsActiveSource=backend=>backend==='aoip';
+function normalizeSourcePolicy(value){
+ value.sourcePolicy??=value.outputBackend==='aoip'?'active':'fixed';
+ if(value.sourcePolicy==='active'&&!supportsActiveSource(value.outputBackend))value.sourcePolicy='fixed';
+}
+export function updateSourceSelection(value,previousBackend){
  const backend=value.outputBackend;
- if(backendChanged&&value.sourcePolicy!=='unified')value.sourcePolicy=backend==='aoip'?'active':'fixed';
- if((value.sourcePolicy==='unified'&&value.renderer==='lira')||(backend!=='aoip'&&value.sourcePolicy==='active'))value.sourcePolicy='fixed';
+ // Native AoIP defaults to active when switching from a device backend.
+ if(previousBackend&&previousBackend!==backend&&previousBackend!=='aes67'&&!supportsActiveSource(previousBackend)&&
+    backend==='aoip'&&value.sourcePolicy==='fixed')value.sourcePolicy='active';
+ normalizeSourcePolicy(value);
+ if(value.sourcePolicy==='unified'&&value.renderer==='lira')value.sourcePolicy='fixed';
  if(value.sourcePolicy==='unified')value.sourceStream=0;
  else{
   delete value.unifiedSlotProfile;
@@ -26,7 +100,13 @@ export function updateSourceSelection(value,backendChanged=false){
 export function prepare(config,id){
  const value=structuredClone(config);
  if(id==='playback'){
-  value.outputBackend??='asio';value.sourcePolicy??='fixed';value.aoip??={interfaceIp:'',masterIp:'',mac:'',name:'NSP Native AoIP',prebufferFrames:960,txLatencyUs:4000,framesPerPacket:32};value.aoip.name??='NSP Native AoIP';value.aoip.prebufferFrames??=960;value.aoip.txLatencyUs??=4000;value.aoip.framesPerPacket??=32;
+  value.outputBackend??='asio';normalizeSourcePolicy(value);value.aoip??={interfaceIp:'',masterIp:'',mac:'',name:'NSP Native AoIP',prebufferFrames:960,txLatencyUs:4000,framesPerPacket:32};value.aoip.name??='NSP Native AoIP';value.aoip.prebufferFrames??=960;value.aoip.txLatencyUs??=4000;value.aoip.framesPerPacket??=32;
+  // The scheduler validates the AES67 block even while another backend is
+  // selected, so normalise it in place instead of dropping or recreating it.
+  if(value.aes67&&typeof value.aes67==='object'){value.aes67={...aes67Defaults,...value.aes67};delete value.aes67.framesPerPacket;}
+  else if(value.outputBackend==='aes67')value.aes67={...aes67Defaults,flows:proposeAes67Flows(layoutFor(value.outputLayout).channels.length)};
+  if(value.aes67?.ptp==null&&value.aes67)value.aes67.ptp={domain:value.aes67.ptpDomain,lockTimeoutMs:5000,timestamping:'auto',mode:'slave',priority1:128,priority2:128,announceTimeoutMs:6000,gmCapable:false,gmUtcOffset:null};
+  else if(value.aes67?.ptp&&typeof value.aes67.ptp==='object'&&!Array.isArray(value.aes67.ptp))value.aes67.ptp={domain:0,lockTimeoutMs:5000,timestamping:'auto',mode:'slave',priority1:128,priority2:128,announceTimeoutMs:6000,gmCapable:false,gmUtcOffset:null,...value.aes67.ptp};
   value.recording??={};value.recording.pcm??=false;value.recording.telemetrySnapshots??=false;value.recording.rawStreamStats??=false;
   if(value.notebookFilterFile&&!value.lsac){
    value.lsac={enabled:true,filterFile:value.notebookFilterFile,virtualBass:value.notebookVirtualBass,loudness:value.outputProcessing?.loudness};
@@ -39,6 +119,28 @@ export function prepare(config,id){
    const bass=value.lsac.virtualBass;bass.enabled??=false;bass.amount??=0.18;bass.highpassHz??=130;
   }
   value.outputLayout??='7.1.4';const count=deviceChannels(value).length;
+  // AES67 flow coverage follows the render layout, not the device's channel
+  // limit: validateAes67 compares flows against layoutFor().channels (a WASAPI
+  // backend can report 2 device channels while the layout is 7.1.4).
+  const layoutCount=layoutFor(value.outputLayout).channels.length;
+  if(value.aes67&&typeof value.aes67==='object'){
+   // A hand-written groupBase plan is legal for the scheduler; materialize it
+   // into flow rows so the editor can display and keep it (P2-27).
+   if(!Array.isArray(value.aes67.flows)&&String(value.aes67.groupBase??'').trim()){
+    const base=String(value.aes67.groupBase).trim();
+    if(parseIpv4(base)){value.aes67.flows=proposeAes67Flows(layoutCount,{destIp:base,port:Number(value.aes67.basePort??5004)});materializeAes67Destinations(value.aes67);}
+   }
+   // Selecting AES67 with a preserved (flow-less) block re-creates the editor
+   // rows from the current layout; the start destination is still required.
+   if(value.outputBackend==='aes67'&&!Array.isArray(value.aes67.flows))value.aes67.flows=proposeAes67Flows(layoutCount);
+   // The scheduler validates the AES67 block even for another backend, so a
+   // layout/backend switch must re-plan stale flow widths instead of leaving a
+   // block the hidden AES67 panel can no longer fix (P2-25).
+   if(value.outputBackend!=='aes67'&&Array.isArray(value.aes67.flows)&&value.aes67.flows.length){
+    const sum=value.aes67.flows.reduce((total,flow)=>total+Number(flow?.channels??0),0);
+    if(sum!==layoutCount)replanAes67ForLayout(value.aes67,layoutCount);
+   }
+  }
   if(value.renderer==='olr')value.renderer='roar';
   value.mode=value.renderer==='lira'?null:(value.mode??'olr');value.channelOrder??='olr';value.rendererDll??='';
   value.outputProcessing??={};value.outputProcessing.bypass??=false;
@@ -58,6 +160,21 @@ export function numeric(text,integer=false){if(text.trim()==='')throw Error('数
 export function finish(value){
  if(value.sourcePolicy==='unified'&&value.pcmCapture)delete value.pcmCapture.inputEndpointId;
  if(value.outputBackend!=='aoip'&&!value.aoip?.interfaceIp&&!value.aoip?.masterIp&&!value.aoip?.mac)value.aoip=null;
+ // Never wipe a saved AES67 block when switching backends: it is network
+ // transport state for the next AES67 session. Drop only the editor-created
+ // placeholder (empty flow-1 destination) the user never filled in.
+ if(value.outputBackend!=='aes67'&&Array.isArray(value.aes67?.flows)&&value.aes67.flows.length>0&&
+    !Object.hasOwn(value.aes67,'destIp')&&!Object.hasOwn(value.aes67,'port')&&
+    value.aes67.flows.every(flow=>String(flow?.destIp??'').trim()==='')){
+    // Keep the user's device name / source interface / PTP block for the next
+    // AES67 session; only the empty placeholder rows are dropped. A block with
+    // no user data at all is removed as before.
+    if(aes67HasUserData(value.aes67))delete value.aes67.flows;
+    else delete value.aes67;
+ }
+ // One sample-rate control: for AES67 the renderer rate is the RTP media-clock
+ // rate, so materialize it into the block the scheduler validates.
+ if(value.outputBackend==='aes67'&&value.aes67&&typeof value.aes67==='object')value.aes67.sampleRate=value.sampleRate;
  if(value.pcmCapture?.enabled===false){
   if(value.pcmCapture.routeToOutput)value.pcmCapture.routeToOutput=false;
   if(value.wasapiUpmix?.enabled)value.wasapiUpmix.enabled=false;
@@ -69,6 +186,226 @@ export function finish(value){
  if(value.channelOrder!=='custom'&&value.routing)delete value.routing.sourceChannelIndices;
  if(value.roarCustomLayout?.measurementFile==='')value.roarCustomLayout.measurementFile=null;
  return value;
+}
+
+// ---- AES67 transport validation (mirrors modules/zig-scheduler/aes67_config.zig) ----
+function parseIpv4(text){
+ const match=/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(text??'').trim());
+ if(!match)return null;
+ const parts=match.slice(1).map(Number);
+ return parts.every(part=>part<=255)?parts:null;
+}
+const unicastIpv4=text=>{const parts=parseIpv4(text);return parts!==null&&parts[0]!==0&&parts[0]!==255&&parts[0]<224;};
+export const isIpv4=text=>parseIpv4(text)!==null;
+export const isPtpGmid=text=>{const value=String(text??'').trim();return value===''||/^[0-9a-fA-F]{2}(-[0-9a-fA-F]{2}){7}$/.test(value);};
+// Destination rules mirror aes67_config.zig resolveDestination: class D
+// multicast groups (224.0.0.0-239.255.255.255) and ordinary unicast hosts
+// (first octet 1-223) are accepted; 0.x, 255.x and reserved 240-255.x are
+// rejected by the scheduler before a socket exists.
+const multicastIpv4=text=>{const parts=parseIpv4(text);return parts!==null&&parts[0]>=224&&parts[0]<=239;};
+export const isAes67Destination=text=>{const parts=parseIpv4(text);return parts!==null&&parts[0]>=1&&parts[0]<=239;};
+// Last-octet increment with carry into the higher octets; null when the
+// address would leave the valid IPv4 range.
+function incrementIpv4(parts,step){
+ const octets=parts.slice();let carry=step;
+ for(let index=3;index>=1&&carry>0;index--){const value=octets[index]+carry;octets[index]=value&255;carry=value>>8;}
+ return carry>0?null:octets;
+}
+// A fresh form or explicit layout change proposes the minimum split.
+export function proposeAes67Flows(channels,first={},maxPerFlow=aes67MaxFlowChannels){
+ const width=Number.isInteger(maxPerFlow)&&maxPerFlow>0?maxPerFlow:aes67MaxFlowChannels;
+ return Array.from({length:Math.ceil(channels/width)},(_,index)=>({
+  ...(index===0?first:{}),
+  destIp:index===0?(first.destIp??''):'',
+  channels:Math.min(width,channels-index*width),
+  channelOffset:index*width,
+ }));
+}
+
+// Match web_host.zig: preserve explicit values, derive missing destinations
+// from flow 1, default multicast ports to the session basePort (5004 by
+// default) and increment unicast ports by 2 from the flow-1 port.
+export function materializeAes67Destinations(aes){
+ if(!Array.isArray(aes?.flows)||aes.flows.length===0||aes.flows.length>8)return;
+ if(Object.hasOwn(aes,'destIp')||Object.hasOwn(aes,'port'))return;
+ const first=aes.flows[0];
+ if(typeof first?.destIp!=='string'||!isAes67Destination(first.destIp))return;
+ const base=parseIpv4(first.destIp),sessionPort=aes.basePort??5004,basePort=first.port??sessionPort;
+ if(!intRange(basePort,1,65535))return;
+ const multicast=multicastIpv4(first.destIp);
+ aes.flows.forEach((flow,index)=>{
+  if(!flow||typeof flow!=='object')return;
+  if(flow.destIp==null||flow.destIp===''){
+   const next=multicast?incrementIpv4(base,index):base;
+   if(next)flow.destIp=next.join('.');
+  }
+  const flowMulticast=multicastIpv4(flow.destIp);
+  flow.port??=flowMulticast?sessionPort:basePort+2*index;
+  if(flowMulticast&&(flow.ttl==null||flow.ttl===0))flow.ttl=aes.ttl??32;
+  if(!flow.srcInterfaceIp&&aes.srcInterfaceIp)flow.srcInterfaceIp=aes.srcInterfaceIp;
+ });
+}
+// Re-plan flow widths to a new channel count while keeping each flow's
+// explicit destination/port/SSRC overrides (same rule the ptime/flowMode
+// replan uses). Shared by layout changes and backend switches so both paths
+// agree and extension packing is honored.
+export function replanAes67ForLayout(aes,channels){
+ if(!aes||typeof aes!=='object'||!Array.isArray(aes.flows)||aes.flows.length===0)return aes;
+ if(!Number.isInteger(channels)||channels<=0)return aes;
+ const current=aes.flows;
+ const proposal=proposeAes67Flows(channels,current[0]??{},aes67MaxChannelsPerFlow(aes));
+ aes.flows=proposal.map((flow,index)=>{const old=current[index]??{};return {...old,...flow,destIp:flow.destIp||old.destIp||'',port:old.port??flow.port};});
+ materializeAes67Destinations(aes);
+ if(Array.isArray(aes.channelMap)&&aes.channelMap.length!==channels)delete aes.channelMap;
+ return aes;
+}
+// True when a block carries a user decision that must not be discarded when
+// the editor drops its placeholder flows. Defaults alone are not user data.
+export function aes67HasUserData(aes){
+ if(!aes||typeof aes!=='object')return false;
+ if(String(aes.name??'').trim()||String(aes.srcInterfaceIp??'').trim()||String(aes.groupBase??'').trim())return true;
+ if(String(aes.sapAddress??'').trim())return true;
+ if(aes.sapIntervalMs!=null&&Number(aes.sapIntervalMs)!==30000)return true;
+ if(aes.basePort!=null&&Number(aes.basePort)!==5004)return true;
+ if(aes.sampleRate!=null&&Number(aes.sampleRate)!==48000)return true;
+ if(aes.ptimeUs!=null&&Number(aes.ptimeUs)!==1000)return true;
+ if(aes.flowMode&&aes.flowMode!=='standard')return true;
+ if(aes.portPolicy&&aes.portPolicy!=='strict')return true;
+ if(aes.payloadType!=null&&Number(aes.payloadType)!==96)return true;
+ if(aes.ssrc!=null&&Number(aes.ssrc)!==0)return true;
+ if(aes.ttl!=null&&Number(aes.ttl)!==32)return true;
+ if(aes.ringPackets!=null&&Number(aes.ringPackets)!==64)return true;
+ if(aes.prebufferFrames!=null&&Number(aes.prebufferFrames)!==480)return true;
+ const ptpDefaults={mode:'slave',domain:0,lockTimeoutMs:5000,timestamping:'auto',priority1:128,priority2:128,announceTimeoutMs:6000,gmCapable:false,gmUtcOffset:null};
+ if(aes.ptp&&typeof aes.ptp==='object')for(const [key,value]of Object.entries(ptpDefaults)){const current=aes.ptp[key];if(current!==undefined&&current!==null&&current!==value)return true;}
+ if(String(aes.ptpGmid??'').trim())return true;
+ if(Array.isArray(aes.flows))for(const flow of aes.flows){
+  if(!flow||typeof flow!=='object')continue;
+  if(String(flow.destIp??'').trim())return true;
+  if(flow.port!=null&&Number(flow.port)!==5004)return true;
+  if(flow.ssrc!=null&&Number(flow.ssrc)!==0)return true;
+  if(flow.payloadType!=null&&Number(flow.payloadType)!==96)return true;
+  if(flow.ttl!=null&&Number(flow.ttl)!==0&&Number(flow.ttl)!==32)return true;
+  if(String(flow.srcInterfaceIp??'').trim())return true;
+ }
+ return false;
+}
+export function deriveAes67Flows(aes,channels){
+ const first=aes?.flows?.[0];
+ if(!first||!isAes67Destination(first.destIp))return null;
+ const proposal={...aes,flows:proposeAes67Flows(channels,first,aes67MaxChannelsPerFlow(aes))};
+ materializeAes67Destinations(proposal);
+ return proposal.flows.every(flow=>isAes67Destination(flow.destIp)&&intRange(flow.port,1,65535))?proposal.flows:null;
+}
+const intRange=(value,min,max)=>Number.isInteger(value)&&value>=min&&value<=max;
+export function aes67BlockProblems(aes,channels){
+ const problems=[];
+ // E16 flows-only: destinations are validated per flow; a block without
+ // any flow row is simply incomplete.
+ const flows=Array.isArray(aes?.flows)?aes.flows:[];
+ for(const key of ['destIp','port'])if(Object.hasOwn(aes,key))problems.push({path:'aes67.'+key,message:'旧版 AES67 目标字段 '+key+' 已移除。请用高级 JSON 删除该字段并将目标写入 aes67.flows。'});
+ if(flows.length>8)problems.push({path:'aes67.flows',message:'AES67 最多支持 8 条流'});
+ if(!flows.length)problems.push({path:'aes67.flows.0.destIp',message:'AES67 后端需要完整的 aes67 网络配置'});
+ // ptimeUs drives packetization; the LEGACY framesPerPacket key is accepted
+ // only when it agrees with the derived sample count. The editor removes it.
+ const samples=aes67SamplesPerPacket(Number(aes?.sampleRate??48000),aes?.ptimeUs??1000);
+ if(samples===null)problems.push({path:'aes67.ptimeUs',message:'AES67 ptimeUs 必须是 125、250、333、500、1000、2000 或 4000 微秒'});
+ else if(Object.hasOwn(aes??{},'framesPerPacket')&&aes.framesPerPacket!==samples)problems.push({path:'aes67.framesPerPacket',message:'旧版 framesPerPacket（'+aes.framesPerPacket+'）与 ptimeUs 推导的每包帧数（'+samples+'）不一致，请删除该字段'});
+ if(Object.hasOwn(aes??{},'flowMode')&&!['standard','extension'].includes(aes.flowMode))problems.push({path:'aes67.flowMode',message:'AES67 flowMode 必须是 standard 或 extension'});
+ if(Object.hasOwn(aes??{},'portPolicy')&&!['strict','explicit'].includes(aes.portPolicy))problems.push({path:'aes67.portPolicy',message:'AES67 portPolicy 必须是 strict 或 explicit'});
+ if(Object.hasOwn(aes??{},'sapAddress')&&String(aes.sapAddress??'')!==''&&!multicastIpv4(aes.sapAddress))problems.push({path:'aes67.sapAddress',message:'AES67 SAP 组必须是空或有效的组播 IPv4'});
+ if(Object.hasOwn(aes??{},'sapIntervalMs')&&!intRange(aes.sapIntervalMs,1000,300000))problems.push({path:'aes67.sapIntervalMs',message:'AES67 SAP 间隔必须在 1000–300000 ms'});
+ if(!intRange(aes?.payloadType,96,127))problems.push({path:'aes67.payloadType',message:'AES67 payloadType 必须在 96–127'});
+ if(!intRange(aes?.ssrc,0,4294967295))problems.push({path:'aes67.ssrc',message:'AES67 SSRC 必须在 0–4294967295'});
+ if(String(aes?.srcInterfaceIp??'')!==''&&!unicastIpv4(aes?.srcInterfaceIp))problems.push({path:'aes67.srcInterfaceIp',message:'AES67 源网卡 IP 必须留空或为有效的单播 IPv4'});
+ // Optional device name: empty/blank means "omit" (runtime derives
+ // NSP-<COMPUTERNAME>); otherwise printable ASCII with spaces, <=63 trimmed.
+ if(Object.hasOwn(aes,'name')&&aes.name!==undefined){
+  if(typeof aes.name!=='string')problems.push({path:'aes67.name',message:'AES67 设备名必须是字符串'});
+  else if(aes.name.trim().length>63)problems.push({path:'aes67.name',message:'AES67 设备名最长 63 个字符'});
+  else if(!/^[\x20-\x7E]*$/.test(aes.name))problems.push({path:'aes67.name',message:'AES67 设备名只能包含可打印 ASCII 字符（含空格）'});
+ }
+ if(String(aes?.ptpGmid??'').trim()!=='')problems.push({path:'aes67.ptpGmid',message:'AES67 PTP GMID 必须留空，由模块从锁定的时钟取得'});
+ if(!intRange(aes?.ptpDomain,0,127))problems.push({path:'aes67.ptpDomain',message:'AES67 PTP domain 必须在 0–127'});
+ if(aes?.ptp!=null){
+  const ptp=aes.ptp;
+  if(typeof ptp!=='object'||Array.isArray(ptp))problems.push({path:'aes67.ptp',message:'AES67 PTP 配置必须是对象'});
+  else{
+   if(Object.hasOwn(ptp,'domain')&&!intRange(ptp.domain,0,127))problems.push({path:'aes67.ptp.domain',message:'AES67 PTP domain 必须在 0–127'});
+   if(Object.hasOwn(ptp,'lockTimeoutMs')&&!intRange(ptp.lockTimeoutMs,100,120000))problems.push({path:'aes67.ptp.lockTimeoutMs',message:'AES67 PTP 锁定超时必须在 100–120000 ms'});
+   if(Object.hasOwn(ptp,'timestamping')&&!['auto','software','hardware'].includes(ptp.timestamping))problems.push({path:'aes67.ptp.timestamping',message:'AES67 PTP 时间戳模式必须是 auto、software 或 hardware'});
+   if(Object.hasOwn(ptp,'mode')&&!['slave','auto','gm','local'].includes(ptp.mode))problems.push({path:'aes67.ptp.mode',message:'AES67 PTP 模式必须是 slave、auto、gm 或 local'});
+   if(Object.hasOwn(ptp,'priority1')&&!intRange(ptp.priority1,0,255))problems.push({path:'aes67.ptp.priority1',message:'AES67 PTP priority1 必须在 0–255'});
+   if(Object.hasOwn(ptp,'priority2')&&!intRange(ptp.priority2,0,255))problems.push({path:'aes67.ptp.priority2',message:'AES67 PTP priority2 必须在 0–255'});
+   if(Object.hasOwn(ptp,'announceTimeoutMs')&&!intRange(ptp.announceTimeoutMs,1000,60000))problems.push({path:'aes67.ptp.announceTimeoutMs',message:'AES67 PTP announce 超时必须在 1000–60000 ms'});
+   if(Object.hasOwn(ptp,'gmCapable')&&typeof ptp.gmCapable!=='boolean')problems.push({path:'aes67.ptp.gmCapable',message:'AES67 PTP gmCapable 必须是布尔值'});
+   if(Object.hasOwn(ptp,'gmUtcOffset')&&ptp.gmUtcOffset!==null&&!intRange(ptp.gmUtcOffset,0,127))problems.push({path:'aes67.ptp.gmUtcOffset',message:'AES67 PTP gmUtcOffset 必须为 null 或 0–127'});
+  }
+ }
+ if(!intRange(aes?.ringPackets,8,1024))problems.push({path:'aes67.ringPackets',message:'AES67 环形缓冲包数必须在 8–1024'});
+ if(!intRange(aes?.prebufferFrames,48,48000)||(intRange(aes?.ringPackets,8,1024)&&intRange(aes?.prebufferFrames,0,1e9)&&aes.prebufferFrames>aes.ringPackets*48))problems.push({path:'aes67.prebufferFrames',message:'AES67 预缓冲必须在 48–48000 帧且不超过 ringPackets × 48'});
+ if(!intRange(aes?.ttl,1,255))problems.push({path:'aes67.ttl',message:'AES67 组播 TTL 必须在 1–255'});
+ // Multi-flow rows are validated like the backend does: contiguous channel
+ // coverage of the layout, per-flow destination/port ranges and no duplicate
+ // (address,port) pair. A multicast destination requires srcInterfaceIp.
+ if(flows.length&&Number.isInteger(channels)&&flows.reduce((total,flow)=>total+Number(flow?.channels??0),0)!==channels)problems.push({path:'aes67.flows',message:'AES67 多流声道总数必须等于布局声道数'});
+ let offset=0;
+ const basePort=intRange(Number(aes?.basePort??5004),1024,65534)&&Number(aes?.basePort??5004)%2===0?Number(aes?.basePort??5004):5004;
+ const strictPorts=(aes?.portPolicy??'strict')!=='explicit';
+ const seen=new Set();
+ const seenGroups=new Set();
+ const seenSsrc=new Map();
+ flows.forEach((flow,index)=>{
+  if(!isAes67Destination(flow?.destIp))problems.push({path:'aes67.flows.'+index+'.destIp',message:'流 '+(index+1)+' 目标 IP 必须是有效的单播 IPv4 或组播组'});
+  // Mirror aes67_config.zig: RTP ports are 1024-65534 even; strict policy
+  // requires every flow to use the base port (5004 by default).
+  if(!intRange(flow?.port,1024,65534)||Number(flow?.port)%2!==0)problems.push({path:'aes67.flows.'+index+'.port',message:'流 '+(index+1)+' 端口必须是 1024–65534 的偶数'});
+  else if(strictPorts&&Number(flow?.port)!==basePort)problems.push({path:'aes67.flows.'+index+'.port',message:'strict 端口策略要求所有流使用基准端口 '+basePort+'（可在高级设置改为 explicit）'});
+  if(!intRange(flow?.channels,1,aes67MaxChannelsPerFlow(aes)))problems.push({path:'aes67.flows.'+index+'.channels',message:'流 '+(index+1)+' 声道必须在 1–'+aes67MaxChannelsPerFlow(aes)+'（当前打包模式）'});
+  if(flow?.channelOffset!==offset)problems.push({path:'aes67.flows.'+index+'.channelOffset',message:'AES67 流声道偏移必须连续且从 0 开始'});
+  offset+=Number(flow?.channels??0);
+  if(!intRange(flow?.ssrc??0,0,4294967295))problems.push({path:'aes67.flows.'+index+'.ssrc',message:'流 '+(index+1)+' SSRC 必须在 0x0–0xFFFFFFFF'});
+  const address=parseIpv4(flow?.destIp)?.join('.');
+  if(multicastIpv4(address)){
+   if(seenGroups.has(address))problems.push({path:'aes67.flows.'+index+'.destIp',message:'每条 AES67 组播流必须使用不同的目标组'});
+   seenGroups.add(address);
+  }
+  const key=address+':'+Number(flow?.port??0);
+  if(seen.has(key))problems.push({path:'aes67.flows.'+index+'.port',message:'流 '+(index+1)+' 目标地址与端口与前面的流重复'});
+  seen.add(key);
+  // Cross-flow SSRC uniqueness on the effective on-wire value, reported
+  // in hexadecimal, the way audio people read SSRCs.
+  const ssrcValue=effectiveAes67FlowSsrc(aes,index);
+  const priorSsrc=seenSsrc.get(ssrcValue);
+  if(priorSsrc!==undefined)problems.push({path:'aes67.flows.'+index+'.ssrc',message:'流 '+(priorSsrc+1)+' 与流 '+(index+1)+' SSRC 冲突，各流必须不同：'+formatAes67Ssrc(ssrcValue)});
+  else seenSsrc.set(ssrcValue,index);
+ });
+ // Multicast egress is resolved per flow: a flow-level override or the
+ // session-level value satisfies it; the sender fails closed otherwise.
+ const sessionSource=String(aes?.srcInterfaceIp??'').trim();
+ flows.forEach((flow,index)=>{
+  const flowSource=String(flow?.srcInterfaceIp??'').trim();
+  if(flowSource!==''&&!unicastIpv4(flowSource))problems.push({path:'aes67.flows.'+index+'.srcInterfaceIp',message:'AES67 源网卡 IP 必须留空或为有效的单播 IPv4'});
+  if(multicastIpv4(flow?.destIp)&&flowSource===''&&sessionSource==='')problems.push({path:'aes67.srcInterfaceIp',message:'组播目标必须填写源网卡绑定 IP'});
+ });
+ return problems;
+}
+export function validateAes67(value){
+ let problems=[];
+ const channels=value?.outputBackend?layoutFor(value.outputLayout).channels.length:undefined;
+ if(value?.aes67!=null)problems=problems.concat(aes67BlockProblems(value.aes67,channels));
+ else if(value?.outputBackend==='aes67')problems.push({path:'aes67.flows.0.destIp',message:'AES67 后端需要完整的 aes67 网络配置'});
+ if(value?.outputBackend==='aes67'){
+  if(value.sampleRate!==48000)problems.push({path:'sampleRate',message:'AES67 当前仅支持 48000 Hz（后端尚未实现重采样）'});
+  if(value.aes67!=null&&value.aes67.sampleRate!=null&&Number(value.aes67.sampleRate)!==Number(value.sampleRate))problems.push({path:'sampleRate',message:'AES67 块内的采样率必须与设备采样率一致'});
+  if(!['fixed','unified'].includes(value.sourcePolicy))problems.push({path:'sourcePolicy',message:'AES67 选流方式必须是固定源流或统一输入'});
+ }
+ return problems;
+}
+export function problemText(problems,limit=4){
+ const lines=problems.slice(0,limit).map(problem=>'· '+problem.message);
+ if(problems.length>limit)lines.push('…另有 '+(problems.length-limit)+' 项问题');
+ return lines.join('\n');
 }
 
 // Migrate only on an explicit layout choice; never silently reshape raw JSON.

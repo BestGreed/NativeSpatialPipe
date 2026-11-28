@@ -7,11 +7,11 @@
 <section class="config-intro"><span class="eyebrow">CONFIGURATION / LOCAL</span><h1>输出链路配置</h1><p>保存只更新配置文件。启停、模式切换、Hook、HT Support 和急停继续通过 FSA 操作。</p></section>
 <section class="config-status" aria-label="当前状态"><h2>当前状态</h2><p id="runtime" role="status">正在读取…</p><p id="endpointInfo"></p><p id="runtimeConfig"></p></section>
 <div class="config-tabs" role="group" aria-label="配置类型"><button id="playbackTab" type="button" aria-pressed="true">播放与公共 DSP</button><button id="backendTab" type="button" aria-pressed="false">后端默认配置</button></div>
-<section class="config-editor"><h2 id="configTitle">播放与公共 DSP</h2><p id="applyInfo">输出方式与 AoIP 参数修改后重启 FSA 生效；其他播放配置下次会话读取。</p><p id="fileInfo" class="config-path"></p><p id="revisionInfo" class="config-path"></p>
+<section class="config-editor"><h2 id="configTitle">播放与公共 DSP</h2><p id="applyInfo">输出方式（AoIP / ASIO / WASAPI / AES67）与网络参数修改后重启 FSA 生效；其他播放配置下次会话读取。</p><p id="fileInfo" class="config-path"></p><p id="revisionInfo" class="config-path"></p>
 <form id="configForm"><div id="fields"></div><div class="config-actions"><button type="submit" id="save" disabled>校验并保存</button><button type="button" id="reload">重新读取文件</button><span id="dirtyState"></span></div></form>
 <p id="result" role="status" aria-live="polite"></p>
 <details><summary>高级：完整 JSON</summary><p>保留已暴露字段；未知字段由后端拒绝。应用到表单后，再点“校验并保存”。</p><textarea id="rawConfig" spellcheck="false" aria-label="完整 JSON 配置"></textarea><div class="config-actions"><button type="button" id="toJson">将表单同步到 JSON</button><button type="button" id="fromJson">将 JSON 应用到表单</button></div></details>
 </section>
-<p class="config-footnote">在“渲染器与输出设备”中选择原生 AoIP 或外挂 ASIO；选择 AoIP 后显示网络模块配置。AoIP 随 FSA 常驻，ASIO 随会话运行；无输入时输出静音。保存不会自动重启。</p>
+<p class="config-footnote">在“渲染器与输出设备”中选择原生 AoIP、外挂 ASIO、WASAPI 端点或 AES67 网络输出。AoIP 随 FSA 常驻；ASIO、WASAPI 与 AES67 随会话运行，无输入时输出静音。AES67 使用 RTP/L24 发送（单播或组播；按流打包，每流最多 8 声道、流数由布局决定，面板逐流显示每流目的地、完整写入配置并可覆盖），后端切换与网络参数在下次启动会话时生效。保存不会自动重启。</p>
 </main><datalist id="asioDrivers"></datalist><script type="module" src="configuration.js"></script>
 </body></html>

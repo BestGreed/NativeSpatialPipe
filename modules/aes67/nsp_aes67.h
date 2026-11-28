@@ -1,0 +1,164 @@
+#ifndef NSP_AES67_H
+#define NSP_AES67_H
+#include <stddef.h>
+#include <stdint.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct NspAes67 NspAes67;
+typedef void (*NspAes67Release)(void *token);
+
+enum {
+    NSP_AES67_OK = 0, NSP_AES67_INVALID = -22, NSP_AES67_STATE = -2,
+    NSP_AES67_IO = -3, NSP_AES67_TIMESTAMP_UNAVAILABLE = -4,
+    NSP_AES67_LOCK_TIMEOUT = -5, NSP_AES67_JOIN_TIMEOUT = -6,
+    NSP_AES67_QUEUE_FULL = -7, NSP_AES67_WORKER_FAILURE = -8,
+    NSP_AES67_BUFFER_TOO_SMALL = -9,
+    /* gm mode requested but the interface MAC/clockIdentity is unreadable. */
+    NSP_AES67_PTP_IDENTITY_UNAVAILABLE = -10
+};
+enum { NSP_AES67_AUTO = 0, NSP_AES67_SOFTWARE = 1, NSP_AES67_HARDWARE = 2 };
+enum { NSP_AES67_STARTED = 1, NSP_AES67_SENDER_EXITED = 2,
+    NSP_AES67_STOP_COMPLETE = 3, NSP_AES67_PTP_LOST = 4 };
+/* bit_depth: 0 = L24 (default), 1 = L16. */
+enum { NSP_AES67_L24 = 0, NSP_AES67_L16 = 1 };
+/* PTP topology mode: 0 slave, 1 auto, 2 gm, 3 local (docs/aes67-output.md, PTP topology). */
+enum { NSP_AES67_PTP_MODE_SLAVE = 0, NSP_AES67_PTP_MODE_AUTO = 1,
+    NSP_AES67_PTP_MODE_GM = 2, NSP_AES67_PTP_MODE_LOCAL = 3 };
+/* Reported role: 0 init, 1 listening, 2 slave, 3 gm, 4 passive, 5 local. */
+enum { NSP_AES67_ROLE_INIT = 0, NSP_AES67_ROLE_LISTENING = 1, NSP_AES67_ROLE_SLAVE = 2,
+    NSP_AES67_ROLE_GM = 3, NSP_AES67_ROLE_PASSIVE = 4, NSP_AES67_ROLE_LOCAL = 5 };
+/* Reported source: 0 none, 1 external-gm, 2 self-gm, 3 local, 4 holdover, 5 passive. */
+enum { NSP_AES67_SOURCE_NONE = 0, NSP_AES67_SOURCE_EXTERNAL_GM = 1,
+    NSP_AES67_SOURCE_SELF_GM = 2, NSP_AES67_SOURCE_LOCAL = 3,
+    NSP_AES67_SOURCE_HOLDOVER = 4, NSP_AES67_SOURCE_PASSIVE = 5 };
+/* flow_mode: 0 = standard (<=8ch/flow), 1 = extension (pack to 1440B; may be a single 16/64ch flow). */
+enum { NSP_AES67_FLOW_AUTO = 0, NSP_AES67_FLOW_SINGLE = 1, NSP_AES67_FLOW_MULTI = 2 };
+/* port_policy: 0 = strict (all flows 5004), 1 = explicit per-flow ports. */
+enum { NSP_AES67_PORT_STRICT = 0, NSP_AES67_PORT_EXPLICIT = 1 };
+
+typedef struct NspAes67Flow {
+    uint8_t dest_ip[4], src_interface_ip[4];
+    uint16_t port;
+    uint8_t ttl, channels;
+    uint32_t ssrc, channel_offset;
+    uint8_t payload_type, source_filter, reserved[2];
+} NspAes67Flow;
+
+/*
+ * Extended configuration, 168 bytes (revision 3). The first 128 bytes are
+ * ABI-compatible with the original 1 ms / 48 kHz configuration. Revision 2
+ * (152 bytes) appended packet time, SAP behavior and encoding; revision 3
+ * appended the PTP topology fields (docs/aes67-output.md). Callers must
+ * set struct_size to sizeof(NspAes67Config) (168). Legacy 128- and 152-byte
+ * struct_size values are also accepted: 128 defaults to 48 kHz/L24/1 ms/5004/
+ * 224.2.127.254 SAP, 152 additionally defaults to PTP slave mode domain 0.
+ */
+typedef struct NspAes67Config {
+    uint32_t struct_size, channels, sample_rate, buffer_ms, prebuffer_ms;
+    uint32_t timestamping, lock_timeout_ms, loss_timeout_ms, ptp_domain;
+    uint8_t ptp_interface_ip[4], ptp_multicast_ip[4], ptp_master_ip[4], ptp_gmid[8];
+    uint16_t ptp_event_port, ptp_general_port, ptp_local_event_port, ptp_local_general_port;
+    uint8_t sap, default_ttl;
+    uint16_t default_port;
+    uint8_t default_dest_ip[4], default_src_interface_ip[4];
+    uint32_t ssrc_base, flow_count;
+    const NspAes67Flow *flows;
+    const char *const *channel_labels;
+    const char *session_name;
+    const uint32_t *channel_map;
+    uint32_t input_channels;
+    uint8_t default_payload_type, default_source_filter;
+    /* 0 standard (<=8ch/flow), 1 extension (pack to 1440B; may be a single
+     * 16/64ch flow); redundant 0/1 adds ST 2022-7 legs on port + 2. */
+    uint8_t flow_mode, redundant;
+    /* 125/250/333/500/1000/2000/4000 us; 0 selects 1000. */
+    uint32_t packet_time_us;
+    /* SAP repeat interval; 0 selects 30000 ms. */
+    uint32_t sap_interval_ms;
+    /* Samples per packet; 0 derives the AES67 Table 2 count, nonzero must match. */
+    uint32_t frames_per_packet;
+    /* SAP group; all zero selects 224.2.127.254. */
+    uint8_t sap_address[4];
+    /* 0 = L24, 1 = L16. */
+    uint8_t bit_depth;
+    /* 0 = strict 5004, 1 = explicit per-flow ports. */
+    uint8_t port_policy;
+    uint8_t reserved[6];
+    /* --- revision 3: PTP topology (docs/aes67-output.md) --- */
+    /* 1000..60000 ms; 0 selects 6000. */
+    uint32_t ptp_announce_timeout_ms;
+    /* 0 slave (default), 1 auto, 2 gm, 3 local. */
+    uint8_t ptp_mode;
+    /* 0..255; 0 selects 128 (AES67 Annex A Table A.1 default). */
+    uint8_t ptp_priority1, ptp_priority2;
+    /* 0/1; gm mode implies capable. */
+    uint8_t ptp_gm_capable;
+    /* -1 selects "not configured" (ARB/ptpTimescale=0); 0..127 is the
+     * IEEE 1588-2008 8.2.3 currentUtcOffset in seconds. */
+    int16_t ptp_gm_utc_offset;
+    uint8_t reserved_v3[6];
+} NspAes67Config;
+typedef struct NspAes67Event { uint32_t kind; int32_t code, detail; } NspAes67Event;
+/* EXTENSION PTP mode/role/source snapshot; the
+ * counters struct is ABI size-stable, so the role is reported here and in the
+ * nsp_aes67 ptp diagnostics log line. reason is a NUL-terminated stable tag. */
+typedef struct NspAes67PtpStatus {
+    uint32_t mode, role, source, domain;
+    uint32_t time_traceable, ptp_timescale;
+    uint8_t gm_identity[8];
+    char reason[32];
+    uint64_t transitions;
+    uint32_t reserved;
+} NspAes67PtpStatus;
+typedef struct NspAes67Counters {
+    uint64_t packets, silent, dropped, late, errors, bytes;
+    uint32_t locked, timestamping;
+    double offset_ns, rate_ppm, fit_rms_ns;
+} NspAes67Counters;
+
+int nsp_aes67_create(NspAes67 **out);
+int nsp_aes67_configure(NspAes67 *session, const NspAes67Config *config);
+int nsp_aes67_start(NspAes67 *session);
+int nsp_aes67_stop(NspAes67 *session, uint32_t join_timeout_ms);
+int nsp_aes67_poll_lifecycle_event(NspAes67 *session, NspAes67Event *out);
+int nsp_aes67_counters(NspAes67 *session, NspAes67Counters *out);
+int nsp_aes67_ptp_status(NspAes67 *session, NspAes67PtpStatus *out);
+int nsp_aes67_sdp(NspAes67 *session, uint32_t flow_index, char *out, size_t capacity);
+int nsp_aes67_close(NspAes67 *session, uint32_t join_timeout_ms);
+/*
+ * Submit one interleaved float block and transfer the lease token.
+ * - pcm holds frames * channels floats valid for the call; the module never
+ *   retains the pointer.
+ * - first_frame is the host frame index on the session's continuous timeline;
+ *   it must not regress. tail tells how many frames at the end of pcm belong to
+ *   frames already sent, so a late block is trimmed instead of replayed.
+ * - token == NULL returns NSP_AES67_INVALID (-22).
+ * - Return 0 transfers ownership: the module calls release_fn(token) exactly
+ *   once, synchronously, after copying or accounting for the frames. A negative
+ *   return (QUEUE_FULL, INVALID, STATE) leaves ownership with the caller.
+ */
+int nsp_aes67_submit_leased(void *context, uint64_t first_frame, const float *pcm,
+    uint32_t frames, uint32_t channels, uint32_t tail, void *token, NspAes67Release release_fn);
+
+/* Layout guards: the Rust DLL, the Zig scheduler mirror and this header must
+ * agree byte for byte. Comment the next block out only for a non-C11 toolchain. */
+#if defined(__cplusplus)
+#define NSP_AES67_STATIC_ASSERT static_assert
+#else
+#define NSP_AES67_STATIC_ASSERT _Static_assert
+#endif
+NSP_AES67_STATIC_ASSERT(sizeof(NspAes67Flow) == 24, "NspAes67Flow layout");
+NSP_AES67_STATIC_ASSERT(sizeof(NspAes67Config) == 168, "NspAes67Config layout");
+NSP_AES67_STATIC_ASSERT(offsetof(NspAes67Config, flows) == 88, "flows offset");
+NSP_AES67_STATIC_ASSERT(offsetof(NspAes67Config, packet_time_us) == 128, "packet_time_us offset");
+NSP_AES67_STATIC_ASSERT(offsetof(NspAes67Config, ptp_mode) == 156, "ptp_mode offset");
+NSP_AES67_STATIC_ASSERT(sizeof(NspAes67Event) == 12, "NspAes67Event layout");
+NSP_AES67_STATIC_ASSERT(sizeof(NspAes67PtpStatus) == 80, "NspAes67PtpStatus layout");
+NSP_AES67_STATIC_ASSERT(sizeof(NspAes67Counters) == 80, "NspAes67Counters layout");
+
+#ifdef __cplusplus
+}
+#endif
+#endif

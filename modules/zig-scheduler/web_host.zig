@@ -3,6 +3,7 @@ const std = @import("std");
 const u = @import("common.zig");
 const backend = @import("backend.zig");
 const playback = @import("desktop_playback.zig");
+const cfg = @import("aes67_config.zig");
 const SocketIO = @import("socket_io.zig").SocketIO;
 const c = @cImport({
     @cDefine("_WIN32_WINNT", "0x0A00");
@@ -141,10 +142,108 @@ fn getConfig(ctx: Context, id: []const u8, stream: std.net.Stream) !void {
     try send(stream, 200, .{ .id = id, .path = path, .exists = saved != null, .revision = &revision(saved), .config = parsed.value, .validationError = validation_error, .formDefaults = suggestions,
         .apply = if (std.mem.eql(u8, id, "playback")) "fsa-restart-for-output" else "backend-restart" });
 }
+/// Fills missing per-flow AES67 destination fields with the documented
+/// deterministic rule (docs/aes67-output.md). Flow 0's explicit destIp is the
+/// allocation base - the one address the user typed: flow k derives
+/// base + k for multicast (allocateFlowGroup, one group per stream) or reuses
+/// the same host for unicast. Missing ports default to the AES67 5004 for
+/// multicast (Plan A) and to a unique even-port continuation for unicast
+/// (flow-0 port + 2k, matching the RTP/RTCP pair convention). Multicast TTL
+/// freezes to the session TTL and the egress interface inherits the session
+/// srcInterfaceIp. The materialized values are written into the saved
+/// document, so every per-flow address is explicit and visible in the config
+/// file and in the UI readback. The sender itself never derives a
+/// destination: prepare() still rejects any flow without an explicit destIp,
+/// so hand-edited files cannot rely on this rule.
+fn materializeAes67Flows(config: *u.Value, arena: std.mem.Allocator) !void {
+    if (config.* != .object) return;
+    const aes67_entry = config.object.getPtr("aes67") orelse return;
+    if (aes67_entry.* != .object) return;
+    const flows_entry = aes67_entry.object.getPtr("flows") orelse return;
+    if (flows_entry.* != .array) return;
+    if (flows_entry.array.items.len == 0 or flows_entry.array.items.len > cfg.max_flows) return error.InvalidAes67FlowCount;
+    if (flows_entry.array.items[0] != .object) return error.InvalidAes67Flows;
+    const base_text = (try fieldString(&flows_entry.array.items[0].object, "destIp")) orelse return error.Aes67RequiresFlowDestination;
+    if (base_text.len == 0) return error.Aes67RequiresFlowDestination;
+    const base = cfg.parseIpv4Address(base_text) orelse return error.InvalidAes67Destination;
+    const base_multicast = cfg.isMulticastIpv4(base);
+    // Flow 0's explicit port anchors the unicast continuation; otherwise the
+    // session basePort applies (5004 when absent), never a hard-coded 5004.
+    const session_port = (try fieldNumber(&aes67_entry.object, "basePort")) orelse cfg.default_port;
+    if (session_port == 0 or session_port > 65535) return error.InvalidAes67Port;
+    const base_port = (try fieldNumber(&flows_entry.array.items[0].object, "port")) orelse session_port;
+    if (base_port == 0 or base_port > 65535) return error.InvalidAes67Port;
+    const session_ttl = (try fieldNumber(&aes67_entry.object, "ttl")) orelse cfg.default_ttl;
+    if (session_ttl == 0 or session_ttl > 255) return error.InvalidAes67Ttl;
+    const session_source = (try fieldString(&aes67_entry.object, "srcInterfaceIp")) orelse "";
+    for (flows_entry.array.items, 0..) |*flow, index| {
+        if (flow.* != .object) return error.InvalidAes67Flows;
+        const map = &flow.object;
+        var dest_text: ?[]const u8 = try fieldString(map, "destIp");
+        if (dest_text != null and dest_text.?.len == 0) dest_text = null;
+        if (dest_text == null) {
+            const address = if (base_multicast)
+                (cfg.allocateFlowGroup(base, @intCast(index)) orelse return error.Aes67FlowGroupExhausted)
+            else
+                base;
+            const rendered = cfg.formatIpv4(address);
+            dest_text = try arena.dupe(u8, std.mem.sliceTo(&rendered, 0));
+            try map.put("destIp", .{ .string = dest_text.? });
+        }
+        const flow_dest = cfg.parseIpv4Address(dest_text.?) orelse return error.InvalidAes67Destination;
+        const multicast = cfg.isMulticastIpv4(flow_dest);
+        if (try fieldNumber(map, "port")) |port| {
+            if (port > 65535) return error.InvalidAes67Port;
+            // 0 selects the session base port (schema contract); materialize it
+            // so the saved file is self-describing, matching destIp/ttl handling.
+            if (port == 0) try map.put("port", .{ .integer = @intCast(base_port) });
+        } else {
+            // Multicast shares the AES67 default port (Plan A); unicast needs a
+            // unique port per flow on the same host (continuation of flow 0).
+            const port_value: u64 = if (multicast) session_port else base_port + 2 * index;
+            if (port_value == 0 or port_value > 65535) return error.InvalidAes67Port;
+            try map.put("port", .{ .integer = @intCast(port_value) });
+        }
+        if (multicast) {
+            const has_ttl = if (try fieldNumber(map, "ttl")) |ttl| ttl != 0 else false;
+            if (!has_ttl) try map.put("ttl", .{ .integer = @intCast(session_ttl) });
+        }
+        const has_source = if (try fieldString(map, "srcInterfaceIp")) |text| text.len != 0 else false;
+        if (!has_source and session_source.len != 0) {
+            try map.put("srcInterfaceIp", .{ .string = session_source });
+        }
+    }
+}
+
+/// Reads an optional JSON object field: null for missing or JSON null, the
+/// text for strings, an error for any other type (explicit wrong input fails
+/// closed instead of being silently re-derived).
+fn fieldString(map: *std.json.ObjectMap, key: []const u8) !?[]const u8 {
+    const value = map.get(key) orelse return null;
+    return switch (value) {
+        .string => |text| text,
+        .null => null,
+        else => error.InvalidAes67Flows,
+    };
+}
+
+/// Number counterpart of fieldString for integer JSON fields.
+fn fieldNumber(map: *std.json.ObjectMap, key: []const u8) !?u64 {
+    const value = map.get(key) orelse return null;
+    return switch (value) {
+        .integer => |number| if (number < 0) error.InvalidAes67Flows else @as(u64, @intCast(number)),
+        .null => null,
+        else => error.InvalidAes67Flows,
+    };
+}
 fn putConfig(ctx: Context, id: []const u8, bytes: []const u8, stream: std.net.Stream) !void {
     const Request = struct { revision: []const u8, config: u.Value };
     var parsed = try std.json.parseFromSlice(Request, a, bytes, .{ .allocate = .alloc_always });
     defer parsed.deinit();
+    // Per-flow destinations are materialized before validation so the saved
+    // file always carries explicit, visible flow destinations; validation and
+    // the sender still see a fully explicit document.
+    if (std.mem.eql(u8, id, "playback")) try materializeAes67Flows(&parsed.value.config, parsed.arena.allocator());
     const encoded = try u.json(parsed.value.config);
     defer a.free(encoded);
     try validate(id, encoded);
