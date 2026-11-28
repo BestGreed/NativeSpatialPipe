@@ -365,6 +365,24 @@ pub(crate) fn catch_up_slots(slot_period_ns: i128, budget_ns: i128) -> u32 {
 /// ptime under the previous 8-slot limit.
 const CATCH_UP_BUDGET_NS: i128 = 2_000_000;
 
+/// Spin budget for the final approach to a packet deadline. Windows rounds a
+/// relative waitable timer up by roughly the system timer tick (~0.5 ms on the
+/// target machines), which is larger than the packet period at small ptimes.
+/// At 333 us and 1 ms the worker therefore spins the whole slot and never arms
+/// the timer; wake lateness falls to sub-millisecond and the remaining tail is
+/// Windows scheduling/DPC, not the timer. A PTP fit update can move the remaining time above
+/// one slot for one iteration; arming the timer there would add another ~0.5 ms
+/// wake-up, so the whole-slot modes skip the timer entirely and busy-wait
+/// through that short window. Longer packet times keep the short spin and let
+/// the timer cover the wait.
+pub(crate) fn spin_budget_ns(packet_time_us: u32, slot_period_ns: i128) -> i128 {
+    if packet_time_us <= 1_000 {
+        slot_period_ns.max(1)
+    } else {
+        (slot_period_ns / 8).clamp(1, 500_000)
+    }
+}
+
 /// Whether a new SDP set needs the previous SAP session withdrawn. Identical
 /// hashes are a plain refresh; a changed hash must be deleted per RFC 2974
 /// section 3.2 or receivers keep the stale session until the implicit timeout.
@@ -460,7 +478,13 @@ impl Network {
             .unwrap_or(CATCH_UP_BUDGET_NS);
         let max_catch_up = catch_up_slots(run.config.timing.slot_period_ns(), catch_up_budget_ns);
         let pacer = pacer::Pacer::new();
-        let spin_ns = (run.config.timing.slot_period_ns() / 8).clamp(1, 500_000);
+        let slot_period_ns = run.config.timing.slot_period_ns();
+        let spin_ns = spin_budget_ns(run.config.timing.packet_time_us(), slot_period_ns);
+        // A whole-slot spin leaves no room for the timer's ~0.5 ms rounding.
+        // Keep the timer for the coarser modes only; in the fine modes an
+        // occasional fit update that moves the deadline more than one slot
+        // ahead is short enough to spin through.
+        let full_spin = spin_ns >= slot_period_ns;
         let mut next_log = 0;
         let mut deadline = Instant::now() + run.config.lock_timeout;
         let mut last_status = self.ptp.status();
@@ -666,7 +690,7 @@ impl Network {
                 }
                 let deadline = stream.grid.next_ns();
                 let remaining = deadline - fit.ptp_ns(self.ptp.now_ns());
-                if remaining > spin_ns {
+                if !full_spin && remaining > spin_ns {
                     pacer.wait(Duration::from_nanos(
                         (remaining - spin_ns).min(NS_PER_MS) as u64
                     ));
@@ -1176,6 +1200,18 @@ mod tests {
         assert_eq!(catch_up_slots(1, 20_000_000), 64);
         assert_eq!(catch_up_slots(0, 2_000_000), 64);
         assert_eq!(catch_up_slots(1_000_000, 1), 1);
+    }
+
+    #[test]
+    fn short_packet_times_spin_the_whole_slot() {
+        // The relative waitable timer wakes ~0.5 ms late on Windows, so the
+        // 333 us and 1 ms modes spin the whole slot instead of arming it.
+        assert_eq!(spin_budget_ns(333, 333_333), 333_333);
+        assert_eq!(spin_budget_ns(1_000, 1_000_000), 1_000_000);
+        // Longer packet times keep the timer wait and the short spin.
+        assert_eq!(spin_budget_ns(2_000, 2_000_000), 250_000);
+        assert_eq!(spin_budget_ns(4_000, 4_000_000), 500_000);
+        assert_eq!(spin_budget_ns(4_000, 8_000_000), 500_000);
     }
 
     #[test]
