@@ -98,8 +98,8 @@ portPolicy "explicit" exists only to keep a lab receiver working during a staged
 
 ## PTP topology modes and network discovery
 
-The sender supports four PTP topology modes. Key names are frozen per
-DESIGN audit D8: they live inside the nested aes67.ptp object.
+The sender supports four PTP topology modes. Key names are frozen: they live inside
+the nested aes67.ptp object.
 
 | Setting | Accepted values | Default | Meaning |
 | --- | --- | --- | --- |
@@ -143,7 +143,7 @@ The follower accepts ptpTimescale=0 (ARB) Announces for frequency-only locking. 
 DEVIATION from AES67 section 5 (the media and network clocks must share the TAI epoch); ARB locking
 therefore reports time_traceable=false and an arbitrary epoch. time_traceable comes from the
 TIME_TRACEABLE flag (0x0010) or a traceable clockClass (6/7/166/187), never from ptpTimescale
-(SPEC-REFS audit D3; the real board GM announces ptpTimescale=1 with timeTraceable=0).
+(the real board GM announces ptpTimescale=1 with timeTraceable=0).
 
 The announced SDP follows the role: locked slave or active GM emits a=clock-domain:PTPv2 <domain>,
 a=ts-refclk:ptp=IEEE1588-2008:<GMID>:<domain> and a=mediaclk:direct=0; local mode emits

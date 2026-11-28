@@ -135,7 +135,7 @@ pub const Ptp = struct {
     domain: u16 = default_ptp_domain,
     lockTimeoutMs: u32 = 5000,
     timestamping: Timestamping = .auto,
-    /// aes67.ptp.mode (frozen key, DESIGN audit D8). Default slave keeps the
+    /// aes67.ptp.mode (frozen key). Default slave keeps the
     /// pre-existing wait-for-external-GM behavior.
     mode: PtpMode = .slave,
     priority1: u8 = default_ptp_priority,

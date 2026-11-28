@@ -87,8 +87,8 @@ test "AES67 schema block matches the disabled-by-default transport contract" {
     try std.testing.expectEqual(@as(i64, cfg.default_prebuffer_frames), field(field(properties, "prebufferFrames"), "default").integer);
     try std.testing.expectEqual(@as(i64, 96), field(field(properties, "payloadType"), "minimum").integer);
     try std.testing.expectEqual(@as(i64, 127), field(field(properties, "payloadType"), "maximum").integer);
-    // PTP topology keys are part of the frozen aes67.ptp contract (DESIGN
-    // audit D8): mode/priority1/priority2/announceTimeoutMs/gmCapable/gmUtcOffset.
+    // PTP topology keys are part of the frozen aes67.ptp contract:
+    // mode/priority1/priority2/announceTimeoutMs/gmCapable/gmUtcOffset.
     const ptpProperties = field(field(properties, "ptp"), "properties");
     try std.testing.expect(containsString(field(field(ptpProperties, "mode"), "enum"), "slave"));
     try std.testing.expect(containsString(field(field(ptpProperties, "mode"), "enum"), "auto"));

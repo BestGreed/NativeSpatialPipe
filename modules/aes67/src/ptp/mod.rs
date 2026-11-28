@@ -8,7 +8,7 @@
 //! UDP 319/320), section 6.2 Table 1 (clock traffic DSCP EF 46). The full
 //! IEEE 1588-2008 text is not in the workspace; message layouts and flag
 //! bits are cross-checked against the local linuxptp msg.h/msg.c mirror and
-//! live board captures (see SPEC-REFS.md sections 4 and 5). The BMCA
+//! live board captures. The BMCA
 //! comparison order is IEEE 1588-2008 9.3.2, which is UNVERIFIED-LOCAL.
 pub mod codec;
 pub mod gm;
@@ -66,7 +66,7 @@ fn announce_interval(log: i8) -> Option<i128> {
 }
 
 /// Traceable clock classes of IEEE 1588-2008 Table 5: primary-reference and
-/// previously-synchronized classes. SPEC-REFS.md audit D3: time_traceable is
+/// previously-synchronized classes. time_traceable is
 /// the TIME_TRACEABLE flag (or a traceable clockClass), never ptpTimescale;
 /// the board GM proves the two differ (ptpTimescale=1, timeTraceable=0).
 fn time_traceable(message: &Message) -> bool {
@@ -786,7 +786,7 @@ impl PtpRuntime {
     /// open).
     /// PTP (TAI) timescale currently in use: PTP_TIMESCALE of the accepted
     /// announce while following, gm_utc_offset configured while we are the GM.
-    /// Reported separately from time_traceable (SPEC-REFS audit D3).
+    /// Reported separately from time_traceable.
     pub fn ptp_timescale(&self) -> bool {
         match self.role.role() {
             Role::Slave | Role::Passive => self.follower.ptp_timescale(),
@@ -1462,7 +1462,7 @@ mod tests {
 
     #[test]
     fn traceability_comes_from_the_time_traceable_flag_not_ptp_timescale() {
-        // SPEC-REFS audit D3 (HIGH): ptpTimescale=1 and timeTraceable=0 is the
+        // ptpTimescale=1 and timeTraceable=0 is the
         // real board dataset; they are different flags. linuxptp msg.h:66
         // names TIME_TRACEABLE as bit 4 of flagField[1] (mask 0x0010 in the
         // big-endian flags value), and UTC_OFF_VALID as bit 2 (mask 0x0004).
@@ -1504,7 +1504,7 @@ mod tests {
 
     #[test]
     fn multicast_ttl_matches_the_validated_board_profile() {
-        // TTL is a deployment/profile choice (SPEC-REFS section 4): the board
+        // TTL is a deployment/profile choice: the board
         // GM profile and the 2026-11-22 capture use TTL 16, not TTL 1.
         let mut config = Config {
             interface: Ipv4Addr::LOCALHOST,

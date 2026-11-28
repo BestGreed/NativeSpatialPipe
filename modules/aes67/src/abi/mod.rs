@@ -118,10 +118,10 @@ impl ConfigV2 {
     }
 }
 
-/// Third configuration revision (168 bytes). Appends the PTP topology fields
-/// topology fields; 128- and 152-byte callers keep working with
-/// the pre-existing slave-mode defaults. Sender JSON keys (frozen, DESIGN
-/// audit D8) map to: aes67.ptp.mode -> ptp_mode, aes67.ptp.priority1/priority2
+/// Third configuration revision (168 bytes). Appends the PTP topology fields;
+/// 128- and 152-byte callers keep working with the pre-existing slave-mode
+/// defaults. The frozen sender JSON keys map to: aes67.ptp.mode -> ptp_mode,
+/// aes67.ptp.priority1/priority2
 /// -> ptp_priority1/ptp_priority2, aes67.ptp.announceTimeoutMs ->
 /// ptp_announce_timeout_ms, aes67.ptp.gmCapable -> ptp_gm_capable,
 /// aes67.ptp.gmUtcOffset -> ptp_gm_utc_offset.
